@@ -1,0 +1,43 @@
+# Core API
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
+python-dotenv>=1.0.0
+python-multipart>=0.0.20
+
+# AI / LangChain
+langchain>=0.3.0
+langchain-openai>=0.3.0
+langgraph>=0.2.0
+
+# Database — PostgreSQL 15 + LISTEN/NOTIFY
+sqlalchemy>=2.0.0
+alembic>=1.14.0
+asyncpg>=0.30.0
+psycopg2-binary>=2.9.0
+
+# Queue & scheduling (MVP 2 forecast jobs)
+redis>=5.2.0
+rq>=2.0.0
+apscheduler>=3.11.0
+
+# Forecast & data ingestion
+# NOTE: prophet kéo theo cmdstanpy/holidays — build image lâu (~3-5 phút) và nặng.
+# Có thể tạm comment ở MVP 1 nếu chưa cần dự báo.
+prophet>=1.1.6
+pandas>=2.2.0
+openpyxl>=3.1.0
+
+# Logging có cấu trúc
+structlog>=24.4.0
+
+# Auth (MVP 3)
+pyjwt>=2.10.0
+passlib[bcrypt]>=1.7.4
+
+# Dev tools
+ruff>=0.8.0
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
+httpx>=0.28.0

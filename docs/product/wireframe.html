@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AbsorptionForecast AI Agent — Wireframe & UI Flow Kit (G1)</title>
+<style>
+  :root{
+    --paper:#ffffff;
+    --canvas:#eceef1;
+    --line:#c7ccd1;
+    --line-strong:#9aa2ab;
+    --ink:#2b3138;
+    --muted:#7b838d;
+    --ghost:#aab1b9;
+    --fill:#f4f6f8;
+    --fill2:#e9edf1;
+    --note:#2f6fdb;       /* callout thường */
+    --note-bg:#eaf1fd;
+    --warn:#c77b17;       /* cảnh báo / độ tin thấp */
+    --warn-bg:#fdf3e4;
+    --hitl:#8a4fca;       /* điểm HITL */
+    --hitl-bg:#f2ecfb;
+    --ok:#2f8a5b;
+    --bad:#c0432f;
+    --dash:#b7bec6;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    background:var(--canvas); color:var(--ink); line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .app{display:grid; grid-template-columns:250px 1fr; min-height:100vh}
+
+  /* ---------- Sidebar ---------- */
+  .rail{
+    background:#1d2228; color:#d6dce2; padding:20px 14px; position:sticky; top:0; height:100vh; overflow:auto;
+  }
+  .rail h1{font-size:14px; margin:0 0 2px; letter-spacing:.02em}
+  .rail .sub{font-size:11px; color:#8b949e; margin-bottom:18px}
+  .rail .grp{font-size:10px; text-transform:uppercase; letter-spacing:.12em; color:#6e7681; margin:16px 6px 6px}
+  .navbtn{
+    display:flex; align-items:center; gap:9px; width:100%; text-align:left;
+    background:transparent; border:0; color:#c2cad2; font-size:13px; padding:8px 10px; border-radius:7px; cursor:pointer;
+    font-family:inherit;
+  }
+  .navbtn:hover{background:#2a3138; color:#fff}
+  .navbtn.active{background:#31527f; color:#fff}
+  .navbtn .n{font-size:11px; color:#8b949e; min-width:14px}
+  .navbtn.active .n{color:#cfe0ff}
+  .navbtn .star{color:#c9a0ff; font-size:11px}
+  .legend{margin-top:18px; border-top:1px solid #2c333b; padding-top:14px; font-size:11px; color:#9aa3ac}
+  .legend .row{display:flex; align-items:center; gap:8px; margin:6px 0}
+  .swatch{width:12px;height:12px;border-radius:3px;flex:none}
+
+  /* ---------- Stage ---------- */
+  .stage{padding:26px 30px 60px}
+  .screen{display:none}
+  .screen.show{display:block}
+  .screen-head{margin-bottom:16px}
+  .screen-head .eyebrow{font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted)}
+  .screen-head h2{margin:2px 0 4px; font-size:22px}
+  .screen-head p{margin:0; color:var(--muted); font-size:13px; max-width:70ch}
+
+  .cols{display:grid; grid-template-columns:1fr 320px; gap:22px; align-items:start}
+  @media(max-width:1100px){.cols{grid-template-columns:1fr}}
+
+  /* ---------- Wireframe device ---------- */
+  .device{
+    background:var(--paper); border:1px solid var(--line-strong); border-radius:10px; overflow:hidden;
+    box-shadow:0 1px 0 rgba(0,0,0,.03), 0 10px 30px -18px rgba(0,0,0,.25);
+  }
+  .browser-bar{display:flex; align-items:center; gap:6px; padding:8px 12px; background:var(--fill2); border-bottom:1px solid var(--line)}
+  .dot{width:9px;height:9px;border-radius:50%;background:#cfd5db}
+  .url{margin-left:8px; flex:1; background:#fff; border:1px solid var(--line); border-radius:5px; font-size:11px; color:var(--muted); padding:3px 9px}
+  .role-tag{font-size:10px; padding:3px 8px; border-radius:20px; font-weight:600}
+  .role-staff{background:#e6f0ff; color:#2452a3}
+  .role-mgr{background:#efe6ff; color:#6a34a8}
+
+  .wf{padding:16px}
+  /* wireframe primitives */
+  .box{border:1px solid var(--line); border-radius:7px; background:#fff}
+  .ph{background:repeating-linear-gradient(45deg,#f3f5f7,#f3f5f7 7px,#eef1f4 7px,#eef1f4 14px); border:1px dashed var(--dash); border-radius:6px}
+  .bar{height:9px;border-radius:5px;background:var(--fill2)}
+  .bar.w40{width:40%}.bar.w60{width:60%}.bar.w25{width:25%}.bar.w80{width:80%}.bar.w50{width:50%}
+  .txtline{height:8px;border-radius:4px;background:#e4e8ec;margin:6px 0}
+  .btn-wf{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line-strong);border-radius:6px;font-size:12px;padding:7px 12px;color:var(--ink);background:#fff}
+  .btn-wf.solid{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .btn-wf.approve{background:var(--ok);color:#fff;border-color:var(--ok)}
+  .btn-wf.reject{background:#fff;color:var(--bad);border-color:var(--bad)}
+  .pill{display:inline-block;font-size:10px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--muted)}
+  .pill.red{background:#fdece9;color:#b23a26;border-color:#f2c4bb}
+  .pill.amber{background:var(--warn-bg);color:var(--warn);border-color:#ead9b6}
+  .pill.green{background:#e8f5ee;color:#217a4c;border-color:#bfe2cd}
+  .pill.gray{background:#eef0f2;color:#7b838d}
+
+  .mini{font-size:11px;color:var(--muted)}
+  .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+
+  /* annotation marker */
+  .anno{position:relative}
+  .marker{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;border-radius:50%;
+    background:var(--note);color:#fff;font-size:11px;font-weight:700;flex:none;box-shadow:0 0 0 3px var(--note-bg)}
+  .marker.w{background:var(--warn);box-shadow:0 0 0 3px var(--warn-bg)}
+  .marker.h{background:var(--hitl);box-shadow:0 0 0 3px var(--hitl-bg)}
+
+  /* ---------- Notes panel ---------- */
+  .notes{position:sticky; top:20px}
+  .notes h3{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:0 0 10px}
+  .note{display:flex;gap:10px;background:#fff;border:1px solid var(--line);border-left:3px solid var(--note);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+  .note.w{border-left-color:var(--warn)}
+  .note.h{border-left-color:var(--hitl)}
+  .note .body{font-size:12.5px}
+  .note .body b{font-size:12.5px}
+  .note .tag{display:inline-block;font-size:10px;font-weight:700;color:var(--note);margin-left:6px}
+  .note.w .tag{color:var(--warn)} .note.h .tag{color:var(--hitl)}
+
+  /* chart sketch */
+  .chart{width:100%;height:150px;display:block}
+  .grid line{stroke:#eef1f4;stroke-width:1}
+  .axis{stroke:var(--line-strong);stroke-width:1}
+  .hist{stroke:#6b7178;stroke-width:2;fill:none}
+  .fcast{stroke:#2f6fdb;stroke-width:2;stroke-dasharray:5 4;fill:none}
+  .band{fill:#2f6fdb;opacity:.12}
+  .marker-x{stroke:#c0432f;stroke-width:1.5;stroke-dasharray:3 3}
+
+  /* flow */
+  .flow-wrap{background:#fff;border:1px solid var(--line-strong);border-radius:10px;padding:8px}
+  .flow-wrap svg{width:100%;height:auto;display:block}
+  .fnode{font-size:12px}
+  .fnode rect{fill:#fff;stroke:var(--line-strong);stroke-width:1.4;rx:8}
+  .fnode.start rect{fill:#eef4ff;stroke:#7ba0e0}
+  .fnode.hitl rect{fill:var(--hitl-bg);stroke:#b48fe0;stroke-width:2}
+  .fnode.bad rect{fill:var(--warn-bg);stroke:#e0b877;stroke-dasharray:5 4}
+  .fnode.term rect{fill:#eaf6ee;stroke:#86c3a1}
+  .fnode text{fill:var(--ink)}
+  .fnode .t2{fill:var(--muted);font-size:10px}
+  .fnode[data-goto]{cursor:pointer}
+  .fnode[data-goto] rect{transition:fill .12s, stroke .12s, filter .12s}
+  .fnode[data-goto]:hover rect{stroke:#31527f;stroke-width:2.2;filter:drop-shadow(0 3px 6px rgba(49,82,127,.22))}
+  .fnode[data-goto]:hover text{fill:#31527f}
+  .edge{stroke:var(--line-strong);stroke-width:1.5;fill:none;marker-end:url(#arw)}
+  .edge.no{stroke:var(--bad);stroke-dasharray:5 4}
+  .edge.yes{stroke:var(--ok)}
+  .elabel{font-size:10px;fill:var(--muted)}
+  .elabel.no{fill:var(--bad)} .elabel.yes{fill:var(--ok)}
+
+  .callout-inline{font-size:11px;color:var(--muted);margin-top:6px}
+  .kbd{font-family:ui-monospace,Menlo,monospace;font-size:11px;background:#eef0f2;border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  hr.soft{border:0;border-top:1px solid var(--line);margin:16px 0}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="rail">
+    <h1>AbsorptionForecast</h1>
+    <div class="sub">Wireframe &amp; UI Flow — Gate G1</div>
+
+    <div class="grp">Bắt đầu</div>
+    <button class="navbtn active" data-s="flow"><span class="n">0</span> Tổng quan &amp; UI Flow</button>
+
+    <div class="grp">Wireframe các màn (MVP)</div>
+    <button class="navbtn" data-s="login"><span class="n">1</span> Đăng nhập / RBAC</button>
+    <button class="navbtn" data-s="dash-staff"><span class="n">2</span> Dashboard · Nhân viên</button>
+    <button class="navbtn" data-s="dash-mgr"><span class="n">3</span> Dashboard · Quản lý</button>
+    <button class="navbtn" data-s="detail"><span class="n">4</span> Chi tiết dự báo</button>
+    <button class="navbtn" data-s="hitl"><span class="n">5</span> Duyệt HITL <span class="star">★</span></button>
+    <button class="navbtn" data-s="edge"><span class="n">6</span> Trạng thái đặc biệt</button>
+    <button class="navbtn" data-s="audit"><span class="n">7</span> Nhật ký &amp; Audit</button>
+
+    <div class="legend">
+      <div class="row"><span class="swatch" style="background:#2f6fdb"></span> Chú thích chức năng (FR)</div>
+      <div class="row"><span class="swatch" style="background:#8a4fca"></span> Điểm HITL / kiểm soát người</div>
+      <div class="row"><span class="swatch" style="background:#c77b17"></span> Độ tin cậy / cảnh báo</div>
+      <div class="row" style="margin-top:10px;color:#6e7681">Fidelity: low–mid · grayscale</div>
+    </div>
+  </aside>
+
+  <!-- ================= STAGE ================= -->
+  <main class="stage">
+
+    <!-- ---------- 0. FLOW ---------- -->
+    <section class="screen show" data-screen="flow">
+      <div class="screen-head">
+        <div class="eyebrow">Deliverable 3 · Gate G1</div>
+        <h2>UI Flow — luồng người dùng</h2>
+        <p>Xương sống theo brief: Đăng nhập → phân quyền theo vai trò → xem dự báo → <b>quản lý duyệt (HITL)</b> → thành hành động chính sách. Có vẽ cả các nhánh xấu (dữ liệu không đủ, độ tin thấp, sai quyền) vì đó là nơi lộ ra sản phẩm có đáng tin không.</p>
+        <div class="callout-inline" style="margin-top:8px;color:var(--note)">👆 Bấm vào bất kỳ ô nào trong sơ đồ để mở wireframe màn tương ứng.</div>
+      </div>
+
+      <div class="flow-wrap">
+        <svg viewBox="0 0 980 560" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arw" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+              <path d="M0,0 L9,4.5 L0,9 z" fill="#9aa2ab"/>
+            </marker>
+          </defs>
+
+          <!-- Login -->
+          <g class="fnode start" data-goto="login"><rect x="30" y="20" width="150" height="50" rx="8"/>
+            <text x="105" y="42" text-anchor="middle" font-weight="600">Đăng nhập</text>
+            <text x="105" y="58" text-anchor="middle" class="t2">RBAC · gán vai trò</text></g>
+
+          <!-- Role branch -->
+          <g class="fnode" data-goto="login"><rect x="30" y="120" width="150" height="46" rx="8"/>
+            <text x="105" y="140" text-anchor="middle">Phân vai trò?</text>
+            <text x="105" y="155" text-anchor="middle" class="t2">Staff · Manager · Lãnh đạo</text></g>
+
+          <!-- Staff path -->
+          <g class="fnode" data-goto="dash-staff"><rect x="30" y="230" width="200" height="50" rx="8"/>
+            <text x="130" y="252" text-anchor="middle">Dashboard · Nhân viên</text>
+            <text x="130" y="268" text-anchor="middle" class="t2">FR-01 hấp thụ · FR-02 cảnh báo</text></g>
+
+          <g class="fnode" data-goto="detail"><rect x="30" y="330" width="200" height="46" rx="8"/>
+            <text x="130" y="350" text-anchor="middle">Chi tiết dự báo (chỉ xem)</text>
+            <text x="130" y="365" text-anchor="middle" class="t2">FR-03 giải thích · FR-05 CI</text></g>
+
+          <!-- Manager path -->
+          <g class="fnode" data-goto="dash-mgr"><rect x="420" y="230" width="200" height="50" rx="8"/>
+            <text x="520" y="252" text-anchor="middle">Dashboard · Quản lý</text>
+            <text x="520" y="268" text-anchor="middle" class="t2">Toàn dự án · hàng chờ duyệt</text></g>
+
+          <g class="fnode" data-goto="detail"><rect x="420" y="330" width="200" height="46" rx="8"/>
+            <text x="520" y="350" text-anchor="middle">Chi tiết dự báo</text>
+            <text x="520" y="365" text-anchor="middle" class="t2">CI + giả định + đề xuất</text></g>
+
+          <!-- HITL -->
+          <g class="fnode hitl" data-goto="hitl"><rect x="420" y="420" width="200" height="52" rx="8"/>
+            <text x="520" y="442" text-anchor="middle" font-weight="700">Duyệt HITL ★</text>
+            <text x="520" y="458" text-anchor="middle" class="t2">FR-04 · Duyệt / Từ chối</text></g>
+
+          <!-- outcomes -->
+          <g class="fnode term" data-goto="audit"><rect x="700" y="410" width="170" height="46" rx="8"/>
+            <text x="785" y="430" text-anchor="middle">Thành chính sách</text>
+            <text x="785" y="445" text-anchor="middle" class="t2">ghi audit log</text></g>
+
+          <g class="fnode bad" data-goto="audit"><rect x="700" y="480" width="170" height="46" rx="8"/>
+            <text x="785" y="500" text-anchor="middle">Từ chối + lý do</text>
+            <text x="785" y="515" text-anchor="middle" class="t2">quay lại · ghi audit</text></g>
+
+          <!-- bad-path: insufficient data / low confidence -->
+          <g class="fnode bad" data-goto="edge"><rect x="700" y="230" width="230" height="70" rx="8"/>
+            <text x="815" y="252" text-anchor="middle" font-weight="600">Nhánh xấu</text>
+            <text x="815" y="270" text-anchor="middle" class="t2">Dữ liệu không đủ → "chưa dự báo"</text>
+            <text x="815" y="285" text-anchor="middle" class="t2">MAPE cao → nhãn "độ tin thấp"</text></g>
+
+          <!-- edges -->
+          <path class="edge" d="M105,70 L105,120"/>
+          <path class="edge" d="M105,166 C105,195 130,200 130,230"/>
+          <path class="edge" d="M180,143 C320,143 520,150 520,230"/>
+          <text class="elabel" x="300" y="135">Manager / Lãnh đạo</text>
+          <text class="elabel" x="60" y="205">Staff</text>
+
+          <path class="edge" d="M130,280 L130,330"/>
+          <path class="edge" d="M520,280 L520,330"/>
+          <path class="edge" d="M520,376 L520,420"/>
+
+          <path class="edge yes" d="M620,438 L700,433"/>
+          <text class="elabel yes" x="628" y="425">Duyệt</text>
+          <path class="edge no" d="M620,458 C660,470 665,500 700,502"/>
+          <text class="elabel no" x="628" y="490">Từ chối</text>
+
+          <!-- detail -> hitl link for manager -->
+          <path class="edge" d="M620,353 C660,353 630,410 560,420" opacity="0"/>
+
+          <!-- to bad path -->
+          <path class="edge no" d="M620,250 C660,245 670,255 700,258"/>
+          <text class="elabel no" x="630" y="240">cờ dữ liệu</text>
+
+          <!-- staff can also hit bad path (dashed up) -->
+          <path class="edge no" d="M230,350 C400,350 300,265 700,262" opacity="0"/>
+        </svg>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:18px">
+        <div class="note"><div class="marker">i</div><div class="body"><b>Vào bằng vai trò</b><span class="tag">RBAC</span><br><span class="mini">Cùng một app, nhưng Staff chỉ thấy phân khu phụ trách; Manager thấy toàn dự án + nút duyệt. Đây là ràng buộc bảo mật hiển thị ra luồng.</span></div></div>
+        <div class="note h"><div class="marker h">H</div><div class="body"><b>HITL là điểm nghẽn có chủ đích</b><span class="tag">FR-04</span><br><span class="mini">Không có dự báo nào thành chính sách nếu chưa qua đây. Mọi đường đều hội tụ về nút Duyệt / Từ chối.</span></div></div>
+        <div class="note w"><div class="marker w">!</div><div class="body"><b>Nhánh xấu phải có</b><span class="tag">Rủi ro · Brief §10</span><br><span class="mini">Phân khu mới thiếu lịch sử → hiện "chưa đủ dữ liệu" thay vì số bừa. MAPE cao → nhãn "độ tin thấp" trước khi duyệt.</span></div></div>
+      </div>
+    </section>
+
+    <!-- ---------- 1. LOGIN ---------- -->
+    <section class="screen" data-screen="login">
+      <div class="screen-head">
+        <div class="eyebrow">Màn 1</div>
+        <h2>Đăng nhập &amp; phân quyền (RBAC)</h2>
+        <p>Nhẹ về giao diện nhưng bắt buộc có, vì ràng buộc bảo mật: vai trò quyết định thấy gì và làm được gì.</p>
+      </div>
+      <div class="cols">
+        <div class="device">
+          <div class="browser-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">app.absorptionforecast.internal/login</span></div>
+          <div class="wf" style="max-width:420px;margin:0 auto;padding:34px 24px">
+            <div class="ph" style="height:40px;width:180px;margin:0 auto 22px"></div>
+            <div class="lbl">Tài khoản nội bộ</div>
+            <div class="box" style="height:34px;margin:6px 0 12px"></div>
+            <div class="lbl">Mật khẩu</div>
+            <div class="box" style="height:34px;margin:6px 0 18px"></div>
+            <div class="btn-wf solid" style="width:100%;justify-content:center">Đăng nhập</div>
+            <div class="callout-inline anno" style="margin-top:16px;display:flex;gap:8px;align-items:flex-start">
+              <span class="marker">1</span><span>Sau đăng nhập, hệ thống đọc vai trò và điều hướng tới dashboard tương ứng (Staff / Manager / Lãnh đạo).</span>
+            </div>
+          </div>
+        </div>
+        <div class="notes">
+          <h3>Ghi chú màn</h3>
+          <div class="note"><div class="marker">1</div><div class="body"><b>Điều hướng theo vai trò</b><span class="tag">RBAC</span><br><span class="mini">3 vai trò trong brief §4 → 3 "cấp nhìn". Staff không bao giờ thấy nút duyệt hay dữ liệu ngoài phân khu của mình.</span></div></div>
+          <div class="note"><div class="marker">i</div><div class="body"><b>Đăng nhập nội bộ</b><br><span class="mini">Dữ liệu bán hàng nhạy cảm → chỉ tài khoản nội bộ, không đăng ký công khai. Không lưu dữ liệu khách ra ngoài.</span></div></div>
+          <hr class="soft">
+          <div class="mini"><b>Cần xác nhận với team:</b> danh sách vai trò cuối cùng &amp; quyền của từng vai trò (lấy từ AI/Full-stack + MLOps).</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- 2. DASH STAFF ---------- -->
+    <section class="screen" data-screen="dash-staff">
+      <div class="screen-head">
+        <div class="eyebrow">Màn 2 · FR-01, FR-02</div>
+        <h2>Dashboard — Nhân viên kinh doanh</h2>
+        <p>Nhân viên theo dõi tốc độ hấp thụ &amp; nhận cảnh báo cạn hàng cho phân khu mình phụ trách. Cần đọc được trong ~10 giây.</p>
+      </div>
+      <div class="cols">
+        <div class="device">
+          <div class="browser-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">…/dashboard</span><span class="role-tag role-staff">Nhân viên KD · An</span></div>
+          <div class="wf">
+            <!-- top row: filters + alert -->
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+              <div style="display:flex;gap:8px">
+                <span class="pill">Phân khu ▾</span><span class="pill">Loại căn ▾</span><span class="pill">6 tháng ▾</span>
+              </div>
+              <div class="anno" style="display:flex;align-items:center;gap:8px"><span class="marker">2</span><span class="pill red">● 2 cảnh báo cạn hàng</span></div>
+            </div>
+
+            <!-- grid of cards -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+              <!-- card hot -->
+              <div class="box anno" style="padding:12px;position:relative">
+                <div style="display:flex;justify-content:space-between"><span class="mini">Phân khu A · 2PN</span><span class="pill red">Sắp cạn</span></div>
+                <div style="font-size:22px;font-weight:700;margin:6px 0 2px">~4.2 <span class="mini" style="font-weight:400">căn/tuần</span></div>
+                <div class="mini">Cạn dự kiến: <b>5–8 tuần</b></div>
+                <svg viewBox="0 0 200 40" class="chart" style="height:36px;margin-top:6px"><polyline class="hist" points="0,30 30,26 60,22 90,16 120,12 150,9 180,6"/></svg>
+                <span class="marker" style="position:absolute;top:-9px;left:-9px">1</span>
+              </div>
+              <!-- card slow -->
+              <div class="box" style="padding:12px">
+                <div style="display:flex;justify-content:space-between"><span class="mini">Phân khu A · 3PN</span><span class="pill gray">Bán chậm</span></div>
+                <div style="font-size:22px;font-weight:700;margin:6px 0 2px">~0.6 <span class="mini" style="font-weight:400">căn/tuần</span></div>
+                <div class="mini">Cạn dự kiến: <b>&gt; 40 tuần</b></div>
+                <svg viewBox="0 0 200 40" class="chart" style="height:36px;margin-top:6px"><polyline class="hist" points="0,20 30,21 60,19 90,22 120,20 150,21 180,20"/></svg>
+              </div>
+              <!-- card low-conf -->
+              <div class="box anno" style="padding:12px;position:relative;border-color:#ead9b6;background:#fffdf8">
+                <div style="display:flex;justify-content:space-between"><span class="mini">Phân khu C · 1PN</span><span class="pill amber">Độ tin thấp</span></div>
+                <div style="font-size:22px;font-weight:700;margin:6px 0 2px;color:var(--muted)">~2.1 <span class="mini" style="font-weight:400">căn/tuần</span></div>
+                <div class="mini">Cạn dự kiến: <b>khoảng rộng</b></div>
+                <svg viewBox="0 0 200 40" class="chart" style="height:36px;margin-top:6px"><polyline class="hist" style="stroke:#b9bfc6" points="0,28 30,18 60,26 90,14 120,24 150,16 180,22"/></svg>
+                <span class="marker w" style="position:absolute;top:-9px;left:-9px">3</span>
+              </div>
+            </div>
+            <div class="callout-inline">Mỗi ô = 1 phân khu × loại căn · màu = mức khẩn (đỏ sắp cạn / xám ế / hổ phách độ tin thấp) · bấm ô → màn Chi tiết.</div>
+          </div>
+        </div>
+        <div class="notes">
+          <h3>Ghi chú màn</h3>
+          <div class="note"><div class="marker">1</div><div class="body"><b>Tốc độ hấp thụ + ngày cạn</b><span class="tag">FR-01</span><br><span class="mini">Đơn vị hiển thị (căn/tuần) cần chốt với người dùng — brief chưa cố định. Cập nhật ≥1 lần/ngày (daily batch).</span></div></div>
+          <div class="note"><div class="marker">2</div><div class="body"><b>Cảnh báo cạn hàng trong app</b><span class="tag">FR-02</span><br><span class="mini">Đếm cảnh báo ở góc + mã màu đỏ trên ô. Ngưỡng "dưới X ngày" do nghiệp vụ định.</span></div></div>
+          <div class="note w"><div class="marker w">3</div><div class="body"><b>Nhãn "độ tin thấp"</b><span class="tag">Từ MLOps</span><br><span class="mini">Số dự báo làm mờ + nhãn hổ phách khi MAPE cao. Đây là tín hiệu định lượng từ role QA hiển thị ra người dùng.</span></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- 3. DASH MANAGER ---------- -->
+    <section class="screen" data-screen="dash-mgr">
+      <div class="screen-head">
+        <div class="eyebrow">Màn 3 · vai trò Quản lý</div>
+        <h2>Dashboard — Quản lý kinh doanh</h2>
+        <p>Xem toàn dự án + một hàng chờ "đề xuất cần duyệt". Đây là cửa vào luồng HITL.</p>
+      </div>
+      <div class="cols">
+        <div class="device">
+          <div class="browser-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">…/dashboard</span><span class="role-tag role-mgr">Quản lý KD · Bình</span></div>
+          <div class="wf">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+              <div class="box" style="padding:10px"><div class="lbl">Phân khu theo dõi</div><div style="font-size:20px;font-weight:700">12</div></div>
+              <div class="box" style="padding:10px"><div class="lbl">Sắp cạn (&lt;8 tuần)</div><div style="font-size:20px;font-weight:700;color:var(--bad)">3</div></div>
+              <div class="box" style="padding:10px"><div class="lbl">Bán chậm</div><div style="font-size:20px;font-weight:700">4</div></div>
+              <div class="box anno" style="padding:10px;position:relative;border-color:#b48fe0;background:var(--hitl-bg)"><div class="lbl">Chờ bạn duyệt</div><div style="font-size:20px;font-weight:700;color:var(--hitl)">2</div><span class="marker h" style="position:absolute;top:-9px;right:-9px">1</span></div>
+            </div>
+
+            <div class="lbl" style="margin-bottom:6px">Đề xuất chờ duyệt (HITL)</div>
+            <div class="box anno" style="padding:0;position:relative;overflow:hidden">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 12px;border-bottom:1px solid var(--line)">
+                <div><b style="font-size:13px">Phân khu A · 2PN</b> <span class="pill red">Sắp cạn 5–8 tuần</span><div class="mini" style="margin-top:3px">Đề xuất: giữ giá, siết ưu đãi · độ tin 82%</div></div>
+                <div class="btn-wf solid">Xem &amp; duyệt →</div>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 12px">
+                <div><b style="font-size:13px">Phân khu B · 1PN</b> <span class="pill gray">Bán chậm</span><div class="mini" style="margin-top:3px">Đề xuất: đẩy kích cầu, ưu tiên sale · độ tin 76%</div></div>
+                <div class="btn-wf solid">Xem &amp; duyệt →</div>
+              </div>
+            </div>
+
+            <div class="lbl" style="margin:16px 0 6px">Toàn dự án — tốc độ hấp thụ</div>
+            <div class="ph" style="height:90px;display:flex;align-items:center;justify-content:center;color:var(--ghost);font-size:12px">[ Biểu đồ tổng hợp theo phân khu × thời gian ]</div>
+          </div>
+        </div>
+        <div class="notes">
+          <h3>Ghi chú màn</h3>
+          <div class="note h"><div class="marker h">1</div><div class="body"><b>Hàng chờ duyệt là trung tâm</b><span class="tag">HITL</span><br><span class="mini">Quản lý vào là thấy ngay "cần mình quyết gì". Mỗi dòng dẫn thẳng vào màn Duyệt.</span></div></div>
+          <div class="note"><div class="marker">i</div><div class="body"><b>Toàn dự án</b><span class="tag">RBAC</span><br><span class="mini">Khác Staff: Manager thấy tất cả phân khu (brief §4) + số liệu tổng để ra quyết định chiến lược.</span></div></div>
+          <div class="note"><div class="marker">i</div><div class="body"><b>Độ tin hiện sớm</b><br><span class="mini">Mỗi đề xuất kèm % độ tin ngay ở hàng chờ, để quản lý ưu tiên xem cái đáng tin trước.</span></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- 4. DETAIL ---------- -->
+    <section class="screen" data-screen="detail">
+      <div class="screen-head">
+        <div class="eyebrow">Màn 4 · FR-03, FR-05</div>
+        <h2>Chi tiết dự báo</h2>
+        <p>Nơi con số dự báo được đặt cạnh <b>khoảng tin cậy</b>, <b>giả định</b> và <b>giải thích ngôn ngữ tự nhiên</b>. Mọi dự báo đều phải có dải tin cậy — không có số trần.</p>
+      </div>
+      <div class="cols">
+        <div class="device">
+          <div class="browser-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">…/forecast/phankhu-A/2pn</span></div>
+          <div class="wf">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+              <div><b style="font-size:15px">Phân khu A · Căn 2PN</b><div class="mini">Tồn kho hiện tại: 34 căn</div></div>
+              <span class="pill green">Độ tin cậy 82% (MAPE 11%)</span>
+            </div>
+
+            <!-- chart with band -->
+            <div class="box anno" style="padding:12px;position:relative">
+              <svg viewBox="0 0 520 170" class="chart" style="height:170px">
+                <g class="grid">
+                  <line x1="40" y1="20" x2="510" y2="20"/><line x1="40" y1="60" x2="510" y2="60"/><line x1="40" y1="100" x2="510" y2="100"/><line x1="40" y1="140" x2="510" y2="140"/>
+                </g>
+                <line class="axis" x1="40" y1="20" x2="40" y2="140"/><line class="axis" x1="40" y1="140" x2="510" y2="140"/>
+                <!-- confidence band on forecast portion -->
+                <path class="band" d="M300,70 L360,58 L420,44 L480,30 L480,86 L420,94 L360,100 L300,104 Z"/>
+                <!-- history solid -->
+                <polyline class="hist" points="40,120 100,112 160,100 220,92 300,86"/>
+                <!-- forecast dashed -->
+                <polyline class="fcast" points="300,86 360,78 420,68 480,58"/>
+                <!-- sellout marker -->
+                <line class="marker-x" x1="450" y1="20" x2="450" y2="140"/>
+                <text x="452" y="32" font-size="10" fill="#c0432f">cạn dự kiến</text>
+                <text x="300" y="158" font-size="9" fill="#9aa2ab">hôm nay</text>
+              </svg>
+              <div style="display:flex;gap:16px;margin-top:6px" class="mini">
+                <span>━ Thực tế</span><span style="color:#2f6fdb">╌ Dự báo</span><span style="color:#2f6fdb">▨ Khoảng tin cậy 90%</span><span style="color:#c0432f">┆ Ngày cạn</span>
+              </div>
+              <span class="marker" style="position:absolute;top:-9px;left:-9px">1</span>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+              <div class="box anno" style="padding:12px;position:relative">
+                <div class="lbl">Thời điểm cạn hàng</div>
+                <div style="font-size:18px;font-weight:700">5 – 8 tuần</div>
+                <div class="mini">khoảng 90% · điểm giữa ~6.5 tuần</div>
+                <span class="marker" style="position:absolute;top:-9px;left:-9px">2</span>
+              </div>
+              <div class="box anno" style="padding:12px;position:relative">
+                <div class="lbl">Giả định của dự báo</div>
+                <div class="mini" style="margin-top:4px">• Tốc độ 3 tháng gần nhất tiếp diễn<br>• Không có deal sỉ bất thường<br>• Giá &amp; chính sách giữ nguyên</div>
+                <span class="marker" style="position:absolute;top:-9px;left:-9px">3</span>
+              </div>
+            </div>
+
+            <div class="box anno" style="padding:12px;margin-top:12px;position:relative">
+              <div class="lbl">Giải thích (do AI sinh) — yếu tố tác động</div>
+              <div class="txtline w80"></div><div class="txtline"></div><div class="txtline w60"></div>
+              <div style="margin-top:8px" class="mini"><b>Đề xuất hành động:</b> giữ giá, siết dần ưu đãi khi tồn kho về ngưỡng thấp.</div>
+              <span class="marker" style="position:absolute;top:-9px;left:-9px">4</span>
+            </div>
+
+            <div style="margin-top:14px;text-align:right">
+              <span class="mini" style="margin-right:10px">Vai trò Quản lý mới thấy nút này →</span>
+              <span class="btn-wf" style="border-color:#b48fe0;color:#8a4fca">Chuyển sang duyệt (HITL)</span>
+            </div>
+          </div>
+        </div>
+        <div class="notes">
+          <h3>Ghi chú màn</h3>
+          <div class="note"><div class="marker">1</div><div class="body"><b>Dải khoảng tin cậy</b><span class="tag">FR-05</span><br><span class="mini">Vùng bóng mờ quanh đường dự báo = hiện thân trực quan của ràng buộc "minh bạch". Bắt buộc, không được vẽ đường trần.</span></div></div>
+          <div class="note"><div class="marker">2</div><div class="body"><b>Ngày cạn dạng khoảng</b><br><span class="mini">"5–8 tuần" chứ không phải "6 tuần" cứng — tránh gây hiểu lầm là số chắc chắn (Brief §9).</span></div></div>
+          <div class="note"><div class="marker">3</div><div class="body"><b>Giả định hiển thị rõ</b><span class="tag">Ràng buộc</span><br><span class="mini">Người duyệt phải biết dự báo dựa trên gì. Field này cần AI/Full-stack cho tool xuất ra.</span></div></div>
+          <div class="note"><div class="marker">4</div><div class="body"><b>Giải thích + đề xuất</b><span class="tag">FR-03</span><br><span class="mini">LLM diễn giải yếu tố tác động + gợi ý hành động. Cần chốt định dạng: có cấu trúc (yếu tố / giả định / khuyến nghị) để hiển thị gọn.</span></div></div>
+          <hr class="soft">
+          <div class="mini"><b>Hợp đồng dữ liệu cần chốt:</b> tool trả về <span class="kbd">điểm</span> <span class="kbd">cận trên</span> <span class="kbd">cận dưới</span> <span class="kbd">mức tin cậy</span> <span class="kbd">ngày cạn (khoảng)</span> <span class="kbd">giả định[]</span> <span class="kbd">giải thích</span> <span class="kbd">MAPE</span>.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- 5. HITL ---------- -->
+    <section class="screen" data-screen="hitl">
+      <div class="screen-head">
+        <div class="eyebrow">Màn 5 · FR-04 · ★ Màn quan trọng nhất</div>
+        <h2>Duyệt HITL</h2>
+        <p>Toàn bộ ràng buộc HITL thất bại nếu màn này không cho quản lý đủ cơ sở để bấm Duyệt một cách tự tin. Ba ràng buộc hội tụ tại đây: HITL + khoảng tin cậy + giả định. Màn phải "thành thật" cả khi độ tin thấp.</p>
+      </div>
+      <div class="cols">
+        <div class="device">
+          <div class="browser-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">…/approve/req-2041</span><span class="role-tag role-mgr">Quản lý KD · Bình</span></div>
+          <div class="wf">
+            <div class="box" style="padding:14px">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                <div><b style="font-size:15px">Đề xuất #2041 · Phân khu A · 2PN</b><div class="mini">Agent tạo lúc 06:00 hôm nay · dựa trên dữ liệu tới hết hôm qua</div></div>
+                <span class="pill green">Độ tin 82%</span>
+              </div>
+
+              <hr class="soft">
+
+              <!-- decision-support block -->
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="anno" style="position:relative">
+                  <div class="lbl">Dự báo &amp; khoảng tin cậy</div>
+                  <div style="font-size:15px;font-weight:700;margin-top:3px">Cạn trong 5–8 tuần</div>
+                  <div class="mini">tốc độ 3.8–4.6 căn/tuần · CI 90%</div>
+                  <span class="marker h" style="position:absolute;top:-8px;left:-9px">1</span>
+                </div>
+                <div class="anno" style="position:relative">
+                  <div class="lbl">Độ tin cậy dữ liệu</div>
+                  <div class="mini" style="margin-top:3px">MAPE phân khu này: <b>11%</b> · lịch sử 14 tháng · không thiếu tháng</div>
+                  <span class="marker w" style="position:absolute;top:-8px;left:-9px">2</span>
+                </div>
+              </div>
+
+              <div class="anno" style="position:relative;margin-top:12px">
+                <div class="lbl">Giả định</div>
+                <div class="mini">Tốc độ 3 tháng gần nhất tiếp diễn · không có deal sỉ · giá giữ nguyên</div>
+                <span class="marker h" style="position:absolute;top:-8px;left:-9px">3</span>
+              </div>
+
+              <div class="box anno" style="padding:11px;margin-top:12px;background:var(--fill);position:relative">
+                <div class="lbl">Agent đề xuất</div>
+                <div style="font-size:13px;margin-top:2px">Giữ giá, siết dần ưu đãi khi tồn kho về ngưỡng thấp.</div>
+                <span class="marker" style="position:absolute;top:-8px;left:-9px">4</span>
+              </div>
+
+              <div class="lbl" style="margin:14px 0 5px">Ghi chú của quản lý (bắt buộc khi từ chối)</div>
+              <div class="box" style="height:44px;background:#fff"></div>
+
+              <div class="anno" style="display:flex;gap:10px;margin-top:14px;position:relative">
+                <div class="btn-wf approve" style="flex:1;justify-content:center">✓ Duyệt &amp; áp dụng</div>
+                <div class="btn-wf reject" style="flex:1;justify-content:center">✕ Từ chối</div>
+                <span class="marker h" style="position:absolute;top:-8px;left:-9px">5</span>
+              </div>
+              <div class="callout-inline">Duyệt → thành chính sách + ghi audit. Từ chối → yêu cầu lý do + ghi audit. Cả hai đều lưu vết.</div>
+            </div>
+          </div>
+        </div>
+        <div class="notes">
+          <h3>Ghi chú màn</h3>
+          <div class="note h"><div class="marker h">1</div><div class="body"><b>Dự báo kèm khoảng</b><span class="tag">FR-05</span><br><span class="mini">Không bao giờ hiện một con số trần trên màn quyết định.</span></div></div>
+          <div class="note w"><div class="marker w">2</div><div class="body"><b>Tín hiệu độ tin từ QA</b><span class="tag">MLOps</span><br><span class="mini">MAPE + độ dài lịch sử + cờ thiếu tháng. Nếu độ tin thấp, khối này chuyển hổ phách và cảnh báo "cân nhắc kỹ".</span></div></div>
+          <div class="note h"><div class="marker h">3</div><div class="body"><b>Giả định trước mắt người duyệt</b><br><span class="mini">Quản lý duyệt cái gì thì phải thấy cái đó dựa trên giả định nào.</span></div></div>
+          <div class="note"><div class="marker">4</div><div class="body"><b>Đề xuất tách khỏi dữ kiện</b><span class="tag">FR-03</span><br><span class="mini">Người duyệt được quyền không đồng ý với Agent — bố cục để phản biện dễ, không "dụ" bấm duyệt.</span></div></div>
+          <div class="note h"><div class="marker h">5</div><div class="body"><b>Duyệt / Từ chối + lý do</b><span class="tag">FR-04 · Audit</span><br><span class="mini">Từ chối bắt buộc ghi lý do → phục vụ khả năng kiểm toán (Brief §7).</span></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- 6. EDGE STATES ---------- -->
+    <section class="screen" data-screen="edge">
+      <div class="screen-head">
+        <div class="eyebrow">Màn 6 · Nhánh xấu</div>
+        <h2>Trạng thái đặc biệt</h2>
+        <p>Hai trạng thái phải thiết kế rõ, nếu không sản phẩm sẽ hiển thị dự báo bậy mà không cảnh báo (Brief §10 — rủi ro dữ liệu đầu giai đoạn).</p>
+      </div>
+      <div class="cols">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+          <!-- insufficient -->
+          <div class="device">
+            <div class="browser-bar"><span class="dot"></span><span class="dot"></span><span class="url">…/forecast/phankhu-D</span></div>
+            <div class="wf" style="text-align:center;padding:30px 20px">
+              <div class="ph" style="height:60px;width:60px;border-radius:50%;margin:0 auto 14px"></div>
+              <b>Chưa đủ dữ liệu để dự báo</b>
+              <div class="mini" style="margin:6px auto 0;max-width:34ch">Phân khu D mới mở bán, mới có 3 tháng lịch sử (cần ≥ ngưỡng tối thiểu). Hệ thống chưa đưa ra dự báo để tránh sai lệch.</div>
+              <div class="btn-wf" style="margin-top:14px">Xem dữ liệu thô</div>
+              <div class="anno" style="margin-top:12px;display:flex;justify-content:center"><span class="marker w">1</span></div>
+            </div>
+          </div>
+          <!-- low confidence -->
+          <div class="device">
+            <div class="browser-bar"><span class="dot"></span><span class="dot"></span><span class="url">…/forecast/phankhu-C</span></div>
+            <div class="wf" style="padding:18px">
+              <div class="box" style="padding:10px;border-color:#ead9b6;background:#fffdf8">
+                <span class="pill amber">⚠ Độ tin thấp · MAPE 34%</span>
+                <div class="mini" style="margin-top:8px">Dự báo cho phân khu này biến động mạnh (bán 0–1 căn/tháng). Dùng để tham khảo, <b>không nên</b> làm căn cứ chính sách nếu chưa kiểm tra thực tế.</div>
+              </div>
+              <svg viewBox="0 0 300 70" class="chart" style="height:70px;margin-top:12px">
+                <path class="band" style="opacity:.18" d="M150,25 L200,15 L250,8 L250,60 L200,52 L150,45 Z"/>
+                <polyline class="hist" style="stroke:#b9bfc6" points="10,50 50,40 90,52 130,42 150,45"/>
+                <polyline class="fcast" points="150,45 200,34 250,26"/>
+              </svg>
+              <div class="mini" style="margin-top:4px">Dải tin cậy rất rộng = mô hình không chắc.</div>
+              <div class="anno" style="margin-top:10px;display:flex"><span class="marker w">2</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="notes">
+          <h3>Ghi chú màn</h3>
+          <div class="note w"><div class="marker w">1</div><div class="body"><b>Dữ liệu không đủ → không dự báo</b><span class="tag">MLOps</span><br><span class="mini">Ngưỡng tối thiểu (VD ≥12 điểm) do QA đặt. Thà nói "chưa đủ" còn hơn số bừa.</span></div></div>
+          <div class="note w"><div class="marker w">2</div><div class="body"><b>Độ tin thấp → cảnh báo, không giấu</b><span class="tag">Brief §10</span><br><span class="mini">MAPE cao (hay gặp ở phân khu bán 0–1 căn) → nhãn rõ + dải tin cậy rộng. HITL yêu cầu "duyệt kỹ hơn".</span></div></div>
+          <hr class="soft">
+          <div class="mini">Đây là chỗ UI Flow rẽ nhánh xấu ở màn 0. Nếu thiếu 2 trạng thái này, demo sẽ vỡ trước mentor.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- 7. AUDIT ---------- -->
+    <section class="screen" data-screen="audit">
+      <div class="screen-head">
+        <div class="eyebrow">Màn 7 · Non-functional §7</div>
+        <h2>Nhật ký &amp; khả năng kiểm toán</h2>
+        <p>Brief yêu cầu lưu lịch sử dự báo, đề xuất và quyết định duyệt/từ chối. Màn này cũng là nơi role MLOps đọc AI Log để theo dõi chi phí &amp; drift.</p>
+      </div>
+      <div class="cols">
+        <div class="device">
+          <div class="browser-bar"><span class="dot"></span><span class="dot"></span><span class="url">…/audit</span><span class="role-tag role-mgr">Quản lý KD</span></div>
+          <div class="wf">
+            <div style="display:flex;gap:8px;margin-bottom:12px"><span class="pill">Phân khu ▾</span><span class="pill">Trạng thái ▾</span><span class="pill">30 ngày ▾</span></div>
+            <div class="box" style="overflow:hidden">
+              <div style="display:grid;grid-template-columns:90px 1.4fr 1fr 90px 80px;gap:0;background:var(--fill2);padding:9px 12px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">
+                <div>Thời gian</div><div>Đề xuất</div><div>Người duyệt</div><div>Kết quả</div><div>Độ tin</div>
+              </div>
+              <div style="display:grid;grid-template-columns:90px 1.4fr 1fr 90px 80px;padding:11px 12px;border-top:1px solid var(--line);font-size:12px;align-items:center">
+                <div class="mini">29/07 06:00</div><div>A·2PN — giữ giá</div><div>Bình</div><div><span class="pill green">Đã duyệt</span></div><div class="mini">82%</div>
+              </div>
+              <div style="display:grid;grid-template-columns:90px 1.4fr 1fr 90px 80px;padding:11px 12px;border-top:1px solid var(--line);font-size:12px;align-items:center">
+                <div class="mini">29/07 06:00</div><div>B·1PN — kích cầu</div><div>Bình</div><div><span class="pill red">Từ chối</span></div><div class="mini">76%</div>
+              </div>
+              <div style="display:grid;grid-template-columns:90px 1.4fr 1fr 90px 80px;padding:11px 12px;border-top:1px solid var(--line);font-size:12px;align-items:center">
+                <div class="mini">28/07 06:00</div><div>C·1PN — (không dự báo)</div><div>—</div><div><span class="pill amber">Độ tin thấp</span></div><div class="mini">34%</div>
+              </div>
+            </div>
+            <div class="anno" style="margin-top:14px;display:flex;gap:10px;align-items:flex-start">
+              <span class="marker">1</span>
+              <div class="box" style="padding:10px;flex:1;background:var(--fill)">
+                <div class="lbl">Bảng theo dõi vận hành (cho MLOps)</div>
+                <div class="mini" style="margin-top:4px">Lượt gọi LLM hôm nay: 12 · Chi phí ước tính: $0.34 · Lần tính lại/phân khu: 1/ngày ✓ trong ngưỡng</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="notes">
+          <h3>Ghi chú màn</h3>
+          <div class="note"><div class="marker">i</div><div class="body"><b>Lưu vết mọi quyết định</b><span class="tag">Audit §7</span><br><span class="mini">Ai duyệt, khi nào, dựa trên dự báo/độ tin nào, lý do từ chối. Bằng chứng khi rà soát chính sách.</span></div></div>
+          <div class="note"><div class="marker">1</div><div class="body"><b>Cửa sổ chi phí & AI Log</b><span class="tag">MLOps</span><br><span class="mini">Gắn với ràng buộc kiểm soát chi phí: đếm lượt gọi LLM, xác nhận không tính lại quá 1 lần/ngày/phân khu. Nối trực tiếp với "AI Log Setup" ở Deliverable 4.</span></div></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  const btns=document.querySelectorAll('.navbtn');
+  const screens=document.querySelectorAll('.screen');
+
+  function navTo(id){
+    btns.forEach(x=>x.classList.toggle('active', x.dataset.s===id));
+    screens.forEach(s=>s.classList.toggle('show', s.dataset.screen===id));
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+
+  btns.forEach(b=>b.addEventListener('click',()=>navTo(b.dataset.s)));
+
+  // Ô trong sơ đồ UI Flow -> nhảy tới wireframe màn tương ứng
+  document.querySelectorAll('.fnode[data-goto]').forEach(n=>{
+    n.addEventListener('click',()=>navTo(n.dataset.goto));
+  });
+</script>
+</body>
+</html>
