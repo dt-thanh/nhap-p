@@ -6,6 +6,9 @@
 **Ngày cập nhật:** 01/08/2026
 **Product Owner:** G21 - T100 - Nguyễn Đức Đạt, Bùi Hoàng Vương, Nguyễn Trọng Nam, Đặng Tiến Thành
 **Tài liệu kỹ thuật:** [SRS.md](SRS.md) — nguồn tham chiếu cho phạm vi và kiến trúc
+**Ngày cập nhật:** 29/07/2026
+**Product Owner:** G21 - T100 - Nguyễn Đức Đạt, Bùi Hoàng Vương, Nguyễn Trọng Nam, Đặng Tiến Thành
+
 ---
 
 ## 1. Bối cảnh

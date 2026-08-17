@@ -1,36 +1,51 @@
-import { useEffect, useState } from "react";
+// frontend/src/App.jsx
+// Router tổng của AbsorbIQ.
+//   • "/" và "/login", "/register" : full-screen, không có topbar app.
+//   • Còn lại: bọc trong <AppLayout/> (topbar thương hiệu + ChatWidget).
+//
+// NỐI BACKEND: MVP1 chưa chặn quyền — mọi route đều vào được (đang chạy mock).
+// MVP3 sẽ thêm <ProtectedRoute> kiểm tra đăng nhập trước AppLayout.
+import React from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
-/**
- * Khung frontend tối thiểu: xác nhận React gọi được backend qua compose network.
- * Các màn hình thật (UploadPage, AbsorptionChart, ForecastCard, ProposalInbox)
- * sẽ dựng theo SRS §5.2–5.4.
- */
+import HomePage from "./pages/HomePage";
+import LoginPage from "./pages/LoginPage";
+import RegisterPage from "./pages/RegisterPage";
+import AppLayout from "./components/AppLayout";
+import DashboardPage from "./pages/DashboardPage";
+import InventoryPage from "./pages/InventoryPage";
+import AgentPage from "./pages/AgentPage";
+import AuditPage from "./pages/AuditPage";
+import ProjectsPage from "./pages/ProjectsPage";
+import ProjectDetailPage from "./pages/ProjectDetailPage";
+import AreaDetailPage from "./pages/AreaDetailPage";
+import ImportSelectPage from "./pages/ImportSelectPage";
+import UploadPage from "./pages/UploadPage";
+
 export default function App() {
-  const [health, setHealth] = useState({ state: "loading" });
-
-  useEffect(() => {
-    fetch("/health")
-      .then((r) => r.json())
-      .then((data) => setHealth({ state: "ok", data }))
-      .catch((err) => setHealth({ state: "error", message: String(err) }));
-  }, []);
-
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", maxWidth: 640 }}>
-      <h1>AbsorptionForecast AI Agent</h1>
-      <p>Frontend đã chạy. Trạng thái kết nối backend:</p>
-      <pre
-        style={{
-          background: "#f1f3f5",
-          padding: "1rem",
-          borderRadius: 8,
-          overflowX: "auto",
-        }}
-      >
-        {health.state === "loading" && "Đang kiểm tra /health..."}
-        {health.state === "ok" && JSON.stringify(health.data, null, 2)}
-        {health.state === "error" && `Không gọi được backend: ${health.message}`}
-      </pre>
-    </main>
+    <BrowserRouter>
+      <Routes>
+        {/* Không có khung app */}
+        <Route path="/" element={<HomePage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+
+        {/* Có khung app (topbar + chat) */}
+        <Route element={<AppLayout />}>
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/ai-agent" element={<AgentPage />} />
+          <Route path="/audit" element={<AuditPage />} />
+          <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/projects/:id" element={<ProjectDetailPage />} />
+          <Route path="/projects/:id/areas/:areaId" element={<AreaDetailPage />} />
+          <Route path="/import" element={<ImportSelectPage />} />
+          <Route path="/import/upload" element={<UploadPage />} />
+        </Route>
+
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }

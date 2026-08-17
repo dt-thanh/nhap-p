@@ -1,0 +1,54 @@
+# ============================================================
+# CI/CD: Tự động build + deploy CRM frontend lên Cloudflare Pages
+# Chạy mỗi khi push code vào nhánh chính (chỉ khi crm-frontend đổi).
+# ============================================================
+name: Deploy CRM Frontend
+
+on:
+  push:
+    branches: 
+      - main          # ⬅ đổi thành nhánh chính của bạn (vd: staging)
+      - creat_frontend_crm
+      - staging
+    paths:
+      - 'crm-frontend/**'     # chỉ chạy khi có thay đổi trong crm-frontend
+      - '.github/workflows/deploy-crm.yml'
+  workflow_dispatch:          # cho phép bấm chạy tay trên tab Actions
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      # 1) Lấy code về
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2) Cài Node.js 20 (Vite 8 cần Node 20+)
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: crm-frontend/package-lock.json
+
+      # 3) Cài thư viện (dùng npm ci cho CI — nhanh & ổn định)
+      - name: Install
+        working-directory: crm-frontend
+        run: npm ci
+
+      # 4) Kiểm tra kiểu + build ra thư mục dist/
+      - name: Build
+        working-directory: crm-frontend
+        run: npm run build
+
+      # 5) Đẩy dist/ lên Cloudflare Pages
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: crm-frontend
+          command: pages deploy dist --project-name=crm-frontend --branch=${{ github.ref_name }}

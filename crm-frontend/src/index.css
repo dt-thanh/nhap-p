@@ -1,0 +1,20 @@
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body { @apply bg-surface-page text-ink font-body antialiased; }
+  ::selection { @apply bg-teal/20 text-ink; }
+}
+
+@layer components {
+  .stat-card { @apply rounded-card border border-line bg-surface-card p-5 shadow-card; }
+  .btn-teal { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-teal px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-600; }
+  .btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-lg border border-line-strong bg-white px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:bg-surface-page; }
+  .input { @apply w-full rounded-lg border border-line-strong bg-white px-3.5 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-teal focus:outline-none focus:ring-2 focus:ring-teal/20; }
+  .th-cell { @apply px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-faint; }
+  .td-cell { @apply px-4 py-3.5 text-sm text-ink; }
+}

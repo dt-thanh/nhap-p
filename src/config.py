@@ -26,10 +26,14 @@ class Settings(BaseSettings):
 
     # LLM — SecretStr để repr(settings) không lộ key
     llm_api_key: SecretStr = SecretStr("")
-    llm_model: str = "gpt-4o-mini"
+    llm_model: str = "gemini-2.5-flash"
     openai_api_key: SecretStr = SecretStr("")  # fallback tương thích ngược
     model_name: str = ""  # fallback tương thích ngược
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    llm_provider: str = "gemini"
+    google_api_key: SecretStr = SecretStr("")
+    gemini_thinking_budget: int = Field(default=1024, ge=0, le=24576)
+    gemini_max_output_tokens: int = Field(default=2048, ge=256, le=8192)
 
     # Database
     database_url: SecretStr = SecretStr("postgresql+asyncpg://app:app@db:5432/absorption")
@@ -52,11 +56,11 @@ class Settings(BaseSettings):
 
     @property
     def resolved_llm_api_key(self) -> str:
-        return self.llm_api_key.get_secret_value() or self.openai_api_key.get_secret_value()
+        return self.google_api_key.get_secret_value() or self.llm_api_key.get_secret_value() or self.openai_api_key.get_secret_value()
 
     @property
     def resolved_llm_model(self) -> str:
-        return self.llm_model or self.model_name or "gpt-4o-mini"
+        return self.llm_model or self.model_name or "gemini-2.5-flash"
 
     @property
     def database_dsn(self) -> str:
