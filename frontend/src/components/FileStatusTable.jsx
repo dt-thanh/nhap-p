@@ -10,10 +10,19 @@ const STATUS = {
   failed:  { label: "Thất bại",  bg: color.dangerSoft, fg: color.danger },
 };
 
-export default function FileStatusTable({ files = [], loading, onViewErrors }) {
+// Phase 5.5 P0 (F-1): file tải tay và lô đồng bộ CRM có hình dạng khác nhau —
+// lô CRM không có `filename` (NULL), mà có `external_batch_id`/`source_system`.
+// Cột đầu tiên đổi Ý NGHĨA theo `transportMode` thay vì đoán qua from `f.filename`.
+export default function FileStatusTable({ files = [], loading, transportMode = "file_upload", onViewErrors }) {
+  const isCrm = transportMode === "api_push";
+
   if (loading) return <div style={S.state}>Đang tải lịch sử…</div>;
   if (!files.length) {
-    return <div style={S.state}>Chưa có file nào được nạp. Tải lên file đầu tiên để bắt đầu.</div>;
+    return (
+      <div style={S.state}>
+        {isCrm ? "Chưa có lô đồng bộ CRM nào." : "Chưa có file nào được nạp. Tải lên file đầu tiên để bắt đầu."}
+      </div>
+    );
   }
 
   return (
@@ -21,11 +30,11 @@ export default function FileStatusTable({ files = [], loading, onViewErrors }) {
       <table style={S.table}>
         <thead>
           <tr>
-            <th style={S.th}>Tên file</th>
+            <th style={S.th}>{isCrm ? "Lô đồng bộ" : "Tên file"}</th>
             <th style={S.th}>Trạng thái</th>
             <th style={{ ...S.th, textAlign: "right" }}>Dòng hợp lệ</th>
             <th style={{ ...S.th, textAlign: "right" }}>Dòng lỗi</th>
-            <th style={S.th}>Nạp lúc</th>
+            <th style={S.th}>{isCrm ? "Đồng bộ lúc" : "Nạp lúc"}</th>
             <th style={S.th} />
           </tr>
         </thead>
@@ -34,7 +43,16 @@ export default function FileStatusTable({ files = [], loading, onViewErrors }) {
             const st = STATUS[f.status] || STATUS.pending;
             return (
               <tr key={f.id}>
-                <td style={{ ...S.td, fontWeight: 500, color: color.ink }}>{f.filename}</td>
+                <td style={{ ...S.td, fontWeight: 500, color: color.ink }}>
+                  {isCrm ? (
+                    <>
+                      <div>{f.external_batch_id || "(không có mã lô)"}</div>
+                      <div style={S.subtle}>{f.source_system || "—"}</div>
+                    </>
+                  ) : (
+                    f.filename ?? "(không có tên file)"
+                  )}
+                </td>
                 <td style={S.td}>
                   <span style={{ ...S.badge, background: st.bg, color: st.fg }}>{st.label}</span>
                 </td>
@@ -83,6 +101,7 @@ const S = {
     borderBottom: `1px solid ${color.border}`, color: color.body,
   },
   num: { textAlign: "right", fontVariantNumeric: "tabular-nums", fontFamily: font.mono, fontSize: size.tiny },
+  subtle: { fontSize: size.tiny, color: color.muted, fontWeight: 400, marginTop: 2 },
   badge: {
     display: "inline-block", fontSize: size.tiny, fontWeight: 600,
     padding: "3px 10px", borderRadius: radius.pill,

@@ -1,9 +1,11 @@
 // frontend/src/pages/DashboardPage.jsx
-// Trang /dashboard — prototype điều hành mở bán theo đặc tả BĐS AI Agent.
-// Dashboard cũ vẫn được giữ nguyên trong components/dashboard để đối chiếu.
+// Route /dashboard cũ không còn ngữ cảnh dự án nào để chọn mặc định — dashboard
+// nghiệp vụ giờ sống ở /projects/:externalId/dashboard (một dự án, chọn tường
+// minh qua URL, không đoán "dự án đầu tiên"). Giữ route này làm lối vào ngắn,
+// chuyển thẳng sang trang chọn dự án thay vì 404 hay hiện một dashboard rỗng.
 import React from "react";
-import MarketPrototypePage from "./MarketPrototypePage";
+import { Navigate } from "react-router-dom";
 
 export default function DashboardPage() {
-  return <MarketPrototypePage view="home" />;
+  return <Navigate to="/projects" replace />;
 }

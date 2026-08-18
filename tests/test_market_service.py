@@ -1,37 +1,37 @@
-﻿from src.services.market import SimulationMarketRepository
+from src.services.market import _market_status, _score_percent, _unit_payload
 
 
-def test_market_starts_with_all_units_locked():
-    repo = SimulationMarketRepository()
-    snapshot = repo.snapshot()
-    assert snapshot["phase"]["kind"] == "idle"
-    assert snapshot["metrics"]["active_total"] == 100
-    assert snapshot["metrics"]["locked"] == 100
+def test_deal_status_overrides_unit_status():
+    assert _market_status("available", "reserved") == "reserved"
+    assert _market_status("available", "sold") == "sold"
 
 
-def test_phase_can_only_move_forward():
-    repo = SimulationMarketRepository()
-    try:
-        repo.change_phase("previous", True, "Admin test")
-    except ValueError as exc:
-        assert str(exc) == "phase_only_forward"
-    else:
-        raise AssertionError("previous phase change should be rejected")
+def test_score_is_rendered_as_percent_or_null():
+    assert _score_percent("0.876") == 88
+    assert _score_percent(None) is None
 
 
-def test_sale_scenario_changes_booking_to_transacted():
-    repo = SimulationMarketRepository()
-    repo.change_phase("next", True, "Admin test")
-    booking_snapshot = repo.snapshot()
-    assert booking_snapshot["phase"]["id"] == "booking_1"
-    assert booking_snapshot["metrics"]["booking"] > 0
+def test_unit_payload_uses_database_row_fields():
+    row = {
+        "unit_id": "11111111-1111-1111-1111-111111111111",
+        "unit_code": "A-0101",
+        "unit_type": "2BR",
+        "unit_status": "available",
+        "area_id": "22222222-2222-2222-2222-222222222222",
+        "area_external_id": "AREA-1",
+        "area_name": "Tower A",
+        "area_sqm": "75.5",
+        "score": "0.654",
+        "rank_in_project": 3,
+        "rank_in_area": 1,
+        "deal_status": None,
+    }
 
-    repo.change_phase("next", True, "Admin test")
-    sale_snapshot = repo.snapshot()
-    before = sale_snapshot["metrics"]["transacted"]
-    assert sale_snapshot["phase"]["id"] == "sale_1"
-    assert sale_snapshot["metrics"]["booking"] > 0
+    payload = _unit_payload(row)
 
-    result = repo.run_scenario("buying_wave", 40, True, "Admin test")
-    assert result["affected"] > 0
-    assert result["snapshot"]["metrics"]["transacted"] > before
+    assert payload["id"] == "A-0101"
+    assert payload["tower"] == "Tower A"
+    assert payload["status"] == "Available"
+    assert payload["area"] == 75.5
+    assert payload["score"] == 65
+    assert payload["phase_id"] == "db_snapshot"

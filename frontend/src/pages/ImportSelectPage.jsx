@@ -7,7 +7,7 @@
 // truyền sang UploadPage qua router state.
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { listProjects, listProjectZones } from "../api/endpoints";
+import { listProjectsForImport, listProjectZones } from "../api/endpoints";
 import { color, size, radius, shadow, space, font, layout } from "../styles/tokens";
 import { useBreakpoint, pick } from "../hooks/useBreakpoint";
 
@@ -30,7 +30,7 @@ export default function ImportSelectPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    listProjects().then((p) => setProjects(p || [])).finally(() => setLoading(false));
+    listProjectsForImport().then((p) => setProjects(p || [])).finally(() => setLoading(false));
   }, []);
 
   function chooseProject(p) {
@@ -136,48 +136,41 @@ function Stepper({ stage, project }) {
 }
 
 function ProjectCard({ p, onClick }) {
+  // `ProjectSummary` không có location/zone_count/total_units/sold_pct ở mức
+  // danh sách (xem endpoints.js:listProjectsForImport) — chỉ hiện những gì
+  // THẬT: tên và ngày mở bán. Số phân khu/tổng căn chỉ có SAU khi chọn dự án
+  // (bước 2, `listProjectZones` — một lời gọi, đúng phạm vi MỘT dự án).
   return (
     <button style={S.card} onClick={onClick}>
       <div style={S.cardTop}>
         <span style={S.projName}>{p.name}</span>
         <span style={S.chevron} aria-hidden="true">›</span>
       </div>
-      <div style={S.projLoc}>{p.location}</div>
-
-      <div style={S.projStats}>
-        <span>{p.zone_count} phân khu</span>
-        <span style={S.dotSep}>·</span>
-        <span>{p.total_units.toLocaleString("vi-VN")} căn</span>
-      </div>
-
-      {/* thanh tiến độ bán */}
-      <div style={S.barWrap}>
-        <div style={S.barTrack}>
-          <div style={{ ...S.barFill, width: `${p.sold_pct}%` }} />
-        </div>
-        <span style={S.barLabel}>{p.sold_pct}% đã bán</span>
-      </div>
+      {p.launch_date && (
+        <div style={S.projLoc}>Mở bán {new Date(p.launch_date).toLocaleDateString("vi-VN")}</div>
+      )}
     </button>
   );
 }
 
 function ZoneCard({ z, onClick }) {
-  const st = ZONE_STATUS[z.status] || ZONE_STATUS.normal;
-  const soldPct = Math.round(((z.total_units - z.units_remaining) / z.total_units) * 100);
+  const st = z.status ? ZONE_STATUS[z.status] : null;
+  const hasInventory = z.total_units > 0 && z.units_remaining != null;
+  const soldPct = hasInventory ? Math.round(((z.total_units - z.units_remaining) / z.total_units) * 100) : null;
   return (
     <button style={S.card} onClick={onClick}>
       <div style={S.cardTop}>
         <span style={S.zoneName}>{z.name}</span>
-        <span style={{ ...S.statusChip, color: st.fg(), background: st.bg() }}>{st.label}</span>
+        {st && <span style={{ ...S.statusChip, color: st.fg(), background: st.bg() }}>{st.label}</span>}
       </div>
       <div style={S.zoneMeta}>
-        Còn <b style={{ color: color.ink }}>{z.units_remaining}</b> / {z.total_units} căn
+        Còn <b style={{ color: color.ink }}>{z.units_remaining == null ? "N/A" : z.units_remaining}</b> / {z.total_units ?? "N/A"} căn
       </div>
       <div style={S.barWrap}>
         <div style={S.barTrack}>
-          <div style={{ ...S.barFill, width: `${soldPct}%` }} />
+          <div style={{ ...S.barFill, width: `${soldPct ?? 0}%` }} />
         </div>
-        <span style={S.barLabel}>{soldPct}% đã bán</span>
+        <span style={S.barLabel}>{soldPct == null ? "N/A" : `${soldPct}% đã bán`}</span>
       </div>
     </button>
   );
@@ -237,8 +230,6 @@ const S = {
   projName: { fontSize: size.body, fontWeight: 700, color: color.ink, lineHeight: 1.3 },
   chevron: { fontSize: 20, color: color.muted, flex: "none", lineHeight: 1 },
   projLoc: { fontSize: size.tiny, color: color.muted },
-  projStats: { display: "flex", gap: space(2), fontSize: size.small, color: color.body, alignItems: "center" },
-  dotSep: { color: color.muted },
 
   zoneName: { fontSize: size.body, fontWeight: 700, color: color.ink },
   zoneMeta: { fontSize: size.small, color: color.muted },

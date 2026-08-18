@@ -8,6 +8,10 @@ from rq import Queue
 from src.config import get_settings
 
 FORECAST_QUEUE = "forecast"
+# Hàng đợi riêng cho parse file upload. Không dùng chung với `forecast` vì job
+# Prophet chạy hàng phút, mà UploadPage chỉ poll trạng thái trong 2 phút rồi
+# timeout (SRS §5.2) — parse xếp sau một forecast là coi như hỏng luồng upload.
+INGEST_QUEUE = "ingest"
 
 
 @lru_cache

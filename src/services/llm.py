@@ -1,20 +1,15 @@
 from typing import Any
 
-from langchain_openai import ChatOpenAI
-
 from src.config import get_settings
 from src.logging_config import get_logger
+from src.services.ai import OpenAIChatLLM
 
 log = get_logger("src.services.llm")
 
 
-def get_llm() -> ChatOpenAI:
+def get_llm():
     settings = get_settings()
-    return ChatOpenAI(
-        model=settings.resolved_llm_model,
-        api_key=settings.resolved_llm_api_key,
-        temperature=settings.llm_temperature,
-    )
+    return OpenAIChatLLM(model_name=settings.resolved_llm_model)
 
 
 def log_llm_call(
@@ -30,7 +25,7 @@ def log_llm_call(
     """Ghi metadata một lượt gọi LLM (SRS FR-020, NFR-L6).
 
     KHÔNG log prompt/completion đầy đủ. Ở development có thể bật
-    LLM_LOG_SNIPPET=true để thêm 200 ký tự đầu output — vẫn đi qua
+    LLM_LOG_SNIPPET=true để thêm 200 ký tự đầu output, vẫn đi qua
     redact_processor trước khi render.
     """
     settings = get_settings()

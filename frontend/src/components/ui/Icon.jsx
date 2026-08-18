@@ -4,6 +4,11 @@
 import React from "react";
 
 const PATHS = {
+  cart:      "M3 4h2l2 11h10l3-8H6M9 19a1 1 0 11-2 0 1 1 0 012 0zm9 0a1 1 0 11-2 0 1 1 0 012 0z",
+  bot:       "M12 2v3M8 9h.01M16 9h.01M7 13h10M6 6h12a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2z",
+  folder:    "M3 6h6l2 2h10v10a2 2 0 01-2 2H5a2 2 0 01-2-2V6z",
+  catalog:   "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
+  upload:    "M12 16V4m0 0L8 8m4-4l4 4M5 14v5h14v-5",
   units:     "M3 7l9-4 9 4-9 4-9-4zm0 5l9 4 9-4M3 17l9 4 9-4",
   sold:      "M20 6L9 17l-5-5",
   remaining: "M12 8v4l3 3M21 12a9 9 0 11-18 0 9 9 0 0118 0z",

@@ -1,0 +1,32 @@
+# Phụ thuộc của Mini CRM — CỐ Ý tối thiểu.
+#
+# KHÔNG có prophet, langgraph, rq, pandas, cloudinary. Mini CRM không dự báo,
+# không chạy agent, không có hàng đợi job. Mỗi gói thừa ở đây là một gói phải vá
+# lỗi bảo mật cho một thứ không ai dùng — và là một bước nữa hướng tới việc hai
+# hệ thống lại dính vào nhau.
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+sqlalchemy>=2.0.36
+asyncpg>=0.30.0
+psycopg2-binary>=2.9.10
+alembic>=1.14.0
+pydantic>=2.9.0
+pydantic-settings>=2.6.0
+httpx>=0.27.0
+
+# Human-auth foundation. Argon2id is used directly; PyJWT is constrained to
+# the supported 2.x API. `secrets` from the Python standard library supplies
+# invite/reset/refresh randomness, so no extra token-generation package is
+# needed.
+argon2-cffi==23.1.0
+PyJWT==2.10.1
+
+# Kiểm phong bì theo BẢN SAO schema của Mini CRM (`minicrm/contracts/`) trước khi
+# gửi. Không import validator của backend: nếu Mini CRM hỏi đúng cái đối tượng mà
+# backend dùng để chấm điểm nó, nó sẽ luôn tự cho mình là đúng. Bản sao được canh
+# khỏi trôi bằng phép so SHA-256 ở `tests/test_contract_copy.py`.
+jsonschema>=4.23.0
+
+# Test
+pytest>=8.0.0
+pytest-asyncio>=0.24.0

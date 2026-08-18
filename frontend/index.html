@@ -12,6 +12,23 @@
       href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap"
       rel="stylesheet"
     />
+
+    <!--
+      Reset tối thiểu ở mức tài liệu. Dự án này không có file CSS nào — mọi thứ
+      tô kiểu bằng style nội tuyến — nên `margin: 8px` MẶC ĐỊNH của trình duyệt
+      trên <body> vẫn còn nguyên hiệu lực và không có chỗ nào khác gỡ được nó.
+
+      Hệ quả: khung ngoài cùng của `AppLayout` là `minHeight: 100vh`, cộng thêm
+      8px trên + 8px dưới của <body> thành 100vh + 16px — nên MỌI trang đều bị
+      thanh cuộn dư dù nội dung vừa màn hình, và thanh điều hướng `position:
+      sticky` để lộ một viền trắng 8px quanh app.
+    -->
+    <style>
+      html, body { margin: 0; padding: 0; }
+      body { min-height: 100vh; background: #f6f6fb; }
+      /* Ô nhập kế thừa font của app thay vì font mặc định của trình duyệt. */
+      input, textarea, select, button { font-family: inherit; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

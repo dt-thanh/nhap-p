@@ -1,0 +1,709 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://absorptionforecast.local/schema/crm_sync_v2.schema.json",
+  "title": "CRM sync payload, schema_version 2 (DRAFT — PROPOSED, NOT IMPLEMENTED)",
+  "description": "Hợp đồng NHẬN cho mô hình HỆ NGUỒN LÀ NGUỒN SỰ THẬT: hệ nguồn sở hữu CẢ BỐN tầng Project → Area → Unit → Deal, phía nhận chỉ SOI GƯƠNG. Khác biệt nền tảng so với v1: v1 coi `projects`/`areas` là của phía nhận (CRM chỉ tham chiếu được), v2 coi cả bốn là của hệ nguồn. Vì thế v2 KHÔNG phải là mở rộng cộng thêm của v1 — nó là một mô hình sở hữu KHÁC, và hai phiên bản loại trừ lẫn nhau theo thiết kế. Phía nhận KHÔNG BAO GIỜ tự tạo, tự sửa hay tự đặt giá trị cho bốn thực thể này. `src/services/json_payload.py::SUPPORTED_SCHEMA_VERSIONS` vẫn là `{1}`, nên KHÔNG phong bì v2 nào được chấp nhận tại thời điểm này. Xem docs/crm/sync_contract_v2_draft.md và docs/crm/phase_a_domain_freeze.md.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "source_system",
+    "source_instance_id",
+    "external_batch_id",
+    "sync_mode",
+    "project_ref",
+    "source_extracted_at",
+    "records"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "_comment": {
+      "type": "string",
+      "description": "Chú thích tự do, phía nhận BỎ QUA hoàn toàn. Tồn tại để fixture tổng hợp tự dán nhãn được là dữ liệu kiểm thử ngay trong payload — nhãn nằm ngoài file thì sẽ có lúc rời khỏi file."
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 2,
+      "description": "Phiên bản hợp đồng. Phía nhận từ chối thẳng giá trị không nhận ra, không đoán. v1 và v2 CÙNG TỒN TẠI nhưng mang HAI MÔ HÌNH SỞ HỮU KHÁC NHAU: một hệ nguồn chọn phiên bản của mình và không bao giờ bị nâng cấp ngầm."
+    },
+    "source_system": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9_]+$",
+      "description": "LOẠI hệ nguồn, ví dụ 'mini_crm'. Không phải một cài đặt cụ thể."
+    },
+    "source_instance_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9_-]+$",
+      "description": "Một CÀI ĐẶT cụ thể của hệ nguồn. Là ranh giới cô lập của DANH TÍNH cho CẢ BỐN tầng: `external_id` chỉ duy nhất TRONG một `source_instance_id`, không duy nhất toàn cục. Credential bị buộc vào đúng một giá trị này."
+    },
+    "external_batch_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Danh tính lô do hệ nguồn đặt. Gửi lại cùng giá trị = gửi lại cùng lô; phía nhận trả kết quả cũ chứ không xử lý lần hai."
+    },
+    "sync_mode": {
+      "enum": [
+        "incremental",
+        "full_snapshot"
+      ],
+      "description": "incremental = chỉ những bản ghi đã đổi. full_snapshot = TOÀN BỘ trạng thái của phạm vi khai báo; bản ghi vắng mặt sẽ bị tombstone (có chốt an toàn)."
+    },
+    "project_ref": {
+      "$ref": "#/$defs/project_ref"
+    },
+    "source_extracted_at": {
+      "$ref": "#/$defs/timestamp",
+      "description": "Thời điểm hệ nguồn TRÍCH dữ liệu. Không phải thời điểm gửi, không phải thời điểm nhận."
+    },
+    "snapshot": {
+      "$ref": "#/$defs/snapshot_meta",
+      "description": "BẮT BUỘC khi sync_mode = full_snapshot; bị cấm khi sync_mode = incremental."
+    },
+    "records": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 5000,
+      "items": {
+        "$ref": "#/$defs/record"
+      },
+      "description": "THỨ TỰ LÀ MỘT PHẦN CỦA HỢP ĐỒNG. Với operation=upsert: project → area → unit → deal (cha trước con). Với operation=delete thứ tự NGƯỢC LẠI: deal → unit → area → project (con trước cha). Phía nhận xử lý tuần tự theo đúng thứ tự mảng và KHÔNG sắp xếp lại hộ hệ nguồn — sắp hộ sẽ che mất việc hệ nguồn không đảm bảo được thứ tự."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "sync_mode": {
+            "const": "full_snapshot"
+          }
+        },
+        "required": [
+          "sync_mode"
+        ]
+      },
+      "then": {
+        "required": [
+          "snapshot"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "snapshot"
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+      "description": "ISO-8601 CÓ offset múi giờ. Timestamp không có offset bị từ chối — không suy diễn múi giờ hộ hệ nguồn."
+    },
+    "nullable_timestamp": {
+      "description": "Như `timestamp`, nhưng cho phép `null` TƯỜNG MINH. null = hệ nguồn khẳng định mốc này không còn; VẮNG MẶT không phải là một khẳng định và được xử lý theo `payload_completeness`.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "project_ref": {
+      "type": "object",
+      "description": "PHẠM VI của lô: một lô thuộc về ĐÚNG MỘT dự án. Ở v2 dự án do HỆ NGUỒN sở hữu, nên hình dạng CHUẨN là `external_project_id` — hệ nguồn không thể biết UUID nội bộ của một dự án mà chính nó vừa tạo. Hình dạng `project_id` (UUID của phía nhận) được GIỮ LẠI cho cài đặt đã được cấu hình ánh xạ sẵn, nhưng KHÔNG dùng được trong lô có bản ghi `project` đầu tiên. Khi lô chứa bản ghi entity='project', `external_id` của bản ghi đó PHẢI khớp `project_ref.external_project_id` — quy tắc này thuộc tầng nghiệp vụ, JSON Schema không diễn đạt được.",
+      "oneOf": [
+        {
+          "required": [
+            "external_project_id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "external_project_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        },
+        {
+          "required": [
+            "project_id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      ]
+    },
+    "area_ref": {
+      "type": "object",
+      "description": "Trỏ tới một phân khu bằng DANH TÍNH NGUỒN. v2 chấp nhận DUY NHẤT hình dạng `external_area_id`. Hai hình dạng của v1 (`{area_id}` UUID nội bộ, và `{area_name, unit_type}` khoá tự nhiên theo tên) bị BỎ ở v2 CÓ CHỦ ĐÍCH: ở v2 hệ nguồn sở hữu phân khu, nên nó luôn có `external_id` cho phân khu của mình; và `area_name`/`unit_type` giờ là trường CÓ THỂ SỬA do hệ nguồn sở hữu, nên tham chiếu theo tên sẽ đứt ngay lần đổi tên đầu tiên. Hệ nguồn v1 vẫn dùng hai hình dạng cũ dưới hợp đồng v1, không bị ảnh hưởng.",
+      "required": [
+        "external_area_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "external_area_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "snapshot_meta": {
+      "type": "object",
+      "required": [
+        "snapshot_id",
+        "chunk_index",
+        "chunk_total",
+        "snapshot_complete",
+        "scope"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "snapshot_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Gộp các lô rời thành MỘT ảnh chụp. Chỉ khi đủ mọi mảnh mới được phép tombstone."
+        },
+        "chunk_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "chunk_total": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "snapshot_complete": {
+          "type": "boolean",
+          "description": "true ở mảnh CUỐI CÙNG. Ảnh chụp thiếu mảnh không bao giờ được dùng để suy ra 'bản ghi này đã bị xoá'."
+        },
+        "scope": {
+          "$ref": "#/$defs/snapshot_scope"
+        }
+      }
+    },
+    "snapshot_scope": {
+      "type": "object",
+      "required": [
+        "entities"
+      ],
+      "additionalProperties": false,
+      "description": "Phạm vi mà ảnh chụp tự nhận là ĐẦY ĐỦ. Bắt buộc khai rõ: 'mọi thứ không có trong file này' là một tập vô hạn nếu không có biên. Ảnh chụp KHÔNG BAO GIỜ được dùng để suy ra việc xoá một thực thể CHA khi con của nó còn sống — quy tắc cha–con ở docs/crm/phase_a_domain_freeze.md §A4 thắng.",
+      "properties": {
+        "entities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "project",
+              "area",
+              "unit",
+              "deal"
+            ]
+          }
+        },
+        "area_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/area_ref"
+          },
+          "description": "Vắng mặt = ảnh chụp phủ TOÀN BỘ dự án trong project_ref."
+        }
+      }
+    },
+    "record": {
+      "type": "object",
+      "description": "Mỗi bản ghi PHẢI mang phiên bản — kể cả operation=delete: có source_revision, hoặc có source_updated_at, nếu không thì bị từ chối với error_code=MISSING_SOURCE_VERSION. payload_hash KHÔNG phải phiên bản và không bao giờ được dùng để xếp thứ tự thời gian.",
+      "required": [
+        "entity",
+        "operation",
+        "external_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "entity": {
+          "enum": [
+            "project",
+            "area",
+            "unit",
+            "deal"
+          ],
+          "description": "CẢ BỐN tầng đều do hệ nguồn sở hữu và đều đi qua đường đồng bộ. Đây là khác biệt nền tảng so với v1, nơi `project` và `area` không tồn tại như thực thể đồng bộ vì chúng thuộc về phía nhận."
+        },
+        "operation": {
+          "enum": [
+            "upsert",
+            "delete"
+          ],
+          "description": "delete = xoá mềm ở phía nhận, và ý nghĩa vật lý của nó PHỤ THUỘC THỰC THỂ: với `unit`/`deal` là tombstone (`deleted_at`); với `project`/`area` là lưu trữ (`status='archived'`) vì hai bảng đó không có cột `deleted_at`. Dữ liệu không bao giờ bị xoá vật lý bởi một lô đồng bộ. Tên `delete` được GIỮ NGUYÊN thay vì thêm `archive`: hệ nguồn phát biểu Ý ĐỊNH ('bản ghi này không còn'), phía nhận chọn cách biểu diễn."
+        },
+        "external_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Danh tính bản ghi ở hệ nguồn. Bền vững trọn đời, BẤT BIẾN, và KHÔNG BAO GIỜ dùng lại cho thực thể khác — kể cả sau khi đã tombstone/archive. Duy nhất trong phạm vi (source_instance_id, entity), KHÔNG duy nhất toàn cục."
+        },
+        "source_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Bộ đếm phiên bản tăng dần của hệ nguồn, tăng MỘT lần cho MỖI lần ghi thành công kể cả xoá. Ưu tiên hơn source_updated_at khi cả hai cùng có. Mỗi thực thể có DÃY PHIÊN BẢN RIÊNG: revision của một dự án không nói gì về revision của phân khu thuộc nó."
+        },
+        "source_updated_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "payload_completeness": {
+          "enum": [
+            "full",
+            "partial"
+          ],
+          "default": "full",
+          "description": "'full' (mặc định) = bản ghi mang TRẠNG THÁI ĐẦY ĐỦ hiện tại; trường vắng mặt mà bản sao đang có giá trị sẽ bị TỪ CHỐI với HISTORY_TIMESTAMP_DROPPED. 'partial' = chỉ mang trường đã đổi; trường vắng mặt giữ nguyên giá trị cũ, chỉ null TƯỜNG MINH mới xoá."
+        },
+        "payload": {
+          "description": "BẮT BUỘC khi operation=upsert; bị CẤM khi operation=delete. Hình dạng phụ thuộc `entity` và `payload_completeness` — xem khối allOf bên dưới."
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "source_revision"
+          ]
+        },
+        {
+          "required": [
+            "source_updated_at"
+          ]
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "upsert"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "required": [
+              "payload"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "payload"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "entity": {
+                "const": "project"
+              },
+              "operation": {
+                "const": "upsert"
+              }
+            },
+            "required": [
+              "entity",
+              "operation"
+            ]
+          },
+          "then": {
+            "if": {
+              "properties": {
+                "payload_completeness": {
+                  "const": "partial"
+                }
+              },
+              "required": [
+                "payload_completeness"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/$defs/project_payload_partial"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/$defs/project_payload"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "entity": {
+                "const": "area"
+              },
+              "operation": {
+                "const": "upsert"
+              }
+            },
+            "required": [
+              "entity",
+              "operation"
+            ]
+          },
+          "then": {
+            "if": {
+              "properties": {
+                "payload_completeness": {
+                  "const": "partial"
+                }
+              },
+              "required": [
+                "payload_completeness"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/$defs/area_payload_partial"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/$defs/area_payload"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "entity": {
+                "const": "unit"
+              },
+              "operation": {
+                "const": "upsert"
+              }
+            },
+            "required": [
+              "entity",
+              "operation"
+            ]
+          },
+          "then": {
+            "if": {
+              "properties": {
+                "payload_completeness": {
+                  "const": "partial"
+                }
+              },
+              "required": [
+                "payload_completeness"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/$defs/unit_payload_partial"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/$defs/unit_payload"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "entity": {
+                "const": "deal"
+              },
+              "operation": {
+                "const": "upsert"
+              }
+            },
+            "required": [
+              "entity",
+              "operation"
+            ]
+          },
+          "then": {
+            "if": {
+              "properties": {
+                "payload_completeness": {
+                  "const": "partial"
+                }
+              },
+              "required": [
+                "payload_completeness"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/$defs/deal_payload_partial"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/$defs/deal_payload"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "project_payload": {
+      "type": "object",
+      "required": [
+        "name",
+        "launch_date"
+      ],
+      "additionalProperties": false,
+      "description": "Dự án do HỆ NGUỒN sở hữu. Bản ghi `project` KHÔNG mang tham chiếu cha — dự án là gốc của phân cấp. Tập trường ở đây CỐ Ý HẸP: nó chỉ chở những gì phía nhận cần để soi gương một dự án và tính hấp thụ. Những cột phía nhận đang có mà KHÔNG nằm ở đây (`headline`, `introduce`, `cover_image_url`, `absorption_calculator`, …) là CHÚ THÍCH CỤC BỘ của phía nhận, không phải dữ liệu nghiệp vụ của hệ nguồn — phía nhận sở hữu chúng và hệ nguồn không bao giờ ghi đè chúng. Xem docs/crm/phase_a_domain_freeze.md §A2.3.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "Tên dự án. CÓ THỂ SỬA — hệ nguồn sở hữu. Danh tính là `external_id`, không phải tên; hai dự án trùng tên là hợp lệ (cùng khu đô thị mở bán nhiều đợt)."
+        },
+        "launch_date": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Ngày mở bán. Là NGÀY LỊCH, không phải mốc thời gian có múi giờ: nó là một sự kiện thương mại được công bố theo lịch địa phương, và gắn offset vào sẽ khiến cùng một ngày mở bán hiển thị lệch nhau ở hai múi giờ."
+        }
+      }
+    },
+    "project_payload_partial": {
+      "type": "object",
+      "description": "Bản ghi `payload_completeness='partial'`: CHỈ mang trường đã đổi. Trường vắng mặt nghĩa là GIỮ NGUYÊN.",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "launch_date": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        }
+      }
+    },
+    "area_payload": {
+      "type": "object",
+      "required": [
+        "area_name",
+        "unit_type",
+        "bedrooms",
+        "area_sqm",
+        "total_units"
+      ],
+      "additionalProperties": false,
+      "description": "Phân khu do HỆ NGUỒN sở hữu. KHÔNG mang tham chiếu dự án riêng: dự án của nó là dự án của PHONG BÌ (một lô = một dự án). Năm trường đều BẮT BUỘC và đều CÓ THẨM QUYỀN — phía nhận ghi thẳng chúng vào bản sao và không bao giờ tự đặt giá trị nào. Ba cột kế hoạch là NOT NULL ở phía nhận (`ck_areas_area_sqm_positive`, `ck_areas_bedrooms_nonnegative`, `ck_areas_total_units_nonnegative`), nên hệ nguồn PHẢI cung cấp chúng; không có giá trị mặc định nào được điền hộ.",
+      "properties": {
+        "area_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Tên phân khu. CÓ THỂ SỬA — hệ nguồn sở hữu. Danh tính là `external_id`, không phải tên."
+        },
+        "unit_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Loại căn. CÓ THỂ SỬA. Cùng với `area_name` tạo thành khoá tự nhiên `uq_areas_project_name_unit_type` ở phía nhận, nên đổi sang một cặp đã tồn tại trong cùng dự án sẽ bị từ chối (AREA_NATURAL_KEY_CONFLICT)."
+        },
+        "bedrooms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Số phòng ngủ. CÓ THẨM QUYỀN."
+        },
+        "area_sqm": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Diện tích, m². CÓ THẨM QUYỀN. Phải > 0."
+        },
+        "total_units": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Tổng số căn theo KẾ HOẠCH của phân khu. CÓ THẨM QUYỀN, và là trường nặng nhất trong hợp đồng: nó là MẪU SỐ của tỷ lệ hấp thụ. Đây là số kế hoạch do hệ nguồn công bố, KHÔNG phải số đếm các bản ghi `unit` đã gửi — phía nhận không bao giờ được suy nó ra bằng cách đếm."
+        }
+      }
+    },
+    "area_payload_partial": {
+      "type": "object",
+      "description": "Bản ghi `payload_completeness='partial'`: CHỈ mang trường đã đổi. Trường vắng mặt nghĩa là GIỮ NGUYÊN.",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "area_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "unit_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "bedrooms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "area_sqm": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "total_units": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "unit_payload": {
+      "type": "object",
+      "required": [
+        "area_ref",
+        "unit_code",
+        "unit_status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "area_ref": {
+          "$ref": "#/$defs/area_ref"
+        },
+        "unit_code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Mã căn theo cách gọi của con người. Duy nhất trong một phân khu, xét trên các căn còn sống."
+        },
+        "unit_status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Giá trị NGUYÊN VĂN của hệ nguồn. Phía nhận ánh xạ qua bảng tường minh; giá trị không có trong bảng bị TỪ CHỐI, không đoán."
+        }
+      }
+    },
+    "unit_payload_partial": {
+      "type": "object",
+      "description": "Bản ghi `payload_completeness='partial'`: CHỈ mang trường đã đổi. Trường vắng mặt nghĩa là GIỮ NGUYÊN.",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "area_ref": {
+          "$ref": "#/$defs/area_ref"
+        },
+        "unit_code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "unit_status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "deal_payload": {
+      "type": "object",
+      "required": [
+        "external_unit_id",
+        "deal_status"
+      ],
+      "additionalProperties": false,
+      "description": "Giao dịch KHÔNG mang `project_ref` lẫn `area_ref`. Dự án và phân khu của nó LÀ dự án và phân khu của căn mà nó trỏ tới, theo định nghĩa. Mang thêm một đường thứ hai tới cùng một sự thật là tạo ra một chỗ để hai đường lệch nhau mà không có luật nào phân xử.",
+      "properties": {
+        "external_unit_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "external_id của căn mà giao dịch này gắn vào. Đây LÀ `unit_ref` của hợp đồng, giữ tên cũ của v1 thay vì đổi hình dạng. Căn phải TỒN TẠI rồi — xem quy tắc thứ tự."
+        },
+        "deal_status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Giá trị NGUYÊN VĂN của hệ nguồn; ánh xạ tường minh, không đoán."
+        },
+        "reserved_at": {
+          "$ref": "#/$defs/nullable_timestamp"
+        },
+        "sold_at": {
+          "$ref": "#/$defs/nullable_timestamp"
+        },
+        "lost_at": {
+          "$ref": "#/$defs/nullable_timestamp"
+        }
+      }
+    },
+    "deal_payload_partial": {
+      "type": "object",
+      "description": "Bản ghi `payload_completeness='partial'`: CHỈ mang trường đã đổi. `null` tường minh ở một mốc thời gian = xoá mốc đó; vắng mặt = giữ nguyên.",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "external_unit_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "deal_status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "reserved_at": {
+          "$ref": "#/$defs/nullable_timestamp"
+        },
+        "sold_at": {
+          "$ref": "#/$defs/nullable_timestamp"
+        },
+        "lost_at": {
+          "$ref": "#/$defs/nullable_timestamp"
+        }
+      }
+    }
+  }
+}

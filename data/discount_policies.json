@@ -1,72 +1,29 @@
 {
-  "project_id": "saigon-riverside",
-  "version": 3,
-  "updated_at": "2026-08-12T12:05:02.716791+00:00",
+  "project_id": null,
+  "version": 1,
+  "updated_at": "2026-08-15T05:31:28.4167742Z",
   "base_policy": {
     "scope": "project",
-    "name": "Chính sách niêm yết chuẩn",
-    "discount_percent": 1.0,
-    "payment_support": "Hỗ trợ lãi suất 0% trong 12 tháng",
+    "name": "Dataset-aligned operating policy",
+    "discount_percent": 1,
+    "payment_support": "Controlled incentive subject to human approval",
     "valid_days": 30
   },
   "rules": [
     {
-      "id": "rule-2pn-river-booking",
-      "scope": "unit_type_view",
-      "unit_type": "2PN",
-      "view": "Sông",
-      "discount_percent": 1.5,
-      "reason": "Nhóm sản phẩm có nhu cầu tốt, ưu đãi nhẹ để tăng tốc booking."
+      "id": "rule-available-follow-up",
+      "scope": "unit_status",
+      "status": "available",
+      "discount_percent": 1,
+      "reason": "Available units are the only valid candidates for sales prioritization."
     },
     {
-      "id": "rule-3pn-low-floor",
-      "scope": "segment",
-      "unit_type": "3PN",
-      "floor_max": 6,
-      "discount_percent": 2.5,
-      "reason": "Căn diện tích lớn/tầng thấp thường cần chính sách linh hoạt hơn."
-    },
-    {
-      "id": "rule-slow-moving",
-      "scope": "status_segment",
-      "status": "Còn trống",
-      "discount_percent": 2.0,
-      "reason": "Áp dụng cho nhóm tồn lâu trong một đợt booking hoặc mở bán."
+      "id": "rule-active-deal-deprioritized",
+      "scope": "unit_status",
+      "status": "reserved_or_sold",
+      "discount_percent": 0,
+      "reason": "Units with active deals are not priority targets for new sales actions."
     }
   ],
-  "approved_changes": [
-    {
-      "id": "change-2976e4a4",
-      "proposal_id": "proposal-0ebd5ec5",
-      "action_type": "discount_policy",
-      "unit_ids": [],
-      "discount_percent": 2.5,
-      "reason": "Đề xuất áp dụng ưu đãi có kiểm soát cho nhóm căn hấp thụ chậm hoặc giá trị cao trong giai đoạn hiện tại.",
-      "approved_at": "2026-08-12T12:02:16.064659+00:00",
-      "approved_by": "Admin"
-    },
-    {
-      "id": "change-6e199bdc",
-      "proposal_id": "proposal-25197d60",
-      "action_type": "release_plan",
-      "unit_ids": [
-        "A06.06",
-        "A03.04",
-        "A04.07",
-        "A06.02",
-        "A02.08",
-        "A04.03",
-        "A05.06",
-        "A03.07",
-        "A05.02",
-        "A06.05",
-        "A03.03",
-        "A02.04"
-      ],
-      "discount_percent": 1.0,
-      "reason": "AI/Admin đề xuất chốt danh sách căn ưu tiên cho đợt mở bán kế tiếp dựa trên booking, tín hiệu quan tâm và khả năng hấp thụ.",
-      "approved_at": "2026-08-12T12:05:02.716791+00:00",
-      "approved_by": "Admin"
-    }
-  ]
+  "approved_changes": []
 }

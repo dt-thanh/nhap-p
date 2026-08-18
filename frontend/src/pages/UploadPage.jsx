@@ -28,17 +28,27 @@ export default function UploadPage() {
 
   const [errorPanel, setErrorPanel] = useState(null); // file đang xem lỗi
   const [errorRows, setErrorRows] = useState([]);
+  // Backend không đoán được file thuộc loại nào từ nội dung — người dùng phải
+  // chọn, vì mỗi template đọc một bộ cột và ghi vào một bảng khác nhau.
+  const [template, setTemplate] = useState("sales");
   const [loadingErrors, setLoadingErrors] = useState(false);
+  // Phase 5.5 P0 (F-1): "Lịch sử nạp" trước đây trộn cả lô đồng bộ CRM
+  // (`filename=NULL`) vào cùng bảng với file tải tay, không cách nào phân biệt.
+  // Mặc định CHỈ hiện file tải tay — đúng mục đích gốc của trang này; tab thứ
+  // hai cho xem riêng lô CRM khi cần.
+  const [transportMode, setTransportMode] = useState("file_upload");
 
   const pollRef = useRef(null);
   const startRef = useRef(null);
 
   const refreshList = useCallback(() => {
-    listFiles()
+    if (!project?.id) return;
+    setLoadingList(true);
+    listFiles(project?.id, transportMode)
       .then((l) => setFiles(l || []))
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoadingList(false));
-  }, []);
+  }, [project?.id, transportMode]);
 
   useEffect(() => { refreshList(); }, [refreshList]);
 
@@ -70,12 +80,12 @@ export default function UploadPage() {
           setNotice(
             st.status === "done"
               ? {
-                  type: st.rows_failed > 0 ? "warn" : "ok",
-                  text:
-                    st.rows_failed > 0
-                      ? `Đã nạp ${st.rows_ok} dòng, ${st.rows_failed} dòng lỗi cần sửa.`
-                      : `Đã nạp thành công ${st.rows_ok} dòng.`,
-                }
+                type: st.rows_failed > 0 ? "warn" : "ok",
+                text:
+                  st.rows_failed > 0
+                    ? `Đã nạp ${st.rows_ok} dòng, ${st.rows_failed} dòng lỗi cần sửa.`
+                    : `Đã nạp thành công ${st.rows_ok} dòng.`,
+              }
               : { type: "error", text: "Xử lý file thất bại. Kiểm tra định dạng và thử lại." }
           );
         }
@@ -94,7 +104,7 @@ export default function UploadPage() {
     setNotice(null);
     setTracking(null);
     try {
-      const res = await uploadFile(file);
+      const res = await uploadFile(file, template, project.id);
       setNotice({ type: "ok", text: `Đã tải lên "${file.name}". Đang đọc dữ liệu…` });
       refreshList();
       startPolling(res.file_id);
@@ -145,6 +155,19 @@ export default function UploadPage() {
       </header>
 
       <div style={S.block}>
+        <label style={{ display: "block", marginBottom: space(2), fontWeight: 600 }}>
+          Loại dữ liệu trong file
+          <select
+            value={template}
+            onChange={(e) => setTemplate(e.target.value)}
+            disabled={busy}
+            style={{ marginLeft: space(2), padding: space(1), fontSize: size.small }}
+          >
+            <option value="sales">Bán hàng</option>
+            <option value="inventory">Tồn kho</option>
+            <option value="areas">Danh mục phân khu</option>
+          </select>
+        </label>
         <UploadDropzone onFile={handleFile} busy={busy} />
       </div>
 
@@ -167,8 +190,33 @@ export default function UploadPage() {
         </div>
       )}
 
-      <h2 style={S.h2}>Lịch sử nạp</h2>
-      <FileStatusTable files={files} loading={loadingList} onViewErrors={openErrors} />
+      <div style={S.historyHead}>
+        <h2 style={{ ...S.h2, margin: 0 }}>Lịch sử nạp</h2>
+        <div style={S.tabs} role="tablist" aria-label="Loại lịch sử nạp">
+          <button
+            role="tab"
+            aria-selected={transportMode === "file_upload"}
+            style={{ ...S.tab, ...(transportMode === "file_upload" ? S.tabActive : {}) }}
+            onClick={() => setTransportMode("file_upload")}
+          >
+            Tải lên file
+          </button>
+          <button
+            role="tab"
+            aria-selected={transportMode === "api_push"}
+            style={{ ...S.tab, ...(transportMode === "api_push" ? S.tabActive : {}) }}
+            onClick={() => setTransportMode("api_push")}
+          >
+            Đồng bộ CRM
+          </button>
+        </div>
+      </div>
+      <FileStatusTable
+        files={files}
+        loading={loadingList}
+        transportMode={transportMode}
+        onViewErrors={openErrors}
+      />
 
       {errorPanel && (
         <ValidationErrorPanel
@@ -206,6 +254,17 @@ const S = {
   sub: { fontSize: size.small, color: color.muted, margin: "4px 0 0", maxWidth: "64ch" },
   h2: { fontSize: size.h2, fontWeight: 700, color: color.ink, margin: `${space(8)}px 0 ${space(3)}px` },
   block: { marginBottom: space(4) },
+  historyHead: {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    flexWrap: "wrap", gap: space(3), margin: `${space(8)}px 0 ${space(3)}px`,
+  },
+  tabs: { display: "flex", gap: space(1), background: color.canvas, borderRadius: radius.pill, padding: 2 },
+  tab: {
+    border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit",
+    fontSize: size.tiny, fontWeight: 600, color: color.muted,
+    padding: `${space(1)}px ${space(3)}px`, borderRadius: radius.pill,
+  },
+  tabActive: { background: color.surface, color: color.ink, boxShadow: "0 1px 2px rgba(0,0,0,.08)" },
   notice: {
     border: "1px solid", borderRadius: radius.sm,
     padding: `${space(3)}px ${space(4)}px`, fontSize: size.small, marginBottom: space(4),

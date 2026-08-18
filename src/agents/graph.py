@@ -1,6 +1,6 @@
 from langgraph.graph import END, StateGraph
 
-from src.agents.nodes.example_node import analyze_node, respond_node
+from src.agents.nodes.ranking_node import analyze_node, respond_node
 from src.agents.state import AgentState
 
 

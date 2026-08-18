@@ -2,23 +2,23 @@
 import React from "react";
 import { color, size, radius, space, font } from "../../styles/tokens";
 import Icon from "../ui/Icon";
-import { fmt } from "../ui/States";
+import { DASHBOARD_TEXT, formatDashboardDateTime } from "./labels";
 
-export default function DashboardHeader({ updatedAt, onRefresh, refreshing }) {
+export default function DashboardHeader({ title = DASHBOARD_TEXT.dashboardTitle, updatedAt, onRefresh, refreshing }) {
   return (
     <header style={S.wrap}>
       <div>
-        <h1 style={S.title}>Absorption Dashboard</h1>
-        <p style={S.sub}>Theo dõi tốc độ hấp thụ theo dự án, phân khu và khoảng thời gian.</p>
+        <h1 style={S.title}>{title}</h1>
+        <p style={S.sub}>{DASHBOARD_TEXT.dashboardSubtitle}</p>
       </div>
       <div style={S.right}>
         <div style={S.updated}>
-          <span style={S.updatedLabel}>Cập nhật lúc</span>
-          <span style={S.updatedVal}>{updatedAt ? new Date(updatedAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : "N/A"}</span>
+          <span style={S.updatedLabel}>{DASHBOARD_TEXT.updatedAt}</span>
+          <span style={S.updatedVal}>{formatDashboardDateTime(updatedAt)}</span>
         </div>
         <button style={{ ...S.refresh, opacity: refreshing ? 0.6 : 1 }} onClick={onRefresh} disabled={refreshing}>
           <Icon name="refresh" size={16} style={refreshing ? S.spin : undefined} />
-          <span>{refreshing ? "Đang tải…" : "Làm mới"}</span>
+          <span>{refreshing ? DASHBOARD_TEXT.loading : DASHBOARD_TEXT.refresh}</span>
         </button>
       </div>
     </header>

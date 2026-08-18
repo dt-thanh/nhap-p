@@ -100,10 +100,7 @@ def _scrub(value: Any, depth: int = 0) -> Any:
             value = pattern.sub(replacement, value)
         return value
     if isinstance(value, dict):
-        return {
-            k: (_REDACTED if str(k).lower() in _SENSITIVE_KEYS else _scrub(v, depth + 1))
-            for k, v in value.items()
-        }
+        return {k: (_REDACTED if str(k).lower() in _SENSITIVE_KEYS else _scrub(v, depth + 1)) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
         return type(value)(_scrub(v, depth + 1) for v in value)
     return value
@@ -146,11 +143,7 @@ def configure_logging(service: str) -> None:
     level = getattr(logging, settings.log_level.upper(), logging.INFO)
     use_console = settings.log_format == "console"
 
-    renderer: Any = (
-        structlog.dev.ConsoleRenderer(colors=True)
-        if use_console
-        else structlog.processors.JSONRenderer()
-    )
+    renderer: Any = structlog.dev.ConsoleRenderer(colors=True) if use_console else structlog.processors.JSONRenderer()
 
     structlog.configure(
         processors=[

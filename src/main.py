@@ -4,7 +4,16 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from src.api.agent import router as agent_router
+from src.api.dashboard import router as dashboard_router
+from src.api.files import router as files_router
+from src.api.inventory import router as inventory_router
+from src.api.ops import router as ops_router
+from src.api.parallel_run import router as parallel_run_router
+from src.api.ranking import router as ranking_router
+from src.api.reconciliation import router as reconciliation_router
 from src.api.routes import router
+from src.api.sync import router as sync_router
 from src.config import get_settings
 from src.logging_config import configure_logging, get_logger, new_error_id, request_id_var
 from src.middleware import RequestContextMiddleware
@@ -40,6 +49,15 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api/v1")
+app.include_router(files_router, prefix="/api/v1")
+app.include_router(dashboard_router, prefix="/api/v1")
+app.include_router(sync_router, prefix="/api/v1")
+app.include_router(inventory_router, prefix="/api/v1")
+app.include_router(reconciliation_router, prefix="/api/v1")
+app.include_router(ops_router, prefix="/api/v1")
+app.include_router(parallel_run_router, prefix="/api/v1")
+app.include_router(agent_router, prefix="/api/v1")
+app.include_router(ranking_router, prefix="/api/v1")
 
 
 @app.exception_handler(Exception)
