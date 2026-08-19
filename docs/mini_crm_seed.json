@@ -1,0 +1,17 @@
+{
+  "projects": [
+    {"external_key": "prj-sim", "operation": "upsert", "name": "SIM CRUD Simulator Project v2", "launch_date": "2026-06-01"}
+  ],
+  "areas": [
+    {"external_key": "area-sim-a", "operation": "upsert", "project_external_key": "prj-sim",
+     "area_name": "SIM Toa A", "unit_type": "Can ho 2PN", "bedrooms": 2, "area_sqm": 65.5, "total_units": 22}
+  ],
+  "units": [
+    {"external_key": "unit-sim-1", "operation": "upsert", "area_external_key": "area-sim-a",
+     "unit_code": "SIM-A-0101", "unit_status": "sold"}
+  ],
+  "deals": [
+    {"external_key": "deal-sim-1", "operation": "upsert", "unit_external_key": "unit-sim-1",
+     "deal_status": "sold", "reserved_at": "2026-08-14T09:00:00+07:00", "sold_at": "2026-08-14T10:00:00+07:00"}
+  ]
+}

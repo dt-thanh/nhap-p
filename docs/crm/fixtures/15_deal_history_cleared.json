@@ -1,0 +1,20 @@
+{
+  "_comment": "FIXTURE TỔNG HỢP — xoá reserved_at bằng null TƯỜNG MINH (đặt cọc nhập nhầm, hệ nguồn sửa lại). Mong đợi: NHẬN, reserved_at về NULL, kèm cảnh báo sync.history_timestamp_cleared. Khác hẳn fixture 14: vắng mặt không phải lệnh xoá, null tường minh thì có. Dùng SYNTH-D-0002 để không đụng vào chuỗi 13→14→16 trên SYNTH-D-0001. Phải null CẢ HAI mốc: SYNTH-D-0002 đang giữ cả reserved_at lẫn sold_at, và một bản ghi ĐẦY ĐỦ phải trả lời cho mọi mốc đang có — bỏ sót sold_at sẽ bị chính chốt A4 từ chối.",
+  "schema_version": 1,
+  "source_system": "mini_crm",
+  "source_instance_id": "synthetic-mini-crm",
+  "external_batch_id": "SYNTH-BATCH-0015",
+  "sync_mode": "incremental",
+  "project_ref": { "project_id": "5117d1c0-0000-4000-8000-000000000001" },
+  "source_extracted_at": "2026-08-09T02:15:00+07:00",
+  "records": [
+    {
+      "entity": "deal", "operation": "upsert", "external_id": "SYNTH-D-0002", "source_revision": 5,
+      "payload_completeness": "full",
+      "payload": {
+        "external_unit_id": "SYNTH-U-0003", "deal_status": "lost",
+        "reserved_at": null, "sold_at": null, "lost_at": "2026-08-09T08:00:00+07:00"
+      }
+    }
+  ]
+}

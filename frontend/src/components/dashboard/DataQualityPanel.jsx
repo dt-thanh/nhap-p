@@ -5,12 +5,11 @@ import React from "react";
 import { color, size, radius, shadow, space, font } from "../../styles/tokens";
 import Icon from "../ui/Icon";
 import { SectionState, fmt } from "../ui/States";
-import { DASHBOARD_TEXT, formatDashboardDate } from "./labels";
 
 const STATUS_MAP = {
-  ok:                { label: DASHBOARD_TEXT.qualityOk, fg: () => color.ok, bg: () => color.okSoft },
-  ok_with_warnings:  { label: DASHBOARD_TEXT.qualityWarnings, fg: () => color.warn, bg: () => color.warnSoft },
-  error:             { label: DASHBOARD_TEXT.qualityError, fg: () => color.danger, bg: () => color.dangerSoft },
+  ok:                { label: "Tốt", fg: () => color.ok, bg: () => color.okSoft },
+  ok_with_warnings:  { label: "Có cảnh báo", fg: () => color.warn, bg: () => color.warnSoft },
+  error:             { label: "Có lỗi", fg: () => color.danger, bg: () => color.dangerSoft },
 };
 
 export default function DataQualityPanel({ dq, loading, error, onRetry }) {
@@ -25,7 +24,7 @@ export default function DataQualityPanel({ dq, loading, error, onRetry }) {
       <div style={S.head}>
         <div style={S.headLeft}>
           <Icon name="database" size={16} color={color.muted} />
-          <h2 style={S.title}>{DASHBOARD_TEXT.dataQuality}</h2>
+          <h2 style={S.title}>Data Quality</h2>
         </div>
         {st && <span style={{ ...S.status, color: st.fg(), background: st.bg() }}>{st.label}</span>}
       </div>
@@ -34,10 +33,10 @@ export default function DataQualityPanel({ dq, loading, error, onRetry }) {
         {dq && (
           <>
             <div style={S.grid}>
-              <Item label={DASHBOARD_TEXT.latestData} value={dq.latest_data ? fmtDate(dq.latest_data) : "N/A"} />
-              <Item label={DASHBOARD_TEXT.dataSource} value={dq.source || "N/A"} />
-              <Item label={DASHBOARD_TEXT.dateRangeValue} value={range} />
-              <Item label={DASHBOARD_TEXT.errorRecords} value={fmt(dq.error_records)}
+              <Item label="Latest data" value={dq.latest_data ? fmtDate(dq.latest_data) : "N/A"} />
+              <Item label="Data source" value={dq.source || "N/A"} />
+              <Item label="Date range" value={range} />
+              <Item label="Error records" value={fmt(dq.error_records)}
                 accent={dq.error_records > 0 ? color.danger : undefined} />
             </div>
 
@@ -68,7 +67,7 @@ function Item({ label, value, accent }) {
 }
 
 function fmtDate(d) {
-  return formatDashboardDate(d);
+  return d ? new Date(d).toLocaleDateString("vi-VN") : "N/A";
 }
 
 const S = {

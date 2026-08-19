@@ -56,6 +56,7 @@ def upgrade() -> None:
         sa.Column("updated_by", UUID, nullable=False),
         sa.Column("updated_at", TS, nullable=False),
         sa.PrimaryKeyConstraint("key", name="pk_settings"),
+        sa.ForeignKeyConstraint(["updated_by"], ["users.id"], name="fk_settings_updated_by"),
         sa.CheckConstraint('"key" <> \'\'', name="ck_settings_key_not_blank"),
     )
 
@@ -71,6 +72,13 @@ def upgrade() -> None:
         sa.Column("created_at", TS, nullable=False),
         sa.PrimaryKeyConstraint("id", name="pk_areas"),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], name="fk_areas_project_id"),
+        # Trong một dự án, mỗi (phân khu, loại căn) chỉ tồn tại một lần.
+        sa.UniqueConstraint(
+            "project_id",
+            "area_name",
+            "unit_type",
+            name="uq_areas_project_name_unit_type",
+        ),
         sa.CheckConstraint("area_name <> ''", name="ck_areas_area_name_not_blank"),
         sa.CheckConstraint("unit_type <> ''", name="ck_areas_unit_type_not_blank"),
         sa.CheckConstraint("bedrooms >= 0", name="ck_areas_bedrooms_nonnegative"),
@@ -92,7 +100,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name="pk_upload_files"),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], name="fk_upload_files_project_id"),
         sa.ForeignKeyConstraint(["uploaded_by"], ["users.id"], name="fk_upload_files_uploaded_by"),
-        sa.UniqueConstraint("checksum", name="uq_upload_files_checksum"),
+        # Cùng một checksum có thể tồn tại hợp lệ ở hai dự án khác nhau, nên
+        # phạm vi chống trùng là (project_id, checksum) chứ không phải toàn cục.
+        sa.UniqueConstraint("project_id", "checksum", name="uq_upload_files_project_checksum"),
         sa.CheckConstraint("filename <> ''", name="ck_upload_files_filename_not_blank"),
         sa.CheckConstraint("checksum <> ''", name="ck_upload_files_checksum_not_blank"),
         sa.CheckConstraint(
@@ -133,6 +143,16 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name="pk_sales_records"),
         sa.ForeignKeyConstraint(["area_id"], ["areas.id"], name="fk_sales_records_area_id"),
         sa.ForeignKeyConstraint(["file_id"], ["upload_files.id"], name="fk_sales_records_file_id"),
+        # Chống trùng XUYÊN các lần upload: cùng phân khu + ngày + mã bản ghi
+        # chỉ được tồn tại một lần, kể cả khi nạp lại từ file khác.
+        sa.UniqueConstraint(
+            "area_id",
+            "sold_date",
+            "external_record_id",
+            name="uq_sales_area_date_external_id",
+        ),
+        # source_row_hash duy nhất TRONG một phân khu, không duy nhất toàn cục.
+        sa.UniqueConstraint("area_id", "source_row_hash", name="uq_sales_area_source_row_hash"),
         sa.CheckConstraint("units_sold >= 0", name="ck_sales_records_units_sold_nonnegative"),
         sa.CheckConstraint("external_record_id <> ''", name="ck_sales_records_external_record_id_not_blank"),
         sa.CheckConstraint("source_row_hash <> ''", name="ck_sales_records_source_row_hash_not_blank"),
@@ -152,6 +172,14 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name="pk_inventory_snapshots"),
         sa.ForeignKeyConstraint(["area_id"], ["areas.id"], name="fk_inventory_snapshots_area_id"),
         sa.ForeignKeyConstraint(["file_id"], ["upload_files.id"], name="fk_inventory_snapshots_file_id"),
+        # Mỗi phân khu chỉ có một bản chốt cho mỗi (ngày, loại chốt).
+        sa.UniqueConstraint(
+            "area_id",
+            "snapshot_date",
+            "snapshot_type",
+            name="uq_inventory_area_date_type",
+        ),
+        sa.UniqueConstraint("area_id", "source_row_hash", name="uq_inventory_area_source_row_hash"),
         sa.CheckConstraint("units_remaining >= 0", name="ck_inventory_snapshots_units_remaining_nonnegative"),
         sa.CheckConstraint(
             "snapshot_type IN ('opening', 'closing', 'manual', 'derived')",
@@ -259,6 +287,8 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["area_id"], ["areas.id"], name="fk_forecasts_area_id"),
         sa.ForeignKeyConstraint(["job_id"], ["forecast_jobs.id"], name="fk_forecasts_job_id"),
         sa.ForeignKeyConstraint(["file_id"], ["upload_files.id"], name="fk_forecasts_file_id"),
+        # Mỗi lần chạy job chỉ sinh đúng một dự báo cho một phân khu.
+        sa.UniqueConstraint("job_id", "area_id", name="uq_forecasts_job_area"),
         sa.CheckConstraint("horizon_days > 0", name="ck_forecasts_horizon_days_positive"),
         sa.CheckConstraint("model_name <> ''", name="ck_forecasts_model_name_not_blank"),
         sa.CheckConstraint("model_version <> ''", name="ck_forecasts_model_version_not_blank"),
@@ -293,9 +323,12 @@ def upgrade() -> None:
         sa.Column("yhat_upper", sa.Numeric(), nullable=False),
         sa.PrimaryKeyConstraint("id", name="pk_forecast_points"),
         sa.ForeignKeyConstraint(["forecast_id"], ["forecasts.id"], name="fk_forecast_points_forecast_id"),
+        # UNIQUE này tự sinh index trên (forecast_id, ds) — phục vụ được đúng
+        # những truy vấn mà index thường trước đây phục vụ, nên KHÔNG tạo thêm
+        # ix_forecast_points_forecast_id_ds nữa (sẽ là index trùng lặp).
+        sa.UniqueConstraint("forecast_id", "ds", name="uq_forecast_points_forecast_date"),
         sa.CheckConstraint("yhat_lower <= yhat_upper", name="ck_forecast_points_bounds"),
     )
-    op.create_index("ix_forecast_points_forecast_id_ds", "forecast_points", ["forecast_id", "ds"])
 
     op.create_table(
         "explanations",
@@ -333,6 +366,8 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name="pk_alerts"),
         sa.ForeignKeyConstraint(["forecast_id"], ["forecasts.id"], name="fk_alerts_forecast_id"),
         sa.ForeignKeyConstraint(["area_id"], ["areas.id"], name="fk_alerts_area_id"),
+        # Một dự báo chỉ sinh một cảnh báo cho mỗi loại cảnh báo.
+        sa.UniqueConstraint("forecast_id", "alert_type", name="uq_alerts_forecast_type"),
         sa.CheckConstraint("threshold_days >= 0", name="ck_alerts_threshold_days_nonnegative"),
         sa.CheckConstraint("days_to_sellout >= 0", name="ck_alerts_days_to_sellout_nonnegative"),
         sa.CheckConstraint(
@@ -464,6 +499,15 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_refresh_tokens_user_id_expires_at", "refresh_tokens", ["user_id", "expires_at"])
+    # Rotation: một token chỉ được thay thế bởi đúng một token kế nhiệm.
+    # Partial index nên nhiều dòng có replaced_by IS NULL vẫn hợp lệ.
+    op.create_index(
+        "uq_refresh_tokens_replaced_by",
+        "refresh_tokens",
+        ["replaced_by"],
+        unique=True,
+        postgresql_where=sa.text("replaced_by IS NOT NULL"),
+    )
 
     op.create_table(
         "proposals",
@@ -542,22 +586,55 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index("ix_audit_logs_user_id_created_at", table_name="audit_logs")
+    op.drop_index("ix_audit_logs_entity_type_entity_id", table_name="audit_logs")
+    op.drop_index("ix_audit_logs_created_at", table_name="audit_logs")
     op.drop_table("audit_logs")
+
     op.drop_table("approvals")
+
+    op.drop_index("ix_proposals_status_created_at", table_name="proposals")
     op.drop_table("proposals")
+
+    op.drop_index("uq_refresh_tokens_replaced_by", table_name="refresh_tokens")
+    op.drop_index("ix_refresh_tokens_user_id_expires_at", table_name="refresh_tokens")
     op.drop_table("refresh_tokens")
+
+    op.drop_index("ix_user_areas_user_id", table_name="user_areas")
     op.drop_table("user_areas")
+
+    op.drop_index("ix_llm_calls_called_at", table_name="llm_calls")
     op.drop_table("llm_calls")
+
+    op.drop_index("ix_suggestions_risk_level_created_at", table_name="suggestions")
     op.drop_table("suggestions")
+
+    op.drop_index("ix_alerts_status_severity", table_name="alerts")
     op.drop_table("alerts")
+
     op.drop_table("explanations")
+
     op.drop_table("forecast_points")
+
+    op.drop_index("ix_forecasts_file_id", table_name="forecasts")
+    op.drop_index("ix_forecasts_job_id", table_name="forecasts")
+    op.drop_index("ix_forecasts_area_id_run_at", table_name="forecasts")
     op.drop_table("forecasts")
+
     op.drop_table("forecast_jobs")
+
+    op.drop_index("uq_absorption_daily_area_id_stat_date", table_name="absorption_daily")
     op.drop_table("absorption_daily")
+
+    op.drop_index("ix_inventory_snapshots_area_id_snapshot_date", table_name="inventory_snapshots")
     op.drop_table("inventory_snapshots")
+
+    op.drop_index("ix_sales_records_area_id_sold_date", table_name="sales_records")
     op.drop_table("sales_records")
+
+    op.drop_index("ix_upload_errors_file_id_row_number", table_name="upload_errors")
     op.drop_table("upload_errors")
+
     op.drop_table("upload_files")
     op.drop_table("areas")
     op.drop_table("settings")

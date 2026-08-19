@@ -28,12 +28,6 @@ export const color = {
   warnSoft: "#fbf1dd",
   ok:       "#0fae7a",
   okSoft:   "#e3f7ef",
-
-  sidebar:            "#111827",
-  sidebarSurface:    "#171923",
-  sidebarText:       "#f7f7fb",
-  sidebarMuted:      "#a7a8bb",
-  sidebarActiveSoft: "rgba(91,82,230,.2)",
 };
 
 export const font = {

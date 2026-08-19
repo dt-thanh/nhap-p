@@ -1,0 +1,27 @@
+{
+  "_comment": "FIXTURE TỔNG HỢP — KHÔNG PHẢI DỮ LIỆU CRM THẬT. Phong bì v2 là DỰ THẢO: phía nhận CHƯA chấp nhận schema_version=2.",
+  "schema_version": 2,
+  "source_system": "mini_crm",
+  "source_instance_id": "synthetic-mini-crm",
+  "external_batch_id": "SYNTH-BATCH-0022",
+  "sync_mode": "incremental",
+  "project_ref": {
+    "project_id": "5117d1c0-0000-4000-8000-000000000001"
+  },
+  "source_extracted_at": "2026-08-12T02:00:00+07:00",
+  "records": [
+    {
+      "entity": "unit",
+      "operation": "upsert",
+      "external_id": "SYNTH-U-0102",
+      "source_revision": 1,
+      "payload": {
+        "area_ref": {
+          "external_area_id": "SYNTH-AR-0001"
+        },
+        "unit_code": "A1-01-02",
+        "unit_status": "available"
+      }
+    }
+  ]
+}

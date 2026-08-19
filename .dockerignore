@@ -12,6 +12,8 @@ docs/
 presentation/
 eval/
 frontend/
+# Bản dump database — chứa dữ liệu thật, tuyệt đối không đưa vào image.
+backups/
 *.md
 !requirements.txt
 .dockerignore

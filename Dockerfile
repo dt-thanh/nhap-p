@@ -1,8 +1,11 @@
 # ---- Stage 1: Build ----
 FROM python:3.11-slim AS builder
 
+USER root
+
 ENV PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONPATH=
 
 WORKDIR /app
 
@@ -21,7 +24,10 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 # ---- Stage 2: Runtime ----
 FROM python:3.11-slim
 
+USER root
+
 ENV PATH=/opt/venv/bin:$PATH \
+    PYTHONPATH= \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
@@ -31,13 +37,16 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libpq5 curl \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd -m -u 1000 appuser
+    && (id -u appuser >/dev/null 2>&1 || useradd -m -u 1000 appuser)
 
 COPY --from=builder /opt/venv /opt/venv
 
 COPY . .
 
-RUN mkdir -p /app/data /app/uploads && chown -R appuser:appuser /app
+RUN sed -i 's/\r$//' /app/docker/entrypoint.sh \
+    && chmod +x /app/docker/entrypoint.sh \
+    && mkdir -p /app/data /app/uploads \
+    && chown -R appuser /app
 
 USER appuser
 

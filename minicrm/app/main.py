@@ -19,9 +19,8 @@ from contextlib import asynccontextmanager
 
 from app import contract, crud
 from app.config import get_settings
-from app.human_auth import HumanAuthError
 from app.relay import relay_loop
-from app.routers import areas, auth, deals, outbox, projects, units
+from app.routers import areas, deals, outbox, projects, units
 from app.schemas import HealthOut
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -58,18 +57,6 @@ app.include_router(areas.router)
 app.include_router(units.router)
 app.include_router(deals.router)
 app.include_router(outbox.router)
-app.include_router(auth.router)
-
-
-@app.exception_handler(HumanAuthError)
-async def human_auth_error_handler(request: Request, exc: HumanAuthError) -> JSONResponse:
-    del request
-    headers = {"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"error_code": exc.error_code.value, "message": exc.message},
-        headers=headers,
-    )
 
 
 @app.exception_handler(crud.CrudError)

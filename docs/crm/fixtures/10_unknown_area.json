@@ -1,0 +1,16 @@
+{
+  "_comment": "FIXTURE TỔNG HỢP — area_ref không tra được. Mong đợi: từ chối, TUYỆT ĐỐI không tự tạo phân khu.",
+  "schema_version": 1,
+  "source_system": "mini_crm",
+  "source_instance_id": "synthetic-mini-crm",
+  "external_batch_id": "SYNTH-BATCH-0010",
+  "sync_mode": "incremental",
+  "project_ref": { "project_id": "5117d1c0-0000-4000-8000-000000000001" },
+  "source_extracted_at": "2026-08-09T03:30:00+07:00",
+  "records": [
+    {
+      "entity": "unit", "operation": "upsert", "external_id": "SYNTH-U-0500", "source_revision": 1,
+      "payload": { "area_ref": { "area_name": "PHAN-KHU-KHONG-CO", "unit_type": "2PN" }, "unit_code": "X-01", "unit_status": "available" }
+    }
+  ]
+}

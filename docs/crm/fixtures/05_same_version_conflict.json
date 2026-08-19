@@ -1,0 +1,16 @@
+{
+  "_comment": "FIXTURE TỔNG HỢP — CÙNG source_revision=1 nhưng unit_status khác. Mong đợi: conflict, giữ nguyên trạng thái đã nhận, ghi một finding.",
+  "schema_version": 1,
+  "source_system": "mini_crm",
+  "source_instance_id": "synthetic-mini-crm",
+  "external_batch_id": "SYNTH-BATCH-0005",
+  "sync_mode": "incremental",
+  "project_ref": { "project_id": "5117d1c0-0000-4000-8000-000000000001" },
+  "source_extracted_at": "2026-08-09T02:15:00+07:00",
+  "records": [
+    {
+      "entity": "unit", "operation": "upsert", "external_id": "SYNTH-U-0001", "source_revision": 1,
+      "payload": { "area_ref": { "area_name": "A1", "unit_type": "2PN" }, "unit_code": "A1-01-01", "unit_status": "blocked" }
+    }
+  ]
+}

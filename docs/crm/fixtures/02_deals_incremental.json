@@ -1,0 +1,23 @@
+{
+  "_comment": "FIXTURE TỔNG HỢP — KHÔNG PHẢI DỮ LIỆU CRM THẬT.",
+  "schema_version": 1,
+  "source_system": "mini_crm",
+  "source_instance_id": "synthetic-mini-crm",
+  "external_batch_id": "SYNTH-BATCH-0002",
+  "sync_mode": "incremental",
+  "project_ref": { "project_id": "5117d1c0-0000-4000-8000-000000000001" },
+  "source_extracted_at": "2026-08-09T02:05:00+07:00",
+  "records": [
+    {
+      "entity": "deal", "operation": "upsert", "external_id": "SYNTH-D-0001", "source_revision": 1,
+      "payload": { "external_unit_id": "SYNTH-U-0002", "deal_status": "reserved", "reserved_at": "2026-08-01T09:30:00+07:00" }
+    },
+    {
+      "entity": "deal", "operation": "upsert", "external_id": "SYNTH-D-0002", "source_revision": 2,
+      "payload": {
+        "external_unit_id": "SYNTH-U-0003", "deal_status": "sold",
+        "reserved_at": "2026-07-20T10:00:00+07:00", "sold_at": "2026-08-02T14:15:00+07:00"
+      }
+    }
+  ]
+}

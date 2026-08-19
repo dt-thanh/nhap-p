@@ -343,7 +343,7 @@ def test_template_columns_exist_in_alembic_schema():
     """
     revisions = sorted(Path("alembic/versions").glob("[0-9]*.py"))
     assert revisions, "không tìm thấy migration nào"
-    sources = [path.read_text(encoding="utf-8") for path in revisions]
+    sources = [path.read_text() for path in revisions]
 
     for template in TEMPLATES.values():
         declared: set[str] = set()

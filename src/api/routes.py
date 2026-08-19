@@ -36,12 +36,11 @@ async def chat(
     principal: DashboardPrincipal = Depends(require_viewer),
 ) -> ChatResponse:
     """GPT plans read-only tools and synthesizes their scoped DB results."""
-    # A project named in the latest question is stronger intent than a stale
-    # project selector in the UI.
-    mentioned_project_id = await _infer_project_id_from_message(
-        request.message, allowed_external_ids=_allowed_external_ids(principal)
-    )
-    resolved_project_id = mentioned_project_id or project_id
+    resolved_project_id = project_id
+    if resolved_project_id is None:
+        resolved_project_id = await _infer_project_id_from_message(
+            request.message, allowed_external_ids=_allowed_external_ids(principal)
+        )
     _enforce_requested_project_scope(principal, resolved_project_id)
     try:
         response, tool_calls, sources, usage = await run_advisory_agent(

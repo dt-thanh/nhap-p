@@ -1,0 +1,151 @@
+# ============================================================================
+# Mini CRM — biến môi trường
+# ============================================================================
+# Copy sang `minicrm/.env` rồi điền giá trị thật:
+#   cp minicrm/.env.example minicrm/.env
+# KHÔNG commit `minicrm/.env` (đã có trong .gitignore qua rule `.env`, khớp ở
+# MỌI thư mục — xác nhận bằng `git check-ignore -v minicrm/.env`).
+#
+# ĐÂY LÀ NGUỒN CẤU HÌNH CHÍNH của Mini CRM, cho CẢ HAI chế độ chạy:
+#
+#   A. Docker Compose:  toàn bộ file này được nạp vào container qua
+#                        `env_file: ./minicrm/.env` (docker-compose.yml,
+#                        service `minicrm`). Chỉ BA giá trị bị ghi đè bên trong
+#                        Compose vì chúng THẬT SỰ phải khác trong container:
+#                        MINICRM_DATABASE_URL, MINICRM_SYNC_BASE_URL,
+#                        MINICRM_RUN_MIGRATIONS.
+#
+#   B. uvicorn trực tiếp (cd minicrm && uvicorn app.main:app ...):
+#                        `minicrm/app/config.py` khai `env_file=".env"` —
+#                        Pydantic phân giải đường dẫn này theo CWD tại lúc
+#                        tiến trình khởi động, nên PHẢI chạy uvicorn từ NGAY
+#                        trong thư mục `minicrm/` để nó tìm đúng file này.
+#
+# HAI NGOẠI LỆ, đọc kỹ trước khi sửa:
+#
+#   - MINICRM_SYNC_API_KEY và MINICRM_AUTH_ADMIN_TOKEN CÒN có một bản sao BẮT
+#     BUỘC trong `.env` GỐC của repo (không phải file này). Docker Compose chỉ
+#     dừng được ở bước `docker compose config`/`up` khi thiếu (thay vì âm thầm
+#     khởi động Mini CRM với khoá rỗng) nếu giá trị đó nằm trong ngữ cảnh nội
+#     suy CỦA COMPOSE — và `env_file:` không nằm trong ngữ cảnh đó. Vì
+#     `environment:` LUÔN thắng `env_file:` ở cùng khoá, bản trong `.env` GỐC
+#     mới là bản THẬT SỰ chảy vào container Docker; bản ở FILE NÀY chỉ có tác
+#     dụng cho chế độ uvicorn trực tiếp. Giữ HAI bản GIỐNG HỆT NHAU — xem chú
+#     thích tương ứng trong `.env.example` (gốc) và trong docker-compose.yml.
+#
+# TIỀN TỐ MINICRM_ là BẮT BUỘC cho MỌI biến ở đây (minicrm/app/config.py,
+# `env_prefix="MINICRM_"`). Không có tiền tố này, Mini CRM và Backend — nếu
+# cùng đọc một `.env` — sẽ đọc trúng biến của nhau; cụ thể, thiếu tiền tố sẽ
+# khiến Mini CRM đọc trúng DATABASE_URL của Backend và migrate cây schema của
+# MÌNH lên database của Backend, trộn hai lịch sử Alembic làm một.
+
+# ---- Database RIÊNG của Mini CRM ---------------------------------------
+# required | secret (chuỗi kết nối chứa mật khẩu) | có giá trị khác nhau theo
+# chế độ chạy — KHÔNG BAO GIỜ trỏ vào database của Backend (cổng 5432/service
+# `db`); Mini CRM có database RIÊNG, migration RIÊNG (Alembic riêng), volume
+# RIÊNG. Trộn hai database là hỏng vĩnh viễn, không phát hiện được từ log.
+#
+#   Docker mode (ghi đè trong docker-compose.yml, KHÔNG cần sửa ở đây):
+#     postgresql+asyncpg://minicrm:minicrm@minicrm_db:5432/minicrm
+#   Host mode (giá trị THẬT SỰ dùng khi chạy uvicorn trực tiếp — cổng publish
+#   5433, KHÁC cổng 5432 của Backend để gõ nhầm không trỏ nhầm hệ):
+MINICRM_DATABASE_URL=postgresql+asyncpg://minicrm:minicrm@localhost:5433/minicrm
+
+# ---- Đường đẩy sang Backend (một chiều: Mini CRM → Backend) -------------
+# required | có giá trị khác nhau theo chế độ chạy.
+#
+#   Docker mode (ghi đè trong docker-compose.yml): http://api:8000
+#     (tên SERVICE của Compose — trong container, `localhost` là chính Mini
+#     CRM, không phải Backend.)
+#   Host mode (giá trị THẬT SỰ dùng khi chạy uvicorn trực tiếp):
+MINICRM_SYNC_BASE_URL=http://localhost:8000
+
+# required | secret | Mini-CRM-only.
+# Khoá MÁY-VỚI-MÁY do BACKEND cấp và xác thực (bảng `sync_credentials`,
+# so hash, gửi kèm header `X-API-Key` trên mọi lô đẩy) — KHÔNG phải token
+# người dùng của Mini CRM (đó là MINICRM_AUTH_* bên dưới). Thiếu hoặc sai =
+# mọi lô đẩy nhận 401 từ Backend, dead-letter vĩnh viễn (không tự phục hồi).
+# Cấp mới: python -m scripts.sync_simulator --issue-key --instance mini-crm-dev
+#
+# NHẮC LẠI (xem đầu file): biến này CÒN có một bản sao bắt buộc trong `.env`
+# GỐC của repo — dùng cho chế độ Docker. Giữ hai bản giống hệt nhau.
+MINICRM_SYNC_API_KEY=afsk_NWJz9j7n2IDnyglYiMKR5uEU3wx8fW56uNKq-WlPPXo
+
+# optional | secret (dạng số, không nhạy cảm nhưng vẫn cấu hình vận hành).
+MINICRM_SYNC_TIMEOUT_SECONDS=10
+
+# ---- Danh tính hệ nguồn mà Backend sẽ thấy -------------------------------
+# required | Mini-CRM-only.
+# PHẢI khớp CHÍNH XÁC `source_instance_id` mà MINICRM_SYNC_API_KEY ở trên được
+# cấp/ràng buộc trong bảng `sync_credentials` của Backend — sai giá trị này
+# thì một khoá ĐÚNG cũng bị Backend từ chối 401 (khoá bị buộc vào đúng MỘT
+# `source_instance_id`, không dùng chung được giữa các instance).
+MINICRM_SOURCE_SYSTEM=mini_crm
+MINICRM_SOURCE_INSTANCE_ID=mini-crm-dev
+
+# ---- UUID dự án cho phong bì v1 (kế thừa, unit/deal) ---------------------
+# optional, nhưng KHÔNG được để trống trong repository NÀY — xem cảnh báo.
+#
+# `minicrm/app/contract.py::validate()` (hợp đồng v1, ĐÃ ĐÓNG BĂNG) đòi
+# `project_ref.project_id` là một UUID CÚ PHÁP HỢP LỆ, kiểm TRƯỚC KHI enqueue,
+# TRONG CÙNG transaction với bản ghi cục bộ — để trống biến này khiến
+# `uuid.UUID("")` ném lỗi, `contract.assert_valid()` rollback CẢ giao dịch, và
+# MỌI unit/deal MỚI đều không tạo được (không chỉ đường v1 chết, cả bản ghi
+# cục bộ cũng biến mất). Vì vậy — khác với hướng dẫn tổng quát "để trống cho
+# luồng v2 canonical" — repository NÀY đòi một UUID CÚ PHÁP HỢP LỆ ở đây.
+#
+# KHÔNG trỏ vào một project_id THẬT đang tồn tại ở Backend. Luồng canonical
+# hiện tại là v2 (routes /sync/{projects,areas,units,deals}); v1 (đường đồng
+# bộ kế thừa cho unit/deal) CỐ Ý bị bỏ chết bằng cách trỏ biến này vào một UUID
+# không khớp project_id thật nào — mọi phong bì v1 nhận đúng một kết quả sạch
+# (422 UNKNOWN_PROJECT từ Backend, dead-letter vô hại, không chặn v2). Trỏ nó
+# vào một project_id THẬT sẽ làm v1 "sống lại" và va với v2 ở cùng revision
+# nhưng khác dấu vân payload (v1 dùng area_name/unit_type, v2 dùng
+# external_area_id) → Backend báo `conflict` GIẢ trên mọi unit/deal.
+# KHÔNG SỬA GIÁ TRỊ NÀY trừ khi mã nguồn v1 tự nó thay đổi.
+MINICRM_PROJECT_ID=00000000-0000-0000-0000-000000000000
+
+# ---- Migration tự động lúc khởi động (chỉ dev) ---------------------------
+# optional | có giá trị khác nhau theo chế độ chạy.
+#   Docker mode (ghi đè "true" trong docker-compose.yml — tiện cho dev, tự
+#   migrate khi container khởi động).
+#   Host mode (giá trị Ở ĐÂY — "false": migrate thủ công bằng
+#   `alembic -c alembic.ini upgrade head`, tách khỏi việc khởi động lại
+#   tiến trình, giống quy ước `RUN_MIGRATIONS` của Backend).
+MINICRM_RUN_MIGRATIONS=false
+
+# ---- Vòng relay tự động (Phase C.5) — đọc lại crm_outbox, gửi lại đúng ---
+# ---- payload đã ký. KHÔNG ghi dòng outbox mới, KHÔNG dựng đường gửi riêng.
+# optional (có default an toàn trong minicrm/app/config.py).
+MINICRM_RELAY_ENABLED=true
+MINICRM_RELAY_INTERVAL_SECONDS=5
+MINICRM_RELAY_BATCH_SIZE=20
+
+# ---- Xác thực GHI của Mini CRM (D-14) -------------------------------------
+# Ba token TĨNH, so bằng secrets.compare_digest — RỖNG = vai trò đó CHƯA cấu
+# hình. Nếu KHÔNG token nào ở dưới được cấu hình, Mini CRM đóng toàn bộ mặt
+# ghi (503 AUTH_DISABLED) — đây là fail-closed CÓ CHỦ ĐÍCH, xem app/auth.py.
+#
+# MINICRM_AUTH_ADMIN_TOKEN: required cho scripts/seed_mini_crm_from_json.py và
+# cho bất kỳ ai cần tạo dự án (`POST /projects` đòi đúng vai trò `admin` — tạo
+# dự án MỚI mở rộng phạm vi, business_viewer/pipeline_operator không đủ).
+# secret. KHÁC HẲN DASHBOARD_ADMIN_TOKEN của Backend (`.env` gốc) — đó là
+# token ĐỌC dashboard, token này là token GHI của Mini CRM, hai hệ thống khác
+# nhau, không dùng chung được.
+#
+# NHẮC LẠI (xem đầu file): biến MINICRM_AUTH_ADMIN_TOKEN CÒN có một bản sao
+# bắt buộc trong `.env` GỐC — dùng cho chế độ Docker. Giữ hai bản giống nhau.
+MINICRM_AUTH_BUSINESS_VIEWER_TOKEN=mcv_iNnwQjiQdlikZi7mbmSkpIBWs0WUqIZV
+MINICRM_AUTH_PIPELINE_OPERATOR_TOKEN=mco_wosDdlePIgFZ-i5LdVbpBw_TVak6UDY2
+MINICRM_AUTH_ADMIN_TOKEN=mca_6NnhdFPLj4jZRRwcpB4JLz5XDxrBQuhD
+
+# optional | secret (danh sách phạm vi, không phải một khoá đơn).
+# JSON: {"<token>": ["P-0001", "P-0002"]} hoặc {"<token>": "ALL"}. Token vắng
+# mặt trong map này = phạm vi RỖNG, kể cả khi bản thân token đó hợp lệ (an
+# toàn theo mặc định — không đoán phạm vi cho một token chưa được liệt kê).
+#
+# Ví dụ AN TOÀN (không phải giá trị thật — thay bằng token thật của bạn ở
+# trên trước khi dùng ví dụ này):
+#   MINICRM_AUTH_PROJECT_SCOPE={"CHANGE_ME_MINICRM_ADMIN_TOKEN":"ALL","CHANGE_ME_MINICRM_PIPELINE_OPERATOR_TOKEN":["P-0001"]}
+MINICRM_AUTH_PROJECT_SCOPE={"mca_6NnhdFPLj4jZRRwcpB4JLz5XDxrBQuhD":"ALL","mco_wosDdlePIgFZ-i5LdVbpBw_TVak6UDY2":["P-0001"]}
+

@@ -44,32 +44,20 @@ export function ErrorState({ error, onRetry, compact }) {
       <div style={{ ...S.emptyIcon, background: color.dangerSoft }}>
         <Icon name="warning" size={22} color={color.danger} />
       </div>
-      <div style={S.emptyTitle}>{isNet ? "Lỗi kết nối mạng" : "Có lỗi xảy ra"}</div>
+      <div style={S.emptyTitle}>{isNet ? "Lỗi kết nối mạng" : "Không tải được dữ liệu"}</div>
       <div style={S.emptyHint}>
-        {getUserFacingError(error)}
+        {isNet ? "Kiểm tra kết nối rồi thử lại." : (error?.message || "Đã xảy ra lỗi từ máy chủ.")}
       </div>
       {onRetry && <button style={S.retry} onClick={onRetry}>Thử lại</button>}
     </div>
   );
 }
 
-export function getUserFacingError(error) {
-  if (error?.network) return "Kiểm tra kết nối rồi thử lại.";
-  const code = error?.body?.detail?.error_code || error?.body?.error_code;
-  const messages = {
-    PROJECT_NOT_FOUND: "Không tìm thấy dự án.",
-    AREA_NOT_FOUND: "Không tìm thấy phân khu.",
-    UNAUTHORIZED: "Phiên đăng nhập không hợp lệ.",
-    FORBIDDEN: "Bạn không có quyền thực hiện thao tác này.",
-  };
-  return messages[code] || "Đã xảy ra lỗi khi tải dữ liệu. Vui lòng thử lại.";
-}
-
 /** Bọc một section: tự chọn hiển thị skeleton / error / empty / nội dung. */
-export function SectionState({ loading, error, empty, onRetry, skeleton, compact, emptyTitle, emptyHint, children }) {
+export function SectionState({ loading, error, empty, onRetry, skeleton, compact, children }) {
   if (loading) return skeleton || <DefaultSkeleton compact={compact} />;
   if (error) return <ErrorState error={error} onRetry={onRetry} compact={compact} />;
-  if (empty) return <EmptyState title={emptyTitle} hint={emptyHint} compact={compact} />;
+  if (empty) return <EmptyState compact={compact} />;
   return children;
 }
 

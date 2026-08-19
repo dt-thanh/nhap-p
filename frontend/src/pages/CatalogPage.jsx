@@ -33,7 +33,6 @@ import { isAuthError } from "../api/client";
 import ProjectSelector from "../components/ProjectSelector";
 import { color, radius, space, size, layout, shadow } from "../styles/tokens";
 import { useBreakpoint, pick } from "../hooks/useBreakpoint";
-import { areaLabel } from "../utils/areaLabel";
 
 const EMPTY_PROJECT = { name: "", launch_date: "", headline: "", introduce: "" };
 const EMPTY_AREA = {
@@ -460,7 +459,7 @@ export default function CatalogPage() {
                 <option value="" disabled>— Chọn phân khu —</option>
                 {areas.map((a) => (
                   <option key={a.external_id || a.area_id} value={a.external_id || ""} disabled={!a.external_id}>
-                    {areaLabel(a)}
+                    {a.area_name} — {a.unit_type}
                   </option>
                 ))}
               </select>

@@ -204,8 +204,5 @@ describe("AgentPage", () => {
 
     expect(await screen.findByText(/Gọi tư vấn/)).toBeInTheDocument();
     expect(screen.getByText(/Điểm cao/)).toBeInTheDocument();
-    expect(screen.getByText("Rủi ro sử dụng đề xuất")).toBeInTheDocument();
-    expect(screen.getByText("Độ phủ tín hiệu đầu vào")).toBeInTheDocument();
-    expect(screen.queryByText("Độ tin cậy")).not.toBeInTheDocument();
   });
 });

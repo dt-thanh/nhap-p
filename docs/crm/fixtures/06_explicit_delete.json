@@ -1,0 +1,13 @@
+{
+  "_comment": "FIXTURE TỔNG HỢP — xoá tường minh. Mong đợi: tombstone (xoá mềm), KHÔNG xoá vật lý.",
+  "schema_version": 1,
+  "source_system": "mini_crm",
+  "source_instance_id": "synthetic-mini-crm",
+  "external_batch_id": "SYNTH-BATCH-0006",
+  "sync_mode": "incremental",
+  "project_ref": { "project_id": "5117d1c0-0000-4000-8000-000000000001" },
+  "source_extracted_at": "2026-08-09T02:20:00+07:00",
+  "records": [
+    { "entity": "deal", "operation": "delete", "external_id": "SYNTH-D-0001", "source_revision": 9 }
+  ]
+}

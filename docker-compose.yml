@@ -18,6 +18,7 @@ x-backend-base: &backend-base
   volumes:
     - ./src:/app/src
     - ./alembic:/app/alembic
+    - ./data:/app/data
     - uploads:/app/uploads
   restart: unless-stopped
 
@@ -57,6 +58,10 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-absorption}
       REDIS_URL: redis://redis:6379/0
+      # Local API only; dashboard_auth also requires APP_ENV=development.
+      DEV_AUTH_BYPASS: "true"
+      # CHỈ dùng ở dev/test. entrypoint TỪ CHỐI chạy khi APP_ENV=production —
+      # xem docs/runbooks/migrations.md (sự cố quy trình ở Phase 8D).
       RUN_MIGRATIONS: "true"
     command:
       - uvicorn
@@ -113,6 +118,8 @@ services:
     environment:
       # Vite dev server proxy /api và /ws sang service `api` qua compose network
       VITE_API_PROXY_TARGET: http://api:8000
+      # Phase F/G: cổng ghi của FE — Mini CRM, cùng mạng compose.
+      VITE_MINICRM_PROXY_TARGET: http://minicrm:8000
     ports:
       - "5173:5173"
     volumes:
@@ -123,6 +130,107 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  # ---- Mini CRM: hệ nguồn TỔNG HỢP, HOÀN TOÀN TÁCH KHỎI BACKEND ----------
+  #
+  # Database riêng, volume riêng, cổng riêng, image riêng, lịch sử Alembic riêng.
+  # Hai hệ thống chỉ gặp nhau ở ĐÚNG một chỗ: Mini CRM POST sang `api`. Backend
+  # không có đường nào gọi ngược lại, và không được thêm.
+  #
+  # Đây KHÔNG phải CRM của khách hàng. Nó do chính dự án này viết, nên nó không
+  # chứng minh được khả năng tương thích với bất kỳ hệ nguồn thật nào.
+  minicrm_db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${MINICRM_POSTGRES_USER:-minicrm}
+      POSTGRES_PASSWORD: ${MINICRM_POSTGRES_PASSWORD:-minicrm}
+      POSTGRES_DB: ${MINICRM_POSTGRES_DB:-minicrm}
+    ports:
+      # Cổng KHÁC backend (5432) — gõ nhầm cổng không được phép trỏ vào nhầm hệ.
+      - "5433:5432"
+    volumes:
+      - minicrm_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${MINICRM_POSTGRES_USER:-minicrm} -d ${MINICRM_POSTGRES_DB:-minicrm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  minicrm:
+    build:
+      context: ./minicrm
+      dockerfile: Dockerfile
+    image: minicrm-synthetic:dev
+    # Nguồn giá trị CHÍNH: đúng file mà chế độ uvicorn trực tiếp cũng đọc
+    # (`minicrm/app/config.py`, `env_file=".env"` phân giải theo CWD = `minicrm/`
+    # khi chạy trực tiếp). Dùng CHUNG một file cho cả hai chế độ nghĩa là một dev
+    # điền `minicrm/.env` một lần là chạy được ở CẢ HAI — không còn "cấu hình chỉ
+    # sống ở chế độ này mà biến mất ở chế độ kia".
+    #
+    # LỖI ĐÃ SỬA: bản trước KHÔNG có `env_file` này — mọi biến bí mật
+    # (MINICRM_AUTH_*, MINICRM_SYNC_API_KEY, MINICRM_PROJECT_ID) chỉ tồn tại
+    # trong `minicrm/.env` và KHÔNG BAO GIỜ tới container, vì khối `environment:`
+    # dưới đây (nội suy từ `.env` GỐC, nơi các biến đó không có mặt) đã GHI ĐÈ
+    # chúng bằng `${VAR:-}` → chuỗi rỗng, mỗi lần `up`/`recreate`. `environment:`
+    # LUÔN thắng `env_file:` khi cùng khoá (quy tắc precedence của Compose) — nên
+    # việc sửa đúng là: chỉ giữ lại trong `environment:` NHỮNG GIÁ TRỊ THẬT SỰ
+    # PHẢI KHÁC giữa hai chế độ (kết nối mạng Docker + auto-migrate dev), và bỏ
+    # hẳn mọi biến bí mật khỏi `environment:` để chúng không còn gì để ghi đè.
+    env_file:
+      - ./minicrm/.env
+    environment:
+      # Ba biến dưới đây CỐ Ý nằm trong `environment:` (không phải `env_file`) vì
+      # giá trị của chúng THẬT SỰ khác giữa hai chế độ chạy — `minicrm/.env` giữ
+      # bản host-mode (`localhost:5433`/`localhost:8000`), ở đây ghi đè bằng bản
+      # Docker-mode. TIỀN TỐ MINICRM_ cho MỌI biến Mini CRM: không có nó, Mini CRM
+      # sẽ đọc trúng DATABASE_URL của backend và migrate cây schema của mình lên
+      # database của backend — trộn hai lịch sử Alembic làm một.
+      MINICRM_DATABASE_URL: postgresql+asyncpg://${MINICRM_POSTGRES_USER:-minicrm}:${MINICRM_POSTGRES_PASSWORD:-minicrm}@minicrm_db:5432/${MINICRM_POSTGRES_DB:-minicrm}
+      # TÊN SERVICE của Compose, không phải localhost: trong container,
+      # `localhost` là chính Mini CRM.
+      MINICRM_SYNC_BASE_URL: http://api:8000
+      # Chỉ dev. Production migrate bằng lệnh tường minh, giống backend
+      # (`minicrm/.env` giữ "false" cho chế độ uvicorn trực tiếp — migrate tay).
+      MINICRM_RUN_MIGRATIONS: "true"
+      # --- Hai bí mật BẮT BUỘC, CỐ Ý trùng nguồn với `.env` GỐC ------------
+      # `environment:` LUÔN thắng `env_file:` ở CÙNG một khoá (quy tắc precedence
+      # của Compose — không có cách nào lách qua bằng cú pháp) — nên MỘT trong
+      # hai khoá dưới đây, nếu xuất hiện ở đây, sẽ luôn ghi đè giá trị từ
+      # `minicrm/.env`. Dùng đúng đặc điểm đó có chủ đích: `${VAR:?...}` chỉ đọc
+      # được biến từ ngữ cảnh nội suy CỦA COMPOSE (`.env` GỐC hoặc biến shell) —
+      # nó KHÔNG với vào được nội dung của một `env_file:` khác. Muốn Compose
+      # DỪNG NGAY tại bước `docker compose config`/`up` khi bí mật thiếu (thay vì
+      # âm thầm khởi động Mini CRM với khoá rỗng), giá trị đó BẮT BUỘC phải sống
+      # ở `.env` GỐC — đây là hai biến duy nhất cố tình trùng giữa `.env` GỐC và
+      # `minicrm/.env`, giữ CÙNG một giá trị (cùng một Mini CRM instance, cùng
+      # một khoá đã đăng ký trong `sync_credentials` của Backend) — xem
+      # `.env.example` mục Mini CRM để biết vì sao chỉ hai biến này, không phải
+      # toàn bộ.
+      MINICRM_SYNC_API_KEY: "${MINICRM_SYNC_API_KEY:?MINICRM_SYNC_API_KEY is required in root .env for Docker mode. Copy the value from minicrm/.env, or issue one with scripts/sync_simulator.py --issue-key}"
+      MINICRM_AUTH_ADMIN_TOKEN: "${MINICRM_AUTH_ADMIN_TOKEN:?MINICRM_AUTH_ADMIN_TOKEN is required in root .env for Docker mode. Copy the same value used in minicrm/.env}"
+    volumes:
+      - ./minicrm/app:/app/app
+      - ./minicrm/alembic:/app/alembic
+    ports:
+      - "8100:8000"
+    depends_on:
+      minicrm_db:
+        condition: service_healthy
+      # Backend phải sống trước khi Mini CRM có thể đẩy sang.
+      api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
 volumes:
   pgdata:
   uploads:
+  # Volume RIÊNG. Dùng chung volume là dùng chung database.
+  minicrm_pgdata:

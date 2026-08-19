@@ -1,0 +1,590 @@
+{
+  "meta": {
+    "alembic_revision": "0015_ranking_results",
+    "captured_at": "2026-08-11T15:12:47.452726+00:00",
+    "database": "AbsorptionForecast"
+  },
+  "tables": {
+    "absorption_daily": {
+      "checksum": "f5fe2b136d2565b9f8dbb9e27438026f",
+      "columns": [
+        "area_id",
+        "calculator",
+        "computation_id",
+        "computed_at",
+        "data_quality_status",
+        "id",
+        "is_observed",
+        "stat_date",
+        "units_remaining",
+        "units_reserved",
+        "units_sold",
+        "velocity_30d",
+        "velocity_7d"
+      ],
+      "rows": 360
+    },
+    "alerts": {
+      "checksum": "b5ab32fdd5cc56e04e3874b34d148d49",
+      "columns": [
+        "alert_type",
+        "area_id",
+        "closed_at",
+        "created_at",
+        "days_to_sellout",
+        "forecast_id",
+        "id",
+        "severity",
+        "status",
+        "threshold_days"
+      ],
+      "rows": 6
+    },
+    "approvals": {
+      "checksum": "33c4e105a305b90f53b727bf6c3df6a0",
+      "columns": [
+        "decided_at",
+        "decision",
+        "id",
+        "proposal_id",
+        "reason",
+        "user_id"
+      ],
+      "rows": 3
+    },
+    "areas": {
+      "checksum": "7198b6a41768018d3a47ad4c9f438f73",
+      "columns": [
+        "area_name",
+        "area_sqm",
+        "bedrooms",
+        "cover_image_public_id",
+        "cover_image_url",
+        "created_at",
+        "created_by",
+        "headline",
+        "id",
+        "introduce",
+        "project_id",
+        "review_reason",
+        "reviewed_at",
+        "reviewed_by",
+        "status",
+        "total_units",
+        "unit_type"
+      ],
+      "rows": 10
+    },
+    "audit_logs": {
+      "checksum": "613b5cd7d9768e50185f419a5f4d68b2",
+      "columns": [
+        "action",
+        "created_at",
+        "entity_id",
+        "entity_key",
+        "entity_type",
+        "id",
+        "ip_address",
+        "payload",
+        "role",
+        "user_agent",
+        "user_id"
+      ],
+      "rows": 12
+    },
+    "calculator_comparisons": {
+      "checksum": "EMPTY",
+      "columns": [
+        "anomalies",
+        "anomaly_count",
+        "compared_at",
+        "created_at",
+        "difference_count",
+        "differences",
+        "domain_has_data",
+        "domain_units_remaining",
+        "domain_units_reserved",
+        "domain_units_sold",
+        "id",
+        "legacy_has_data",
+        "legacy_units_remaining",
+        "legacy_units_sold",
+        "matches",
+        "project_id",
+        "trigger"
+      ],
+      "rows": 0
+    },
+    "crm_source_records": {
+      "checksum": "EMPTY",
+      "columns": [
+        "conflict_count",
+        "conflict_detected_at",
+        "conflict_payload_hash",
+        "deleted_at",
+        "external_batch_id",
+        "first_seen_at",
+        "first_sync_run_id",
+        "id",
+        "last_decision",
+        "last_seen_at",
+        "last_sync_run_id",
+        "payload_hash",
+        "source_entity",
+        "source_instance_id",
+        "source_record_id",
+        "source_revision",
+        "source_system",
+        "source_updated_at",
+        "state"
+      ],
+      "rows": 0
+    },
+    "deals": {
+      "checksum": "EMPTY",
+      "columns": [
+        "created_at",
+        "deleted_at",
+        "external_deal_id",
+        "id",
+        "lost_at",
+        "reserved_at",
+        "sold_at",
+        "source_instance_id",
+        "source_revision",
+        "source_status",
+        "source_system",
+        "source_updated_at",
+        "status",
+        "unit_id",
+        "updated_at"
+      ],
+      "rows": 0
+    },
+    "explanations": {
+      "checksum": "e5626a46e2e2eded78e50810d865fca1",
+      "columns": [
+        "assumptions",
+        "content_vi",
+        "forecast_id",
+        "generated_at",
+        "id",
+        "key_factors",
+        "model_name",
+        "prompt_template_version"
+      ],
+      "rows": 4
+    },
+    "feature_snapshots": {
+      "checksum": "EMPTY",
+      "columns": [
+        "calculated_at",
+        "confidence",
+        "created_at",
+        "feature_key",
+        "feature_value",
+        "feature_version",
+        "id",
+        "project_id",
+        "sample_count",
+        "scope",
+        "scope_id",
+        "source",
+        "updated_at"
+      ],
+      "rows": 0
+    },
+    "forecast_jobs": {
+      "checksum": "150616f4656c6e9748b52414590a9c91",
+      "columns": [
+        "areas_failed",
+        "areas_succeeded",
+        "areas_total",
+        "error_summary",
+        "finished_at",
+        "id",
+        "project_id",
+        "started_at",
+        "status",
+        "trigger_type",
+        "triggered_by"
+      ],
+      "rows": 4
+    },
+    "forecast_points": {
+      "checksum": "e74c294864615100f73c65d89d88ea68",
+      "columns": [
+        "ds",
+        "forecast_id",
+        "id",
+        "yhat",
+        "yhat_lower",
+        "yhat_upper"
+      ],
+      "rows": 180
+    },
+    "forecasts": {
+      "checksum": "db5ff6c3828ebc8f3eeb06df3afa0f46",
+      "columns": [
+        "area_id",
+        "confidence_label",
+        "data_cutoff_date",
+        "feature_version",
+        "file_id",
+        "horizon_days",
+        "id",
+        "interval_level",
+        "job_id",
+        "mape",
+        "model_name",
+        "model_version",
+        "parameters",
+        "pred_lower",
+        "pred_upper",
+        "run_at",
+        "sellout_date",
+        "velocity_forecast"
+      ],
+      "rows": 6
+    },
+    "inventory_snapshots": {
+      "checksum": "93a2473a9445173929a468f35d26e6eb",
+      "columns": [
+        "area_id",
+        "created_at",
+        "file_id",
+        "id",
+        "snapshot_date",
+        "snapshot_type",
+        "source_row_hash",
+        "source_updated_at",
+        "units_remaining"
+      ],
+      "rows": 72
+    },
+    "llm_calls": {
+      "checksum": "6015ee26a9b6b37dc6e01f28c2837ae4",
+      "columns": [
+        "called_at",
+        "completion_tokens",
+        "cost_amount",
+        "error_code",
+        "forecast_id",
+        "id",
+        "latency_ms",
+        "model_name",
+        "prompt_template_version",
+        "prompt_tokens",
+        "provider",
+        "retry_count",
+        "status"
+      ],
+      "rows": 6
+    },
+    "projects": {
+      "checksum": "31942cbcc69b25cd768e67eed3c7a813",
+      "columns": [
+        "absorption_calculator",
+        "cover_image_public_id",
+        "cover_image_url",
+        "created_at",
+        "created_by",
+        "headline",
+        "id",
+        "introduce",
+        "launch_date",
+        "name",
+        "review_reason",
+        "reviewed_at",
+        "reviewed_by",
+        "status"
+      ],
+      "rows": 4
+    },
+    "proposals": {
+      "checksum": "4029e75f747709024474f9c011ae5c0d",
+      "columns": [
+        "area_id",
+        "closed_at",
+        "created_at",
+        "id",
+        "status",
+        "suggestion_id",
+        "version"
+      ],
+      "rows": 6
+    },
+    "ranking_configs": {
+      "checksum": "5408c6c217c05b5e58a71fe3787f87fb",
+      "columns": [
+        "archived_at",
+        "copied_from_version",
+        "created_at",
+        "created_by",
+        "id",
+        "min_weight_coverage",
+        "note",
+        "published_at",
+        "published_by",
+        "status",
+        "version",
+        "weights"
+      ],
+      "rows": 1
+    },
+    "ranking_runs": {
+      "checksum": "EMPTY",
+      "columns": [
+        "attempt",
+        "config_version_id",
+        "enqueued_at",
+        "error_summary",
+        "finished_at",
+        "id",
+        "project_id",
+        "scope_ids",
+        "scope_type",
+        "started_at",
+        "status",
+        "sync_run_id",
+        "trigger",
+        "units_processed",
+        "units_ranked",
+        "units_skipped"
+      ],
+      "rows": 0
+    },
+    "ranking_scores": {
+      "checksum": "EMPTY",
+      "columns": [
+        "area_id",
+        "computed_at",
+        "config_version_id",
+        "contributions",
+        "feature_freshness_at",
+        "id",
+        "project_id",
+        "rank_in_area",
+        "rank_in_project",
+        "ranking_run_id",
+        "score",
+        "unit_id",
+        "weight_coverage"
+      ],
+      "rows": 0
+    },
+    "reconciliation_findings": {
+      "checksum": "EMPTY",
+      "columns": [
+        "area_id",
+        "check_code",
+        "created_at",
+        "details",
+        "entity",
+        "external_id",
+        "id",
+        "message",
+        "reconciliation_run_id",
+        "severity"
+      ],
+      "rows": 0
+    },
+    "reconciliation_runs": {
+      "checksum": "EMPTY",
+      "columns": [
+        "checks_run",
+        "error_count",
+        "finished_at",
+        "id",
+        "info_count",
+        "passed",
+        "project_id",
+        "scope",
+        "snapshot_id",
+        "source_instance_id",
+        "source_system",
+        "started_at",
+        "status",
+        "summary",
+        "warning_count"
+      ],
+      "rows": 0
+    },
+    "refresh_tokens": {
+      "checksum": "af0de556b1a933f64be19b26152d644c",
+      "columns": [
+        "created_at",
+        "expires_at",
+        "id",
+        "replaced_by",
+        "revoked_at",
+        "token_hash",
+        "user_id"
+      ],
+      "rows": 5
+    },
+    "sales_records": {
+      "checksum": "888644b64db63390e68d5f5f8c2cc2cf",
+      "columns": [
+        "area_id",
+        "created_at",
+        "external_record_id",
+        "file_id",
+        "id",
+        "sold_date",
+        "source_row_hash",
+        "source_updated_at",
+        "units_sold"
+      ],
+      "rows": 360
+    },
+    "settings": {
+      "checksum": "edc98e6778cb50f66fff875595c5cede",
+      "columns": [
+        "key",
+        "updated_at",
+        "updated_by",
+        "value"
+      ],
+      "rows": 5
+    },
+    "suggestions": {
+      "checksum": "5525bbbc3deedf21e0b12eff9727d014",
+      "columns": [
+        "action_type",
+        "area_id",
+        "created_at",
+        "forecast_id",
+        "id",
+        "rationale",
+        "risk_level"
+      ],
+      "rows": 6
+    },
+    "sync_credentials": {
+      "checksum": "EMPTY",
+      "columns": [
+        "created_at",
+        "expires_at",
+        "id",
+        "key_hash",
+        "key_prefix",
+        "label",
+        "last_used_at",
+        "revoked_at",
+        "source_instance_id",
+        "source_system"
+      ],
+      "rows": 0
+    },
+    "sync_payloads": {
+      "checksum": "EMPTY",
+      "columns": [
+        "content_type",
+        "credential_id",
+        "id",
+        "payload",
+        "payload_bytes",
+        "payload_sha256",
+        "received_at",
+        "record_count",
+        "sync_run_id"
+      ],
+      "rows": 0
+    },
+    "units": {
+      "checksum": "EMPTY",
+      "columns": [
+        "area_id",
+        "created_at",
+        "deleted_at",
+        "external_unit_id",
+        "id",
+        "source_instance_id",
+        "source_revision",
+        "source_system",
+        "source_updated_at",
+        "status",
+        "unit_code",
+        "unit_type",
+        "updated_at"
+      ],
+      "rows": 0
+    },
+    "upload_errors": {
+      "checksum": "0c52b6e71fc5d4faf57bda29e1b39012",
+      "columns": [
+        "column_name",
+        "created_at",
+        "error_category",
+        "error_code",
+        "field_name",
+        "file_id",
+        "id",
+        "json_path",
+        "message",
+        "raw_value_redacted",
+        "record_locator",
+        "resolved_at",
+        "retry_status",
+        "row_number",
+        "source_record_id"
+      ],
+      "rows": 12
+    },
+    "upload_files": {
+      "checksum": "6c1496970ae858c96d321b398fe4bc1d",
+      "columns": [
+        "checksum",
+        "chunk_index",
+        "chunk_total",
+        "error_summary",
+        "external_batch_id",
+        "filename",
+        "finished_at",
+        "id",
+        "input_format",
+        "last_source_cursor",
+        "project_id",
+        "rows_failed",
+        "rows_ok",
+        "rows_received",
+        "schema_version",
+        "snapshot_complete",
+        "snapshot_id",
+        "snapshot_scope",
+        "source_entity",
+        "source_instance_id",
+        "source_system",
+        "status",
+        "sync_mode",
+        "transport_mode",
+        "uploaded_at",
+        "uploaded_by"
+      ],
+      "rows": 8
+    },
+    "user_areas": {
+      "checksum": "e26cb55ed89e20a0dc97a8338c6877d9",
+      "columns": [
+        "area_id",
+        "assigned_at",
+        "user_id"
+      ],
+      "rows": 10
+    },
+    "users": {
+      "checksum": "28d1ac07072460e9ea95b907abcb1fef",
+      "columns": [
+        "created_at",
+        "email",
+        "full_name",
+        "id",
+        "is_active",
+        "password_hash",
+        "role"
+      ],
+      "rows": 6
+    }
+  }
+}

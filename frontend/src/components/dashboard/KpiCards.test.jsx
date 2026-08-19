@@ -6,37 +6,18 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import KpiCards from "./KpiCards";
 
-const SUMMARY = {
-  total_units: 20,
-  units_sold: 8,
-  remaining_units: 12,
-  available_remaining_units: 9,
-  reserved_units: 3,
-  sell_through: 40,
-  velocity_7d: 10.5,
-  velocity_30d: 9.8,
-  estimated_weeks_to_sell_out: 1.2,
-};
+const SUMMARY = { total_units: 20, units_sold: 8, remaining_units: 12, absorption_rate: 40, avg_velocity: 1.5 };
 
 describe("KpiCards", () => {
-  it("renders explicit total, immediately available, and reserved inventory metrics", () => {
+  it("renders all five KPI values from summary", () => {
     render(<KpiCards summary={SUMMARY} loading={false} error={null} onRetry={() => {}} />);
-    expect(screen.getByText("Đã bán")).toBeInTheDocument();
-    expect(screen.getByText("Còn lại tổng cộng")).toBeInTheDocument();
-    expect(screen.getByText("Có thể bán ngay")).toBeInTheDocument();
-    expect(screen.getByText("Đang giữ chỗ")).toBeInTheDocument();
-    expect(screen.getByText("9 căn")).toBeInTheDocument();
-    expect(screen.getByText("3 căn")).toBeInTheDocument();
-    expect(screen.getByText("Tốc độ bán 7 ngày")).toBeInTheDocument();
-    expect(screen.getByText("Tốc độ bán 30 ngày")).toBeInTheDocument();
-    expect(screen.getByText("Ước tính số tuần bán hết")).toBeInTheDocument();
-    expect(screen.getByText("40,0%")).toBeInTheDocument();
+    expect(screen.getByText("Total Units")).toBeInTheDocument();
+    expect(screen.getByText("40.0%")).toBeInTheDocument();
   });
 
   it("missing values render N/A, not a fabricated 0", () => {
     render(<KpiCards summary={{}} loading={false} error={null} onRetry={() => {}} />);
     expect(screen.getAllByText("N/A").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Chưa đủ dữ liệu").length).toBe(3);
   });
 
   it("loading shows skeletons, not stale/zero values", () => {
@@ -48,7 +29,7 @@ describe("KpiCards", () => {
   it("error shows an error state with retry, not broken cards", () => {
     render(<KpiCards summary={null} loading={false} error={{ message: "boom" }} onRetry={() => {}} />);
     expect(screen.getByText(/Thử lại/)).toBeInTheDocument();
-    expect(screen.queryByText("Đã bán")).not.toBeInTheDocument();
+    expect(screen.queryByText("Total Units")).not.toBeInTheDocument();
   });
 
   it("velocity increasing shows an up arrow with a distinct label", () => {

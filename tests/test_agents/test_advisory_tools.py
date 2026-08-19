@@ -59,34 +59,6 @@ def test_tool_plan_rejects_unknown_or_write_tools():
     assert plan == ["portfolio_overview", "top_ranked_units"]
 
 
-def test_ocean_park_short_name_matches_database_project_without_times_city():
-    rows = [
-        {'external_id': 'prj_op1', 'name': 'Vinhomes Ocean Park 1'},
-        {'external_id': 'prj_tmc', 'name': 'Vinhomes Times City'},
-    ]
-    matches = advisory_tools._project_mentions_from_rows(
-        'Ocean Park con nhung can nao nen tu van truoc?', rows
-    )
-    assert [(row['external_id'], score) for row, score in matches] == [
-        ('prj_op1', len('ocean park'))
-    ]
-
-
-def test_business_priority_question_uses_ranking_without_technical_wording():
-    plan = advisory_tools._deterministic_tool_plan(
-        'Doi ban hang nen goi tu van nhung can nao truoc trong tuan nay?', 'prj_op1'
-    )
-    assert 'top_ranked_units' in plan
-
-
-def test_business_readiness_question_checks_ranking_coverage():
-    plan = advisory_tools._deterministic_tool_plan(
-        'Du lieu hien tai co du de ra quyet dinh uu tien ban chua?', 'prj_op1'
-    )
-    assert 'top_ranked_units' in plan
-    assert 'ranking_coverage' in plan
-
-
 def test_project_scoped_question_removes_portfolio_unless_requested():
     plan = advisory_tools._sanitize_tool_plan(
         ["portfolio_overview"],

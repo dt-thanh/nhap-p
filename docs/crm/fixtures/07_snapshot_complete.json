@@ -1,0 +1,27 @@
+{
+  "_comment": "FIXTURE TỔNG HỢP — ảnh chụp ĐỦ mảnh cho phân khu A1, thiếu SYNTH-U-0002. Mong đợi: SYNTH-U-0002 bị tombstone, VỚI ĐIỀU KIỆN tập vắng mặt không vượt chốt an toàn.",
+  "schema_version": 1,
+  "source_system": "mini_crm",
+  "source_instance_id": "synthetic-mini-crm",
+  "external_batch_id": "SYNTH-BATCH-0007",
+  "sync_mode": "full_snapshot",
+  "project_ref": { "project_id": "5117d1c0-0000-4000-8000-000000000001" },
+  "source_extracted_at": "2026-08-09T03:00:00+07:00",
+  "snapshot": {
+    "snapshot_id": "SYNTH-SNAP-0001",
+    "chunk_index": 0,
+    "chunk_total": 1,
+    "snapshot_complete": true,
+    "scope": { "entities": ["unit"], "area_refs": [{ "area_name": "A1", "unit_type": "2PN" }] }
+  },
+  "records": [
+    {
+      "entity": "unit", "operation": "upsert", "external_id": "SYNTH-U-0001", "source_revision": 5,
+      "payload": { "area_ref": { "area_name": "A1", "unit_type": "2PN" }, "unit_code": "A1-01-01", "unit_status": "available" }
+    },
+    {
+      "entity": "unit", "operation": "upsert", "external_id": "SYNTH-U-0003", "source_revision": 5,
+      "payload": { "area_ref": { "area_name": "A1", "unit_type": "2PN" }, "unit_code": "A1-01-03", "unit_status": "sold" }
+    }
+  ]
+}

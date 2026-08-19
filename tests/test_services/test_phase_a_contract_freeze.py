@@ -81,9 +81,7 @@ V2_BUSINESS_INVALID_FIXTURES = [
 
 
 def _sha256(path: Path) -> str:
-    content = path.read_bytes()
-    normalized = content.replace(b"\r\n", b"\n")
-    return hashlib.sha256(normalized).hexdigest()
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _load(path: Path) -> dict:

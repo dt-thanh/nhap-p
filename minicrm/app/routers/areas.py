@@ -23,7 +23,6 @@ from __future__ import annotations
 
 from app import crud, scope
 from app.auth import MiniCrmPrincipal, require_role, require_scope
-from app.human_auth import require_resource_visibility
 from app.schemas import AreaCreate, AreaOut, AreaPatch, AreaWriteOut
 from fastapi import APIRouter, Depends, Query, status
 
@@ -39,12 +38,7 @@ async def create_area(
     return AreaWriteOut(record=AreaOut(**record))
 
 
-@router.get(
-    "",
-    response_model=list[AreaOut],
-    summary="Liệt kê phân khu",
-    dependencies=[Depends(require_resource_visibility)],
-)
+@router.get("", response_model=list[AreaOut], summary="Liệt kê phân khu")
 async def list_areas(
     external_project_id: str | None = Query(default=None, description="Lọc theo dự án"),
     include_archived: bool = Query(default=False, description="Kèm cả phân khu đã lưu trữ"),
@@ -53,12 +47,7 @@ async def list_areas(
     return [AreaOut(**row) for row in rows]
 
 
-@router.get(
-    "/{external_id}",
-    response_model=AreaOut,
-    summary="Đọc một phân khu",
-    dependencies=[Depends(require_resource_visibility)],
-)
+@router.get("/{external_id}", response_model=AreaOut, summary="Đọc một phân khu")
 async def get_area(external_id: str) -> AreaOut:
     return AreaOut(**await crud.get_area(external_id))
 

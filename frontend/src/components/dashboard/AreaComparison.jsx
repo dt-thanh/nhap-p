@@ -2,9 +2,8 @@
 // So sánh phân khu bằng thanh ngang absorption — trực quan, đọc nhanh thứ hạng.
 import React from "react";
 import { color, size, radius, shadow, space, font } from "../../styles/tokens";
-import { SectionState } from "../ui/States";
+import { SectionState, fmt } from "../ui/States";
 import { STATUS } from "./statusMap";
-import { DASHBOARD_TEXT, formatDashboardNumber, formatDashboardUnits } from "./labels";
 
 export default function AreaComparison({ areas, loading, error, onRetry, onSelectArea }) {
   const empty = !loading && !error && (!areas || areas.length === 0);
@@ -12,8 +11,8 @@ export default function AreaComparison({ areas, loading, error, onRetry, onSelec
 
   return (
     <section style={S.card}>
-      <h2 style={S.title}>{DASHBOARD_TEXT.areaComparison}</h2>
-      <p style={S.sub}>{DASHBOARD_TEXT.absorptionByArea}</p>
+      <h2 style={S.title}>Area Comparison</h2>
+      <p style={S.sub}>Tỷ lệ hấp thụ theo phân khu</p>
 
       <SectionState loading={loading} error={error} empty={empty} onRetry={onRetry} compact>
         <div style={S.list}>
@@ -34,10 +33,10 @@ export default function AreaComparison({ areas, loading, error, onRetry, onSelec
                   <div style={S.track}>
                     <div style={{ ...S.fill, width: `${pct}%`, background: st.fg() }} />
                   </div>
-                  <span style={S.pct}>{formatDashboardNumber(a.absorption_rate, { suffix: "%", digits: 1 })}</span>
+                  <span style={S.pct}>{fmt(a.absorption_rate, { suffix: "%", digits: 1 })}</span>
                 </div>
                 <div style={S.meta}>
-                  Đã bán {formatDashboardUnits(a.sold)} / {formatDashboardUnits(a.total_units)} · {DASHBOARD_TEXT.availableRemainingUnits}: {formatBreakdown(a.available_remaining_units)} · {DASHBOARD_TEXT.reservedUnits}: {formatBreakdown(a.reserved_units)} · Tốc độ bán {formatDashboardUnits(a.velocity, { digits: 1, perWeek: true })}
+                  Sold {fmt(a.sold)} / {fmt(a.total_units)} · Velocity {fmt(a.velocity, { suffix: " căn/tuần", digits: 1 })}
                 </div>
               </div>
             );
@@ -46,10 +45,6 @@ export default function AreaComparison({ areas, loading, error, onRetry, onSelec
       </SectionState>
     </section>
   );
-}
-
-function formatBreakdown(value) {
-  return value === null || value === undefined ? DASHBOARD_TEXT.insufficientData : formatDashboardUnits(value);
 }
 
 const S = {

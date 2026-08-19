@@ -58,8 +58,7 @@ class SyncOut(BaseModel):
         synced        backend nhận và xử lý (HTTP 202)
         replayed      backend đã xử lý lô này rồi, trả kết quả cũ (HTTP 200)
         sync_failed   backend ĐÃ trả lời và TỪ CHỐI — sửa dữ liệu rồi gửi lại
-        sync_pending  lô đã commit vào outbox nhưng RelayLoop chưa giao xong, hoặc
-                      không biết backend đã nhận hay chưa (timeout/không nối được)
+        sync_pending  KHÔNG biết backend đã nhận hay chưa (timeout/không nối được)
 
     `sync_failed` và `sync_pending` tách nhau vì hai bên cần hai hành động khác
     hẳn. Gộp lại thành một chữ "lỗi" sẽ khiến người vận hành gửi lại một lô có thể
@@ -303,7 +302,6 @@ class DealCreate(BaseModel):
 
 
 class DealPatch(BaseModel):
-    external_unit_id: str | None = Field(default=None, min_length=1, max_length=128)
     deal_status: DealStatus | None = None
     reserved_at: datetime | None = None
     sold_at: datetime | None = None

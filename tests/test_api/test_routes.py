@@ -53,27 +53,6 @@ async def test_chat_returns_project_inferred_from_message(client, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_named_project_in_question_overrides_stale_ui_project(client, monkeypatch):
-    async def fake_infer(message, allowed_external_ids=None):
-        assert 'Ocean Park' in message
-        return 'prj_op1'
-
-    async def fake_agent(message, project_id, allowed_external_ids=None):
-        assert project_id == 'prj_op1'
-        return 'Ocean Park only', ['project_overview'], [], {}
-
-    monkeypatch.setattr(routes, '_infer_project_id_from_message', fake_infer)
-    monkeypatch.setattr(routes, 'run_advisory_agent', fake_agent)
-    response = await client.post(
-        '/api/v1/chat?project_id=prj_tmc',
-        json={'message': 'Ocean Park con nhung can nao nen tu van truoc?'},
-    )
-
-    assert response.status_code == 200
-    assert response.json()['resolved_project_id'] == 'prj_op1'
-
-
-@pytest.mark.asyncio
 async def test_agent_status(client):
     response = await client.get("/api/v1/status")
     assert response.status_code == 200

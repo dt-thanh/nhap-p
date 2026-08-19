@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from app import crud
 from app.auth import MiniCrmPrincipal, require_role, require_scope
-from app.human_auth import require_resource_visibility
 from app.schemas import ProjectCreate, ProjectOut, ProjectPatch, ProjectWriteOut
 from fastapi import APIRouter, Depends, Query, status
 
@@ -38,24 +37,14 @@ async def create_project(body: ProjectCreate) -> ProjectWriteOut:
     return ProjectWriteOut(record=ProjectOut(**record))
 
 
-@router.get(
-    "",
-    response_model=list[ProjectOut],
-    summary="Liệt kê dự án",
-    dependencies=[Depends(require_resource_visibility)],
-)
+@router.get("", response_model=list[ProjectOut], summary="Liệt kê dự án")
 async def list_projects(
     include_archived: bool = Query(default=False, description="Kèm cả dự án đã lưu trữ"),
 ) -> list[ProjectOut]:
     return [ProjectOut(**row) for row in await crud.list_projects(include_archived=include_archived)]
 
 
-@router.get(
-    "/{external_id}",
-    response_model=ProjectOut,
-    summary="Đọc một dự án",
-    dependencies=[Depends(require_resource_visibility)],
-)
+@router.get("/{external_id}", response_model=ProjectOut, summary="Đọc một dự án")
 async def get_project(external_id: str) -> ProjectOut:
     return ProjectOut(**await crud.get_project(external_id))
 

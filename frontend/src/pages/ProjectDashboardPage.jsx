@@ -13,7 +13,6 @@ import { useAsync } from "../hooks/useAsync";
 import AbsorptionDashboard from "../components/dashboard/AbsorptionDashboard";
 import { color, size, radius, space, font } from "../styles/tokens";
 import { Skeleton } from "../components/ui/States";
-import { DASHBOARD_TEXT } from "../components/dashboard/labels";
 
 export default function ProjectDashboardPage() {
   const { externalId } = useParams();
@@ -36,7 +35,7 @@ export default function ProjectDashboardPage() {
             ? `Không có dự án nào khớp "${externalId}".`
             : forbidden
               ? "Token hiện tại không nằm trong phạm vi dự án này."
-              : "Đã xảy ra lỗi khi tải dự án. Vui lòng thử lại."}
+              : error.message}
         </p>
         <button style={S.backBtn} onClick={() => navigate("/projects")}>Về danh sách dự án</button>
       </div>
@@ -52,7 +51,7 @@ export default function ProjectDashboardPage() {
           {loading ? <Skeleton width={100} height={14} /> : project?.name}
         </span>
         <span style={S.sep}>/</span>
-        <span style={S.crumbCur}>{DASHBOARD_TEXT.dashboardTitle}</span>
+        <span style={S.crumbCur}>Dashboard</span>
       </div>
       <AbsorptionDashboard projectExternalId={externalId} />
     </>

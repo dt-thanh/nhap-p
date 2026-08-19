@@ -1,0 +1,20 @@
+{
+  "_comment": "FIXTURE TỔNG HỢP — chuyển reserved → sold nhưng ĐÁNH RƠI reserved_at. Mong đợi: TỪ CHỐI với error_code=HISTORY_TIMESTAMP_DROPPED, ngày đặt cọc trong bản sao KHÔNG đổi. Đây là kịch bản hỏng của giả định A4.",
+  "schema_version": 1,
+  "source_system": "mini_crm",
+  "source_instance_id": "synthetic-mini-crm",
+  "external_batch_id": "SYNTH-BATCH-0014",
+  "sync_mode": "incremental",
+  "project_ref": { "project_id": "5117d1c0-0000-4000-8000-000000000001" },
+  "source_extracted_at": "2026-08-09T02:14:00+07:00",
+  "records": [
+    {
+      "entity": "deal", "operation": "upsert", "external_id": "SYNTH-D-0001", "source_revision": 6,
+      "payload_completeness": "full",
+      "payload": {
+        "external_unit_id": "SYNTH-U-0002", "deal_status": "sold",
+        "sold_at": "2026-08-08T16:00:00+07:00"
+      }
+    }
+  ]
+}

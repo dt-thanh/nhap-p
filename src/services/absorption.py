@@ -75,13 +75,10 @@ class AbsorptionPoint:
 
 @dataclass(slots=True)
 class AbsorptionSummary:
-    units_remaining: int | None
+    units_remaining: int
     units_sold: int
-    avg_velocity_30d: Decimal | None
+    avg_velocity_30d: Decimal
     updated_at: datetime | None
-    total_units: int | None = None
-    velocity_7d: Decimal | None = None
-    velocity_30d: Decimal | None = None
 
 
 def _rolling_mean(daily: list[int], index: int, window: int) -> Decimal:
@@ -323,20 +320,16 @@ class AreaService:
         ]
         return _group_by_week(points) if granularity == "week" else points
 
-    async def summary(self, project_id: uuid.UUID | str, *, area_id: uuid.UUID | str | None = None) -> AbsorptionSummary:
-        """Tổng hợp đúng phạm vi dự án hoặc phân khu cho dashboard."""
+    async def summary(self, project_id: uuid.UUID | str) -> AbsorptionSummary:
+        """Tổng hợp toàn dự án cho các thẻ số liệu trên dashboard."""
         project_uuid = uuid.UUID(str(project_id))
-        area_uuid = uuid.UUID(str(area_id)) if area_id is not None else None
 
         async with self._session_factory() as session:
-            area_query = sa.select(areas.c.id, areas.c.total_units).where(areas.c.project_id == project_uuid)
-            if area_uuid is not None:
-                area_query = area_query.where(areas.c.id == area_uuid)
-            area_rows = (await session.execute(area_query)).all()
-            area_ids = [row.id for row in area_rows]
-            total_units = sum(int(row.total_units or 0) for row in area_rows)
+            area_ids = list(
+                (await session.execute(sa.select(areas.c.id).where(areas.c.project_id == project_uuid))).scalars()
+            )
             if not area_ids:
-                return AbsorptionSummary(0, 0, None, None, total_units=0, velocity_7d=None, velocity_30d=None)
+                return AbsorptionSummary(0, 0, Decimal("0"), None)
 
             units_sold = await session.scalar(
                 sa.select(sa.func.coalesce(sa.func.sum(sales_records.c.units_sold), 0)).where(
@@ -350,7 +343,9 @@ class AreaService:
                 .order_by(inventory_snapshots.c.area_id, inventory_snapshots.c.snapshot_date.desc())
                 .subquery()
             )
-            units_remaining = await session.scalar(sa.select(sa.func.sum(latest.c.units_remaining)))
+            units_remaining = await session.scalar(
+                sa.select(sa.func.coalesce(sa.func.sum(latest.c.units_remaining), 0))
+            )
             # Vận tốc trung bình toàn dự án = trung bình velocity_30d của các bản
             # ghi MỚI NHẤT mỗi phân khu, không phải trung bình của cả lịch sử.
             # CÙNG lineage với `absorption_series`. Hai đường đọc lệch nhau thì
@@ -359,11 +354,7 @@ class AreaService:
             calculator = await self._calculator_for_project(session, project_uuid)
 
             newest = (
-                sa.select(
-                    absorption_daily.c.area_id,
-                    absorption_daily.c.velocity_7d,
-                    absorption_daily.c.velocity_30d,
-                )
+                sa.select(absorption_daily.c.area_id, absorption_daily.c.velocity_30d)
                 .distinct(absorption_daily.c.area_id)
                 .where(
                     absorption_daily.c.area_id.in_(area_ids),
@@ -372,8 +363,7 @@ class AreaService:
                 .order_by(absorption_daily.c.area_id, absorption_daily.c.stat_date.desc())
                 .subquery()
             )
-            velocity_7d = await session.scalar(sa.select(sa.func.avg(newest.c.velocity_7d)))
-            velocity_30d = await session.scalar(sa.select(sa.func.avg(newest.c.velocity_30d)))
+            avg_velocity = await session.scalar(sa.select(sa.func.coalesce(sa.func.avg(newest.c.velocity_30d), 0)))
             updated_at = await session.scalar(
                 sa.select(sa.func.max(absorption_daily.c.computed_at)).where(
                     absorption_daily.c.area_id.in_(area_ids),
@@ -382,13 +372,10 @@ class AreaService:
             )
 
         return AbsorptionSummary(
-            units_remaining=int(units_remaining) if units_remaining is not None else None,
+            units_remaining=int(units_remaining or 0),
             units_sold=int(units_sold or 0),
-            avg_velocity_30d=Decimal(velocity_30d).quantize(Decimal("0.0001")) if velocity_30d is not None else None,
+            avg_velocity_30d=Decimal(avg_velocity or 0).quantize(Decimal("0.0001")),
             updated_at=updated_at,
-            total_units=total_units,
-            velocity_7d=Decimal(velocity_7d).quantize(Decimal("0.0001")) if velocity_7d is not None else None,
-            velocity_30d=Decimal(velocity_30d).quantize(Decimal("0.0001")) if velocity_30d is not None else None,
         )
 
 

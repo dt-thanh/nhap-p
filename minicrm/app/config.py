@@ -19,9 +19,8 @@ lập ở đây thành lời hứa suông.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -73,37 +72,6 @@ class Settings(BaseSettings):
     # JSON: {"<token>": ["P-0001", "P-0002"]} hoặc {"<token>": "ALL"}. Token vắng
     # mặt trong map này = phạm vi RỖNG, kể cả khi bản thân token đó hợp lệ.
     auth_project_scope: SecretStr = SecretStr("")
-
-    # --- Human identity foundation (Checkpoint 1) --------------------------
-    # The localhost issuer is a development placeholder only. Production must
-    # provide the exact approved issuer; it is deliberately not guessed here.
-    auth_issuer: str = Field(default="http://localhost:8000", min_length=1)
-    auth_audience: str = Field(default="absorbiq-api", min_length=1)
-    auth_algorithm: Literal["HS256"] = "HS256"
-    # Separate signing material from every static role or machine credential.
-    # An empty value keeps existing startup/tests compatible until lifecycle
-    # wiring is approved; token issuance must reject it later.
-    auth_signing_secret: SecretStr = SecretStr("")
-    access_token_ttl_seconds: int = Field(default=900, gt=0, le=3600)
-    refresh_token_ttl_seconds: int = Field(default=2_592_000, gt=0)
-    invite_token_ttl_seconds: int = Field(default=86_400, gt=0, le=604_800)
-    password_reset_token_ttl_seconds: int = Field(default=900, gt=0, le=3600)
-    login_rate_limit_attempts: int = Field(default=5, gt=0, le=100)
-    login_rate_limit_window_seconds: int = Field(default=60, gt=0, le=86_400)
-
-    # Kept explicit for the later lifecycle boundary. No bypass is implemented
-    # by this checkpoint, and the safe default is production/disabled.
-    app_env: Literal["development", "test", "staging", "production"] = "production"
-    dev_auth_bypass: bool = False
-
-    # Development/internal only until an ownership or membership policy exists.
-    authorization_mode: Literal["restricted", "global_visibility"] = "restricted"
-
-    @model_validator(mode="after")
-    def validate_authorization_mode(self) -> Settings:
-        if self.authorization_mode == "global_visibility" and self.app_env == "production":
-            raise ValueError("global_visibility is development/internal-only and cannot run in production")
-        return self
 
     @property
     def database_dsn(self) -> str:

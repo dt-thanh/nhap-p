@@ -18,7 +18,7 @@
 export function deriveVelocityDirection(velocity7d, velocity30d) {
   const v7 = toFiniteNumber(velocity7d);
   const v30 = toFiniteNumber(velocity30d);
-  if (v7 === null || v30 === null || v7 < 0 || v30 < 0) return "unknown";
+  if (v7 === null || v30 === null) return "unknown";
   if (v7 > v30) return "increasing";
   if (v7 < v30) return "decreasing";
   return "stable";

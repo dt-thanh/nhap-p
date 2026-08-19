@@ -12,7 +12,6 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import UTC, date, datetime
-from decimal import Decimal
 from urllib.parse import urlsplit
 
 import pytest
@@ -34,7 +33,6 @@ from src.models.tables import (
 )
 from src.services.domain_absorption import (
     DomainAbsorptionCalculatorService,
-    DomainSalesAnalyticsService,
     ParallelRunComparator,
 )
 from src.services.json_payload import JsonPayloadParser
@@ -850,66 +848,3 @@ async def test_partial_area_move_by_name_is_not_overridden_by_stale_mirror(sessi
     assert rows[0]["area_id"] == a2, "căn phải chuyển sang A2, không bị area_id cũ kéo lại"
     assert rows[0]["unit_type"] == "3PN"
     assert rows[0]["unit_code"] == "A1-07", "trường không gửi phải được giữ nguyên"
-
-
-# --- Domain dashboard analytics ---------------------------------------------
-
-
-async def test_domain_dashboard_summary_uses_distinct_sold_units_and_weekly_velocity(session_factory):
-    await _sync(
-        session_factory,
-        "units",
-        [
-            _unit("U-SOLD-1", code="A1-01"),
-            _unit("U-SOLD-2", code="A1-02"),
-            _unit("U-RESERVED", code="A1-03"),
-        ],
-    )
-    await _sync(
-        session_factory,
-        "deals",
-        [
-            _deal("D-SOLD-1", unit="U-SOLD-1", status="sold", sold_at="2026-08-10T10:00:00Z"),
-            _deal("D-SOLD-2", unit="U-SOLD-2", status="sold", sold_at="2026-08-02T10:00:00Z"),
-            _deal("D-RESERVED", unit="U-RESERVED", status="reserved"),
-        ],
-    )
-
-    summary = await DomainSalesAnalyticsService(session_factory).summary(PROJECT_ID, as_of=date(2026, 8, 10))
-
-    assert summary.total_units == 3
-    assert summary.units_sold == 2
-    assert summary.units_remaining == 1
-    assert summary.units_reserved == 1
-    assert summary.sell_through == Decimal("66.6667")
-    assert summary.velocity_7d == Decimal("1")
-    assert summary.velocity_30d == Decimal("0.4667")
-    assert summary.estimated_weeks_to_sell_out == Decimal("2.1429")
-    assert summary.available_years == [2026]
-
-
-async def test_domain_dashboard_trend_supports_month_year_and_no_data_period(session_factory):
-    await _sync(session_factory, "units", [_unit("U-YEAR", code="A1-10")])
-    await _sync(
-        session_factory,
-        "deals",
-        [_deal("D-YEAR", unit="U-YEAR", status="sold", sold_at="2026-08-10T10:00:00Z")],
-    )
-    service = DomainSalesAnalyticsService(session_factory)
-
-    monthly = await service.trend(
-        PROJECT_ID,
-        year=2026,
-        granularity="month",
-        as_of=date(2026, 8, 16),
-    )
-    assert monthly.granularity == "month"
-    assert len(monthly.points) == 8
-    assert monthly.points[7].units_sold == 1
-    assert monthly.points[7].cumulative_sold == 1
-    assert monthly.available_years == [2026]
-
-    empty = await service.trend(PROJECT_ID, year=2025, as_of=date(2026, 8, 16))
-    assert empty.points == []
-    assert empty.data_status == "no_data"
-    assert empty.message == "Không có dữ liệu giao dịch trong khoảng thời gian đã chọn."

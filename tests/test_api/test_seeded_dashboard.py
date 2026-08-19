@@ -72,7 +72,7 @@ async def _series_by_area(http) -> dict[str, list[dict]]:
     for project in (await http.get(f"{API}/projects")).json():
         areas = (await http.get(f"{API}/areas", params={"project_id": project["project_id"]})).json()
         for area in areas:
-            body = (await http.get(f"{API}/absorption", params={"area_id": area["area_id"], "calculator": "legacy_aggregate"})).json()
+            body = (await http.get(f"{API}/absorption", params={"area_id": area["area_id"]})).json()
             series[area["area_id"]] = body["points"]
     return series
 
@@ -147,7 +147,7 @@ async def test_the_default_project_the_ui_opens_is_not_empty(http):
 
     with_data = 0
     for area in areas:
-        body = (await http.get(f"{API}/absorption", params={"area_id": area["area_id"], "calculator": "legacy_aggregate"})).json()
+        body = (await http.get(f"{API}/absorption", params={"area_id": area["area_id"]})).json()
         with_data += bool(body["points"])
     assert with_data >= 1, f"Dự án mặc định '{project['name']}' không có phân khu nào có dữ liệu"
 
@@ -156,10 +156,10 @@ async def test_absorption_series_respects_the_date_filter(http):
     series = await _series_by_area(http)
     area_id = next(aid for aid, points in series.items() if points)
 
-    full = (await http.get(f"{API}/absorption", params={"area_id": area_id, "calculator": "legacy_aggregate"})).json()["points"]
+    full = (await http.get(f"{API}/absorption", params={"area_id": area_id})).json()["points"]
     cutoff = full[len(full) // 2]["stat_date"]
 
-    narrowed = (await http.get(f"{API}/absorption", params={"area_id": area_id, "from": cutoff, "calculator": "legacy_aggregate"})).json()["points"]
+    narrowed = (await http.get(f"{API}/absorption", params={"area_id": area_id, "from": cutoff})).json()["points"]
     assert narrowed, "Lọc theo ngày không được trả rỗng khi khoảng vẫn còn dữ liệu"
     assert len(narrowed) < len(full)
     assert min(p["stat_date"] for p in narrowed) >= cutoff
@@ -167,7 +167,7 @@ async def test_absorption_series_respects_the_date_filter(http):
 
 async def test_absorption_summary_is_computed_not_null(http):
     project = await _first_project(http)
-    response = await http.get(f"{API}/absorption/summary", params={"project_id": project["project_id"], "calculator": "legacy_aggregate"})
+    response = await http.get(f"{API}/absorption/summary", params={"project_id": project["project_id"]})
     assert response.status_code == 200
 
     body = response.json()

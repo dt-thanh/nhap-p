@@ -1,0 +1,23 @@
+{
+  "_comment": "FIXTURE TỔNG HỢP — ảnh chụp THIẾU mảnh (1/3, snapshot_complete=false). Mong đợi: nhận các bản ghi có mặt, nhưng KHÔNG suy ra xoá cho bất kỳ bản ghi vắng mặt nào.",
+  "schema_version": 1,
+  "source_system": "mini_crm",
+  "source_instance_id": "synthetic-mini-crm",
+  "external_batch_id": "SYNTH-BATCH-0008",
+  "sync_mode": "full_snapshot",
+  "project_ref": { "project_id": "5117d1c0-0000-4000-8000-000000000001" },
+  "source_extracted_at": "2026-08-09T03:10:00+07:00",
+  "snapshot": {
+    "snapshot_id": "SYNTH-SNAP-0002",
+    "chunk_index": 0,
+    "chunk_total": 3,
+    "snapshot_complete": false,
+    "scope": { "entities": ["unit"], "area_refs": [{ "area_name": "A1", "unit_type": "2PN" }] }
+  },
+  "records": [
+    {
+      "entity": "unit", "operation": "upsert", "external_id": "SYNTH-U-0001", "source_revision": 6,
+      "payload": { "area_ref": { "area_name": "A1", "unit_type": "2PN" }, "unit_code": "A1-01-01", "unit_status": "available" }
+    }
+  ]
+}

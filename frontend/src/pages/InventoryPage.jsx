@@ -13,7 +13,6 @@ import ProjectSelector from "../components/ProjectSelector";
 import { SectionState, fmt } from "../components/ui/States";
 import GlobalKeyframes from "../components/ui/GlobalKeyframes";
 import { color, size, radius, shadow, space, font } from "../styles/tokens";
-import { areaLabel } from "../utils/areaLabel";
 
 const STATUS_FILTERS = [
   { key: "all", label: "Tất cả" },
@@ -99,7 +98,7 @@ export default function InventoryPage() {
                 .filter((a) => a.external_id)
                 .map((a) => (
                   <option key={a.external_id} value={a.external_id}>
-                    {areaLabel(a)}
+                    {a.area_name} · {a.unit_type}
                   </option>
                 ))}
             </select>
@@ -129,8 +128,8 @@ export default function InventoryPage() {
             <div style={S.totals}>
               <TotalCard label="Tổng số căn" value={totals.total_units} />
               <TotalCard label="Đã bán" value={totals.units_sold} />
-              <TotalCard label="Đang giữ chỗ" value={totals.units_reserved} />
-              <TotalCard label="Có thể bán ngay" value={totals.units_remaining} />
+              <TotalCard label="Đang giữ" value={totals.units_reserved} />
+              <TotalCard label="Còn trống" value={totals.units_remaining} />
               <TotalCard label="Tạm khoá" value={totals.units_blocked} />
             </div>
           )}

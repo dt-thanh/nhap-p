@@ -1,0 +1,17 @@
+{
+  "_comment": "FIXTURE TỔNG HỢP — bản ghi partial cho một giao dịch CHƯA TỪNG CÓ trong bản sao. Mong đợi: TỪ CHỐI với error_code=PARTIAL_UPDATE_WITHOUT_BASE. Không có gì để vá, và bịa nốt phần thiếu là bịa dữ liệu.",
+  "schema_version": 1,
+  "source_system": "mini_crm",
+  "source_instance_id": "synthetic-mini-crm",
+  "external_batch_id": "SYNTH-BATCH-0017",
+  "sync_mode": "incremental",
+  "project_ref": { "project_id": "5117d1c0-0000-4000-8000-000000000001" },
+  "source_extracted_at": "2026-08-09T02:17:00+07:00",
+  "records": [
+    {
+      "entity": "deal", "operation": "upsert", "external_id": "SYNTH-D-9999", "source_revision": 1,
+      "payload_completeness": "partial",
+      "payload": { "deal_status": "sold", "sold_at": "2026-08-09T09:00:00+07:00" }
+    }
+  ]
+}

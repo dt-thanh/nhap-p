@@ -158,64 +158,6 @@ crm_outbox = sa.Table(
     sa.Column("replay_of", sa.Text(), nullable=True),
 )
 
-# --- Human identity foundation (migration 0005) -----------------------------
-# These tables are Mini CRM-local and intentionally use the `crm_` prefix. They
-# do not reuse the Backend's legacy `users`/`refresh_tokens`/`user_areas` tables.
-CRM_USER_STATUSES = ("invited", "active", "disabled")
-CRM_ROLES = ("business_viewer", "pipeline_operator", "admin")
-
-crm_users = sa.Table(
-    "crm_users",
-    metadata,
-    sa.Column("id", UUID, primary_key=True),
-    sa.Column("login", sa.Text(), nullable=False),
-    sa.Column("email", sa.Text(), nullable=True),
-    sa.Column("password_hash", sa.Text(), nullable=True),
-    sa.Column("status", sa.Text(), nullable=False),
-    sa.Column("role", sa.Text(), nullable=False),
-    sa.Column("auth_version", sa.Integer(), nullable=False),
-    sa.Column("created_at", TS, nullable=False),
-    sa.Column("updated_at", TS, nullable=False),
-    sa.Column("disabled_at", TS, nullable=True),
-)
-
-crm_auth_sessions = sa.Table(
-    "crm_auth_sessions",
-    metadata,
-    sa.Column("id", UUID, primary_key=True),
-    sa.Column("user_id", UUID, nullable=False),
-    sa.Column("family_id", UUID, nullable=False),
-    sa.Column("refresh_token_hash", sa.Text(), nullable=False),
-    sa.Column("expires_at", TS, nullable=False),
-    sa.Column("last_seen_at", TS, nullable=False),
-    sa.Column("revoked_at", TS, nullable=True),
-    sa.Column("replaced_by", UUID, nullable=True),
-    sa.Column("created_at", TS, nullable=False),
-)
-
-crm_auth_invites = sa.Table(
-    "crm_auth_invites",
-    metadata,
-    sa.Column("id", UUID, primary_key=True),
-    sa.Column("login", sa.Text(), nullable=False),
-    sa.Column("role", sa.Text(), nullable=False),
-    sa.Column("invite_token_hash", sa.Text(), nullable=False),
-    sa.Column("expires_at", TS, nullable=False),
-    sa.Column("accepted_at", TS, nullable=True),
-    sa.Column("created_at", TS, nullable=False),
-)
-
-crm_password_reset_tokens = sa.Table(
-    "crm_password_reset_tokens",
-    metadata,
-    sa.Column("id", UUID, primary_key=True),
-    sa.Column("user_id", UUID, nullable=False),
-    sa.Column("token_hash", sa.Text(), nullable=False),
-    sa.Column("expires_at", TS, nullable=False),
-    sa.Column("used_at", TS, nullable=True),
-    sa.Column("created_at", TS, nullable=False),
-)
-
 # --- Dãy sinh `external_id` (migration 0002, 0003) --------------------------
 # Không bao giờ lùi, không bao giờ cấp trùng, kể cả khi transaction gọi nó bị
 # rollback. Id bị bỏ phí thì không sao; id bị dùng lại thì hỏng vĩnh viễn.

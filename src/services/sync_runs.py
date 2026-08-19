@@ -40,7 +40,6 @@ from src.models.tables import deals, projects, units, upload_errors, upload_file
 from src.services.domain_projection import DomainProjector, ProjectionError
 from src.services.history_guard import guard_history, log_explicit_clears, merge_record, read_mirror
 from src.services.json_payload import EnvelopeError, JsonPayloadParser, RecordError, SyncEnvelope
-from src.services.ranking_trigger import trigger_ranking
 from src.services.source_identity import APPLIED_DECISIONS, Identity, SourceIdentityService
 from src.services.sync_payloads import RawPayload, SyncPayloadService
 from src.task_queue import INGEST_QUEUE, get_queue
@@ -645,15 +644,6 @@ class SyncRunService:
         # không phải một trường hợp bị bỏ sót.
         if project_id is not None and sum(projections[key] for key in MIRROR_CHANGING_ACTIONS) > 0:
             self._enqueue_domain_recompute(project_id=project_id, sync_run_id=sync_run_id, area_ids=affected_areas)
-            # Cò xếp hạng đi CÙNG điều kiện với lineage miền, không phải một
-            # điều kiện riêng: cả hai đọc đúng một tập bảng (`units`/`deals`),
-            # nên "bản sao thực sự đổi" là cùng một câu hỏi cho cả hai. Dòng
-            # cuối ma trận §8.2 nói thẳng: chỉ có `duplicate_noop`/`skip_stale`/
-            # `conflict` (tức `inserted+updated+tombstoned = 0`) thì KHÔNG tính
-            # lại — và đó chính là điều kiện đang đứng ở trên.
-            await self._enqueue_ranking_recompute(
-                project_id=project_id, sync_run_id=sync_run_id, area_ids=affected_areas
-            )
         return SyncRunResult(
             sync_run_id=str(sync_run_id),
             status=status,
@@ -733,54 +723,6 @@ class SyncRunService:
             sync_run_id=str(sync_run_id),
             project_id=str(project_id),
             job_id=job.id,
-            areas=len(area_ids),
-        )
-
-    async def _enqueue_ranking_recompute(
-        self, *, project_id: uuid.UUID, sync_run_id: uuid.UUID, area_ids: list[uuid.UUID]
-    ) -> None:
-        """Xếp hàng tính lại XẾP HẠNG sau khi lô đã commit (§8.2, `trigger='sync'`).
-
-        Cùng kỷ luật với `_enqueue_domain_recompute`: **hỏng thì ghi log rồi đi
-        tiếp, không ném**. Lô đồng bộ đã COMMIT trước khi hàm này chạy; ném lỗi ở
-        đây là báo cho hệ nguồn rằng dữ liệu bị từ chối trong khi nó đã được
-        nhận, và mời họ gửi lại một lô đã áp dụng xong.
-
-        `trigger_ranking` đã tự nuốt mọi ngoại lệ của nó, nên khối try ở đây chỉ
-        là lưới cuối cho những lỗi không lường trước (ví dụ import hỏng). Thà
-        thừa một lớp còn hơn để một lỗi lạ ở cò xếp hạng làm hỏng phản hồi của
-        một lô đã ghi thành công.
-
-        Không cần chống dồn ở đây: `enqueue_ranking` gộp mọi lời gọi trong lúc
-        chờ vào MỘT run bằng partial unique index. 100 lô trong một phút vẫn chỉ
-        ra một lần tính lại.
-        """
-        try:
-            run_id, enqueued_job = await trigger_ranking(
-                project_id,
-                trigger="sync",
-                sync_run_id=sync_run_id,
-                area_ids=[str(area_id) for area_id in area_ids] or None,
-                # Pool CỦA CHÍNH service này, không phải pool toàn cục: xem
-                # docstring `trigger_ranking`.
-                session_factory=self._session_factory,
-            )
-        except Exception as exc:  # pragma: no cover - lưới cuối
-            log.error(
-                "ranking.recompute.enqueue_failed",
-                sync_run_id=str(sync_run_id),
-                project_id=str(project_id),
-                error_type=type(exc).__name__,
-                exc_info=exc,
-            )
-            return
-
-        log.info(
-            "ranking.recompute.enqueued",
-            sync_run_id=str(sync_run_id),
-            project_id=str(project_id),
-            run_id=str(run_id) if run_id else None,
-            enqueued_job=enqueued_job,
             areas=len(area_ids),
         )
 

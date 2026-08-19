@@ -7,8 +7,6 @@ no database connection and cannot generate or execute SQL.
 from __future__ import annotations
 
 import json
-import re
-import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -67,19 +65,9 @@ RESERVATION_TERMS = ("reserved", "booking", "giữ chỗ", "áp lực giữ ch�
 POLICY_TERMS = ("chính sách", "chiết khấu", "discount", "ưu đãi", "payment support", "hỗ trợ thanh toán")
 
 
-# Business users should not need the technical term ranking.
-RANKING_TERMS += ('nen ban', 'nen tu van', 'goi truoc', 'tap trung nguon luc')
-RANKING_TERMS += ('phan bo doi sales', 'quy hang nao', 'can thuc day')
-RANKING_TERMS += ('ban cham',)
-AREA_RISK_TERMS += ('quy hang can thuc day', 'can can thiep', 'can ho tro ban', 'ban cham')
-INVENTORY_TERMS += ('nhieu hang', 'quy can')
-COVERAGE_TERMS += ('du du lieu', 'do tin cay', 'du de ra quyet dinh')
-
-
 def _mentions_any(message: str, terms: tuple[str, ...]) -> bool:
     normalized = message.casefold()
-    normalized_ascii = _normalize_project_text(message)
-    return any(term in normalized or _normalize_project_text(term) in normalized_ascii for term in terms)
+    return any(term in normalized for term in terms)
 
 
 def _deterministic_tool_plan(message: str, project_id: str | None) -> list[str]:
@@ -125,36 +113,6 @@ def _scope_filter(allowed_external_ids):
     if allowed_external_ids in (None, "ALL"):
         return None
     return projects.c.external_id.in_(list(allowed_external_ids))
-
-
-def _normalize_project_text(value: str) -> str:
-    '''Normalize Vietnamese project names for accent-insensitive lookup.'''
-    decomposed = unicodedata.normalize('NFKD', str(value).casefold()).replace('đ', 'd')
-    without_marks = ''.join(char for char in decomposed if not unicodedata.combining(char))
-    return re.sub(r'[^a-z0-9]+', ' ', without_marks).strip()
-
-
-def _project_aliases(external_id: str, name: str) -> set[str]:
-    '''Return conservative aliases, e.g. Ocean Park for Vinhomes Ocean Park 1.'''
-    aliases = {_normalize_project_text(external_id), _normalize_project_text(name)}
-    tokens = _normalize_project_text(name).split()
-    if len(tokens) >= 3 and tokens[0] in {'vinhomes', 'masterise', 'masteri'}:
-        aliases.add(' '.join(tokens[1:]))
-        tokens = tokens[1:]
-    if len(tokens) >= 3 and tokens[-1].isdigit():
-        aliases.add(' '.join(tokens[:-1]))
-    return {alias for alias in aliases if len(alias) >= 4}
-
-
-def _project_mentions_from_rows(message: str, rows) -> list[tuple[dict, int]]:
-    normalized = f' {_normalize_project_text(message)} '
-    matches: list[tuple[dict, int]] = []
-    for row in rows:
-        aliases = _project_aliases(str(row['external_id']), str(row['name']))
-        matched = [alias for alias in aliases if f' {alias} ' in normalized]
-        if matched:
-            matches.append((row, max(len(alias) for alias in matched)))
-    return matches
 
 
 async def portfolio_overview(allowed_external_ids=None) -> dict:
@@ -206,6 +164,7 @@ async def _resolve_project(project_id: str, allowed_external_ids=None):
 
 
 async def _infer_project_id_from_message(message: str, allowed_external_ids=None) -> str | None:
+    normalized = message.casefold()
     query = sa.select(projects.c.external_id, projects.c.name).where(
         projects.c.status == "active", projects.c.external_id.isnot(None)
     )
@@ -214,12 +173,15 @@ async def _infer_project_id_from_message(message: str, allowed_external_ids=None
         query = query.where(scope_clause)
     async with get_session_factory()() as session:
         rows = (await session.execute(query)).mappings().all()
-    matches = _project_mentions_from_rows(message, rows)
+    matches = [
+        row
+        for row in rows
+        if str(row["external_id"]).casefold() in normalized or str(row["name"]).casefold() in normalized
+    ]
     if not matches:
         return None
-    best_score = max(score for _, score in matches)
-    best = [row for row, score in matches if score == best_score]
-    return str(best[0]["external_id"]) if len(best) == 1 else None
+    best = max(matches, key=lambda row: len(str(row["name"])))
+    return str(best["external_id"])
 
 
 async def project_overview(project_id: str, allowed_external_ids=None) -> dict:
@@ -333,84 +295,20 @@ async def top_ranked_units(project_id: str, allowed_external_ids=None, limit: in
             areas.c.area_name,
             ranking_scores.c.score,
             ranking_scores.c.rank_in_project,
-            ranking_scores.c.weight_coverage,
-            ranking_scores.c.contributions,
             ranking_scores.c.computed_at,
-            ranking_configs.c.version.label('config_version'),
-            ranking_configs.c.weights.label('config_weights'),
-        )
-        .select_from(
-            units.join(areas, units.c.area_id == areas.c.id).join(
-                ranking_scores, ranking_scores.c.unit_id == units.c.id
-            ).join(ranking_configs, ranking_configs.c.id == ranking_scores.c.config_version_id)
-        )
-        .where(areas.c.project_id == project["id"], units.c.deleted_at.is_(None), units.c.status == "available")
-        .order_by(ranking_scores.c.rank_in_project)
-        .limit(limit)
-    )
-    score_stats_query = (
-        sa.select(
-            sa.func.count(sa.distinct(ranking_scores.c.score)).label('distinct_scores'),
-            sa.func.min(ranking_scores.c.score).label('min_score'),
-            sa.func.max(ranking_scores.c.score).label('max_score'),
-            sa.func.max(ranking_scores.c.computed_at).label('computed_at'),
         )
         .select_from(
             units.join(areas, units.c.area_id == areas.c.id).join(
                 ranking_scores, ranking_scores.c.unit_id == units.c.id
             )
         )
-        .where(
-            areas.c.project_id == project['id'],
-            units.c.deleted_at.is_(None),
-            units.c.status == 'available',
-        )
-    )
-    published_version_query = (
-        sa.select(ranking_configs.c.version)
-        .where(ranking_configs.c.status == 'published')
-        .limit(1)
+        .where(areas.c.project_id == project["id"], units.c.deleted_at.is_(None), units.c.status == "available")
+        .order_by(ranking_scores.c.rank_in_project)
+        .limit(limit)
     )
     async with get_session_factory()() as session:
         rows = (await session.execute(query)).mappings().all()
-        score_stats = (await session.execute(score_stats_query)).mappings().one()
-        published_config_version = await session.scalar(published_version_query)
-    ranking_meta = {
-        'project_id': project['external_id'],
-        'project_name': project['name'],
-        'objective': (
-            'Ưu tiên căn còn bán được dựa trên tín hiệu nhu cầu ở cấp căn và sức bán của phân khu; '
-            'đây là xếp hạng vận hành tất định theo snapshot, không phải dự báo hay cam kết doanh số.'
-        ),
-        'config_version': rows[0]['config_version'] if rows else None,
-        'config_weights': rows[0]['config_weights'] if rows else None,
-        'published_config_version': published_config_version,
-        'requires_recompute': bool(
-            rows
-            and published_config_version is not None
-            and rows[0]['config_version'] != published_config_version
-        ),
-        'score_distribution': {
-            'distinct_scores': int(score_stats['distinct_scores'] or 0),
-            'min_score': float(score_stats['min_score']) if score_stats['min_score'] is not None else None,
-            'max_score': float(score_stats['max_score']) if score_stats['max_score'] is not None else None,
-            'computed_at': score_stats['computed_at'].isoformat() if score_stats['computed_at'] else None,
-            'warning': (
-                'Toàn bộ căn available đang đồng điểm; thứ hạng không thể hiện khác biệt ưu tiên đo được.'
-                if int(score_stats['distinct_scores'] or 0) <= 1
-                else None
-            ),
-        },
-        'item_explanations': {
-            str(row['id']): {
-                'weight_coverage': float(row['weight_coverage']),
-                'contributions': row['contributions'],
-            }
-            for row in rows
-        },
-    }
     return {
-        **ranking_meta,
         "items": [
             {
                 "unit_uuid": str(r["id"]),
@@ -470,9 +368,7 @@ async def area_ranking_risks(project_id: str, allowed_external_ids=None, limit: 
     project = await _resolve_project(project_id, allowed_external_ids)
     if project is None:
         return {"error": "PROJECT_NOT_FOUND_OR_OUT_OF_SCOPE"}
-    # Scores are stored at four decimals; <= 0.3299 is equivalent to the
-    # presentation band's strict score < 0.33 boundary.
-    low_score_threshold = 0.3299
+    low_score_threshold = 0.5
     query = (
         sa.select(
             areas.c.external_id,
@@ -664,9 +560,9 @@ async def reservation_pressure(project_id: str, allowed_external_ids=None, limit
             areas.c.external_id,
             areas.c.area_name,
             areas.c.unit_type,
-            sa.func.count(sa.distinct(units.c.id)).label("unit_count"),
-            sa.func.count(sa.distinct(units.c.id)).filter(units.c.status == "available").label("available"),
-            sa.func.count(sa.distinct(units.c.id)).filter(units.c.status == "reserved").label("reserved_units"),
+            sa.func.count(units.c.id).label("unit_count"),
+            sa.func.count(units.c.id).filter(units.c.status == "available").label("available"),
+            sa.func.count(units.c.id).filter(units.c.status == "reserved").label("reserved_units"),
             sa.func.count(deals.c.id).filter(sa.and_(deals.c.status == "reserved", deals.c.deleted_at.is_(None))).label(
                 "active_reserved_deals"
             ),
@@ -916,17 +812,6 @@ Tool đã chạy: {json.dumps(calls, ensure_ascii=False)}
 TOOL_RESULTS:
 {json.dumps(context, ensure_ascii=False, default=str)}
 """
-    selected_project_name = (context.get('project') or {}).get('project_name')
-    synthesis_prompt += f'''
-CRITICAL OUTPUT RULES:
-- Answer the user's exact business question in the first 1-2 sentences. Omit unrelated project overview.
-- The only allowed project name is: {selected_project_name or project_id or 'none selected'}.
-- When ranking data exists, explain priority from config_version, config_weights and contributions in TOOL_RESULTS.
-- If score_distribution has one distinct score, say the units are tied and do not claim measured priority differences.
-- If requires_recompute is true, say stored scores use an older config and do not present them as current priorities.
-- Treat ranking as deterministic operational ordering, never as probability, forecast, or sales guarantee.
-- Give at most three concrete actions, each tied to evidence in TOOL_RESULTS.
-'''
     # Advisory answers are grounded summaries, so disabling hidden thinking and
     # bounding output keeps the interactive request comfortably below the API
     # timeout while preserving enough room for comparison tables.

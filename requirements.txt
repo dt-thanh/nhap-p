@@ -27,7 +27,21 @@ apscheduler>=3.11.0
 # Có thể tạm comment ở MVP 1 nếu chưa cần dự báo.
 prophet>=1.1.6
 pandas>=2.2.0
+# Engine đọc Excel của ExcelParserService (Rust) — .xlsx/.xlsb/.xls/.ods, nhanh hơn
+# openpyxl ~12x. Có wheel manylinux cho cp311 nên không cần toolchain Rust trong Dockerfile.
+python-calamine>=0.4.0
+# Giữ lại làm engine ghi .xlsx (export báo cáo) và fallback mặc định của pandas.read_excel.
 openpyxl>=3.1.0
+
+# Lưu ảnh bìa dự án / phân khu
+cloudinary>=1.44.0
+
+# Kiểm hợp đồng đồng bộ CRM theo JSON Schema 2020-12.
+# GHIM CỨNG (==) chứ không dùng >=: thư viện này là thứ quyết định payload nào
+# được nhận, nên một bản nâng cấp lặng lẽ đổi cách diễn giải schema sẽ đổi luôn
+# ranh giới "hợp lệ / không hợp lệ" của dữ liệu vào hệ thống. Nâng phiên bản phải
+# là một thay đổi có chủ đích, chạy lại toàn bộ bộ fixture rồi mới nhận.
+jsonschema==4.26.0
 
 # Logging có cấu trúc
 structlog>=24.4.0

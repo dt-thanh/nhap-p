@@ -1,4 +1,4 @@
-.PHONY: run test lint format typecheck check clean \
+.PHONY: run test lint format check clean \
         up down logs ps migrate revision \
         test-docker lint-docker build-frontend reset
 
@@ -26,8 +26,17 @@ lint-docker:
 build-frontend:
 	docker compose run --rm frontend npm run build
 
+# Đổi schema CHỈ đi qua đường này. `alembic upgrade` trực tiếp bỏ qua bước sao
+# lưu và bước xác minh — đúng thứ tự ngược đã gây sự cố ở Phase 8D, khi
+# `docker compose up api` áp dụng 0013 lên database dev TRƯỚC khi có bản sao lưu.
+# `scripts/migrate.sh` buộc: sao lưu → kiểm bản sao lưu đọc được → migrate → xác minh.
+#
+#   make migrate                      # lên revision mới nhất
+#   make migrate rev=0013_calculator_comparisons
+#
+# Yêu cầu stack đang chạy (`make up`): script dùng `docker compose exec`.
 migrate:
-	docker compose run --rm api alembic upgrade head
+	bash scripts/migrate.sh $(rev)
 
 revision:
 	docker compose run --rm api alembic revision -m "$(m)"
@@ -50,9 +59,9 @@ lint:
 format:
 	ruff format src/ tests/
 
-typecheck:
-	mypy src/
-
+# KHÔNG có target `typecheck`: mypy không nằm trong requirements.txt, nên nó chỉ
+# là một lệnh luôn hỏng. Thêm mypy vào một codebase chưa gắn kiểu là một việc
+# riêng, không phải một dòng Makefile.
 check: lint format test
 
 clean:

@@ -1,0 +1,146 @@
+{
+  "_comment": "DỮ LIỆU CHÍNH SÁCH ĐÃ ĐÓNG BĂNG Ở PHASE A — PROPOSED, NOT IMPLEMENTED. Không module runtime nào đọc file này tại thời điểm Phase A. Nó là nguồn sự thật DUY NHẤT cho ma trận phân quyền ĐỌC theo phạm vi dự án ở BACKEND, và là đầu vào bắt buộc của Phase E. `tests/test_services/test_phase_a_contract_freeze.py` đọc file này để kiểm tính nhất quán nội bộ và để canh ranh giới: runtime hôm nay KHÔNG có project_scope. BẢN SỬA ĐỔI (đợt (g)): mô hình sở hữu đổi sang Mini CRM là nguồn sự thật cho Project/Area/Unit/Deal — backend là bản sao CHỈ ĐỌC. Bốn hành động create_update_* giờ là false cho MỌI vai trò, kể cả admin, vì backend không còn là đích ghi hợp lệ của bất kỳ thực thể nghiệp vụ nào. Ma trận này chỉ nói về quyền ĐỌC ở backend; quyền GHI thuộc về xác thực của Mini CRM, hiện là DECISION REQUIRED D-2 — xem docs/crm/phase_a_domain_freeze.md §A7.5.",
+  "frozen_at": "2026-08-12",
+  "revision": "g",
+  "supersedes_revision": "f",
+  "phase": "A",
+  "status": "PROPOSED — NOT IMPLEMENTED",
+  "implemented_by": "Phase E",
+  "scope_note": "Ma trận này cưỡng chế QUYỀN ĐỌC ở backend. Backend KHÔNG có quyền ghi thực thể nghiệp vụ nào để cưỡng chế — mọi hành động create_update_* trong ma trận là false cho mọi vai trò một cách có chủ đích.",
+
+  "roles": {
+    "business_viewer": {
+      "level": 0,
+      "description": "Người dùng nghiệp vụ. Chỉ đọc, chỉ trong phạm vi dự án được cấp."
+    },
+    "pipeline_operator": {
+      "level": 1,
+      "description": "Người trực vận hành đường ống. Đọc trạng thái đồng bộ và chạy lại lô, CHỈ trong phạm vi dự án được cấp."
+    },
+    "admin": {
+      "level": 2,
+      "description": "Quản trị. Có thể được cấp phạm vi ALL, nhưng ALL phải TƯỜNG MINH."
+    }
+  },
+
+  "project_scope": {
+    "kind": "static",
+    "assigned_by": "deployment configuration (biến môi trường), cùng nơi và cùng lúc với việc cấp token vai trò",
+    "values": {
+      "ALL": "Mọi dự án, kể cả dự án tạo sau khi token được cấp. Chỉ hợp lệ với vai trò admin.",
+      "explicit_set": "Danh sách project_id tường minh. Dự án tạo sau KHÔNG tự động vào phạm vi.",
+      "empty_set": "KHÔNG dự án nào. Đây là giá trị MẶC ĐỊNH khi không cấu hình gì."
+    },
+    "fail_closed": true,
+    "fail_closed_rationale": "Không cấu hình = không truy cập, KHÔNG PHẢI mọi truy cập. Soi gương nguyên tắc đã chạy của DASHBOARD_AUTH_DISABLED (503 khi chưa cấu hình token nào) và của OPS_API_TOKEN rỗng.",
+    "enforcement_layer": "query",
+    "enforcement_ration": "Cưỡng chế ở tầng TRUY VẤN (mệnh đề WHERE/JOIN), không ở tầng route. Route-level chỉ chặn được các route có tham số project_id tường minh; nhưng deal và unit suy ra dự án qua JOIN hai–ba tầng, nên một route nhận area_id hay unit_id vẫn phải giới hạn theo phạm vi. Kiểm ở tầng truy vấn thì đường JOIN không thể thành cửa hậu.",
+    "dynamic_deferred": {
+      "decision": "HOÃN",
+      "reason": "Phạm vi động (bảng project_members) đòi một hệ NGƯỜI DÙNG thật, mà repo chưa có: vai trò hôm nay là ba token tĩnh trong biến môi trường, không có bảng users nào gắn được thành viên vào. Dựng cả hai cùng lúc là trộn hai thay đổi lớn.",
+      "requires": ["hệ người dùng thật (JWT ở .env.example chưa có mã)", "migration bảng project_members"],
+      "revisit_when": "khi có hệ xác thực người dùng thật"
+    }
+  },
+
+  "matrix": [
+    {
+      "action": "view_permitted_project",
+      "business_viewer": true, "pipeline_operator": true, "admin": true,
+      "project_scope_enforced": true,
+      "note": "Liệt kê dự án LỌC theo phạm vi. Dự án ngoài phạm vi không xuất hiện — đây là mức project:list."
+    },
+    {
+      "action": "view_permitted_area",
+      "business_viewer": true, "pipeline_operator": true, "admin": true,
+      "project_scope_enforced": true,
+      "note": "Phạm vi suy từ areas.project_id."
+    },
+    {
+      "action": "view_units",
+      "business_viewer": true, "pipeline_operator": true, "admin": true,
+      "project_scope_enforced": true,
+      "note": "Phạm vi suy qua JOIN units → areas.project_id. Đây là mức project:read."
+    },
+    {
+      "action": "view_deals",
+      "business_viewer": true, "pipeline_operator": true, "admin": true,
+      "project_scope_enforced": true,
+      "note": "Phạm vi suy qua JOIN deals → units → areas.project_id (ba tầng)."
+    },
+    {
+      "action": "create_update_project",
+      "business_viewer": false, "pipeline_operator": false, "admin": false,
+      "project_scope_enforced": false,
+      "note": "BỊ THAY ĐỔI ở đợt (g): admin KHÔNG còn ghi được. Dự án do Mini CRM sở hữu; đường ghi DUY NHẤT ở backend là tầng chiếu đồng bộ, xác thực bằng X-API-Key buộc vào source_instance_id — không phải một vai trò con người nào. Backend là bản sao chỉ đọc."
+    },
+    {
+      "action": "create_update_area",
+      "business_viewer": false, "pipeline_operator": false, "admin": false,
+      "project_scope_enforced": false,
+      "note": "BỊ THAY ĐỔI ở đợt (g): admin KHÔNG còn ghi được, và KHÔNG còn bước 'duyệt' nào — Mini CRM sở hữu cả năm trường của area (area_name, unit_type, bedrooms, area_sqm, total_units), tất cả có thẩm quyền ngay từ hệ nguồn."
+    },
+    {
+      "action": "create_update_unit",
+      "business_viewer": false, "pipeline_operator": false, "admin": false,
+      "project_scope_enforced": false,
+      "note": "KHÔNG vai trò con người nào ghi trực tiếp. Căn do hệ nguồn sở hữu; đường ghi DUY NHẤT là tầng chiếu đồng bộ, xác thực bằng X-API-Key buộc vào source_instance_id."
+    },
+    {
+      "action": "create_update_deal",
+      "business_viewer": false, "pipeline_operator": false, "admin": false,
+      "project_scope_enforced": false,
+      "note": "Như trên. Giao dịch do hệ nguồn sở hữu."
+    },
+    {
+      "action": "read_sync_state",
+      "business_viewer": false, "pipeline_operator": true, "admin": true,
+      "project_scope_enforced": true,
+      "note": "GET /sync-runs, GET /sync-errors — ĐÃ CÓ ở Phase 5.5 P0 với vai trò pipeline_operator+, nhưng CHƯA có phạm vi dự án. Thêm phạm vi là việc của Phase E."
+    },
+    {
+      "action": "reprocess_sync",
+      "business_viewer": false, "pipeline_operator": true, "admin": true,
+      "project_scope_enforced": true,
+      "note": "Đường vai-trò-con-người đòi confirm=true (đã có). Đường X-API-Key máy-với-máy KHÔNG áp phạm vi dự án — nó đã bị buộc vào source_instance_id của chính lô đó, một ranh giới hẹp hơn."
+    },
+    {
+      "action": "read_raw_payload",
+      "business_viewer": false, "pipeline_operator": true, "admin": true,
+      "project_scope_enforced": true,
+      "note": "pipeline_operator cần thêm confirm=true (đã có ở Phase 5.5 P0); admin không cần."
+    },
+    {
+      "action": "cross_project_access",
+      "business_viewer": false, "pipeline_operator": false, "admin": false,
+      "project_scope_enforced": true,
+      "note": "KHÔNG vai trò nào vượt phạm vi được. admin xuyên mọi dự án CHỈ KHI được cấp ALL tường minh — đó là mở rộng PHẠM VI, không phải bỏ qua phép kiểm. Không có nhánh mã nào 'admin thì bỏ qua'."
+    }
+  ],
+
+  "fe_permission_delivery": {
+    "endpoint": "GET /api/v1/me/permissions",
+    "status": "PROPOSED — NOT IMPLEMENTED",
+    "purpose": "HIỂN THỊ, không phải cưỡng chế",
+    "rule": "FE dùng kết quả này để không hiện thứ sẽ bị 403. Nó KHÔNG BAO GIỜ là nguồn cưỡng chế — cưỡng chế nằm ở mệnh đề truy vấn của từng route.",
+    "returns": ["role", "project_scope", "capabilities"]
+  },
+
+  "error_semantics": {
+    "missing_credentials": {"http": 401, "error_code": "MISSING_CREDENTIALS"},
+    "invalid_credentials": {"http": 401, "error_code": "INVALID_CREDENTIALS"},
+    "insufficient_role": {"http": 403, "error_code": "INSUFFICIENT_ROLE"},
+    "out_of_project_scope": {"http": 403, "error_code": "PROJECT_OUT_OF_SCOPE"},
+    "auth_not_configured": {"http": 503, "error_code": "DASHBOARD_AUTH_DISABLED"},
+    "not_found_vs_forbidden": "Dự án TỒN TẠI nhưng ngoài phạm vi ⇒ 403 PROJECT_OUT_OF_SCOPE, KHÔNG phải 404. Trả 404 sẽ khiến người gọi phân biệt được 'không tồn tại' với 'không được xem' bằng cách thử — nhưng ở đây danh sách dự án đã bị lọc theo phạm vi, nên 403 không rò rỉ thêm gì mà lại nói đúng sự thật cho người vận hành đang gỡ lỗi.",
+    "audit_required": ["reprocess_sync", "read_raw_payload", "out_of_project_scope"]
+  },
+
+  "mini_crm_write_authorization": {
+    "status": "DECISION REQUIRED",
+    "decision_id": "D-2",
+    "risk": "Mini CRM hôm nay KHÔNG có xác thực nào (quyết định phạm vi tường minh của chủ dự án, đúng khi Mini CRM chỉ là bộ sinh dữ liệu tổng hợp để kiểm thử). Đợt (g) đổi Mini CRM thành hệ thống bản ghi CHUẨN cho toàn bộ dữ liệu nghiệp vụ và cho FE ghi qua nó — dưới tiền đề đó, Mini CRM không xác thực nghĩa là bất kỳ ai chạm được cổng của nó đều tạo/sửa/xoá được mọi dự án, phân khu, căn và giao dịch, và backend sẽ trung thành soi gương việc đó.",
+    "requirement": "PHẢI có xác thực ghi ở Mini CRM TRƯỚC KHI tồn tại bất kỳ đường ghi nào từ FE tới Mini CRM. Đây là ràng buộc đã đóng băng; cơ chế cụ thể (token, phiên, vai trò cục bộ của Mini CRM) chưa chọn.",
+    "not_implemented_in_phase_a": true
+  }
+}

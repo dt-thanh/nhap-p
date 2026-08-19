@@ -79,20 +79,19 @@ async def test_relay_delivers_area_unit_deal_v2_rows_to_the_correct_backend_rout
         client.post("/projects", json=PROJECT)
         client.post("/areas", json=AREA)
         client.post("/units", json=UNIT)
-    first = await relay_module.relay_tick(limit=50)
-    assert first.delivered == 3
-    with _client() as client:
         client.post("/deals", json={"external_unit_id": "U-0001", "deal_status": "lead"})
 
     result = await relay_module.relay_tick(limit=50)
-    # Tra theo `external_batch_id`, không phụ thuộc thứ tự request.
+    # Tra theo `external_batch_id`, KHÔNG theo vị trí: `backend.requests` còn chứa
+    # cả hai lần gửi ĐỒNG BỘ v1 (unit/deal, đã rời máy ngay lúc tạo, TRƯỚC lượt
+    # relay này) — khớp theo batch id mới đúng dòng nào ứng với request nào.
     url_by_batch_id = {r["body"]["external_batch_id"]: r["url"] for r in backend.requests}
-    urls_by_entity = {row.entity: url_by_batch_id[row.external_batch_id] for row in [*first.rows, *result.rows]}
+    urls_by_entity = {row.entity: url_by_batch_id[row.external_batch_id] for row in result.rows}
     assert urls_by_entity["projects"].endswith("/sync/projects")
     assert urls_by_entity["areas"].endswith("/sync/areas")
     assert urls_by_entity["units_v2"].endswith("/sync/units")
     assert urls_by_entity["deals_v2"].endswith("/sync/deals")
-    assert result.delivered == 1
+    assert result.delivered == 4
 
 
 async def test_relay_payload_sent_is_byte_identical_to_what_was_captured(crm_app, backend):
@@ -109,15 +108,13 @@ async def test_relay_payload_sent_is_byte_identical_to_what_was_captured(crm_app
 
 
 async def test_relay_retries_a_row_that_failed_with_a_5xx(crm_app, backend):
+    backend.fail_with(503, {"detail": "tạm thời quá tải"})
     with _client() as client:
         response = client.post("/units", json=UNIT)
-        assert response.json()["sync"]["status"] == "sync_pending"
+        assert response.json()["sync"]["status"] == "sync_failed"
         batch_id = response.json()["sync"]["external_batch_id"]
-        assert _outbox_row(client, batch_id)["http_status"] is None
+        assert _outbox_row(client, batch_id)["http_status"] == 503
 
-    backend.fail_with(503, {"detail": "tạm thời quá tải"})
-    first = await relay_module.relay_tick()
-    assert first.rows[0].status == "sync_failed"
     backend.accept()
     result = await relay_module.relay_tick()
     assert result.picked_up >= 1
@@ -127,21 +124,19 @@ async def test_relay_retries_a_row_that_failed_with_a_5xx(crm_app, backend):
     with _client() as client:
         row = _outbox_row(client, batch_id)
     assert row["http_status"] == 202
-    assert row["attempts"] == 2, "một lần relay hỏng + một lần relay thành công = 2"
+    assert row["attempts"] == 2, "một lần gửi đồng bộ hỏng + một lần relay = 2"
 
 
 async def test_relay_does_not_retry_a_row_rejected_with_a_4xx(crm_app, backend):
     """4xx nghĩa là backend đã NHÌN đúng payload này và từ chối nó — payload không
     đổi khi gửi lại, nên gửi lại chỉ tái tạo đúng lỗi cũ. Relay không được chọn dòng
     này nữa, dù có gọi bao nhiêu lượt."""
+    backend.fail_with(422, {"detail": {"error_code": "CONTRACT_VALIDATION_FAILED"}})
     with _client() as client:
         response = client.post("/units", json=UNIT)
         batch_id = response.json()["sync"]["external_batch_id"]
-        assert _outbox_row(client, batch_id)["http_status"] is None
+        assert _outbox_row(client, batch_id)["http_status"] == 422
 
-    backend.fail_with(422, {"detail": {"error_code": "CONTRACT_VALIDATION_FAILED"}})
-    result = await relay_module.relay_tick()
-    assert next(r for r in result.rows if r.external_batch_id == batch_id).status == "sync_failed"
     backend.accept()  # nếu relay lỡ chọn lại, lần gửi tiếp theo sẽ "thành công" và lộ ra ở assert dưới
     result = await relay_module.relay_tick()
     assert all(r.external_batch_id != batch_id for r in result.rows)
@@ -149,25 +144,22 @@ async def test_relay_does_not_retry_a_row_rejected_with_a_4xx(crm_app, backend):
     with _client() as client:
         row = _outbox_row(client, batch_id)
     assert row["http_status"] == 422, "vẫn giữ nguyên mã lỗi cũ — không bị relay chạm vào"
-    assert row["attempts"] == 1, "4xx terminal không được relay lại"
+    assert row["attempts"] == 1, "không tăng thêm — relay chưa từng thử lại"
 
 
 async def test_relay_retries_a_row_that_failed_with_a_transport_error(crm_app, backend):
     """Timeout/không nối được ⇒ `http_status` giữ NULL (không phải một mã bịa ra) —
     cùng nhánh "chưa từng có phản hồi" như một dòng v2 chưa gửi, nên relay chọn lại
     đúng như đã thiết kế, không cần một nhánh mã riêng cho lỗi truyền tải."""
+    backend.time_out()
     with _client() as client:
         response = client.post("/units", json=UNIT)
         assert response.json()["sync"]["status"] == "sync_pending"
         batch_id = response.json()["sync"]["external_batch_id"]
         assert _outbox_row(client, batch_id)["http_status"] is None
-
-    backend.time_out()
-    first = await relay_module.relay_tick()
-    assert next(r for r in first.rows if r.external_batch_id == batch_id).status == "sync_pending"
-    with _client() as client:
         assert _outbox_row(client, batch_id)["attempts"] == 1
         assert _outbox_row(client, batch_id)["last_error"] is not None
+
     backend.accept()
     result = await relay_module.relay_tick()
     retried = next(r for r in result.rows if r.external_batch_id == batch_id)
@@ -190,7 +182,7 @@ async def test_relay_second_tick_finds_nothing_left_to_send_no_duplicate_project
 
     first = await relay_module.relay_tick(limit=50)
     assert first.delivered == first.picked_up
-    assert first.delivered == 3  # project + area + units_v2
+    assert first.delivered == 3  # project + area + units_v2 (unit v1 đã gửi đồng bộ ngay khi tạo)
 
     request_count_before = len(backend.requests)
     second = await relay_module.relay_tick(limit=50)
@@ -198,22 +190,24 @@ async def test_relay_second_tick_finds_nothing_left_to_send_no_duplicate_project
     assert len(backend.requests) == request_count_before, "không có request thứ hai nào rời khỏi máy"
 
 
-async def test_relay_does_not_offer_resend_for_canonical_v2_unit(crm_app, backend):
+async def test_relay_resend_of_an_already_delivered_v1_row_is_still_the_explicit_operator_path(crm_app, backend):
+    """Regression: `/outbox/{id}/resend` (v1) không đổi hành vi — vẫn là đường
+    TƯỜNG MINH do người vận hành gọi, quan hoàn toàn độc lập với vòng relay."""
     with _client() as client:
         batch_id = client.post("/units", json=UNIT).json()["sync"]["external_batch_id"]
         response = client.post(f"/outbox/{batch_id}/resend")
-        assert response.status_code == 409
-        assert response.json()["error_code"] == "V2_DELIVERY_NOT_ENABLED"
+        assert response.status_code == 200
+        assert response.json()["sync"]["status"] == "replayed"
 
 
-# --- Canonical Unit writes wait for RelayLoop ----------------------------------
+# --- v1 không đổi: đường đồng bộ vẫn hoạt động mà không cần relay -------------
 
 
-async def test_canonical_unit_write_waits_for_relay_without_immediate_delivery(crm_app, backend):
+async def test_v1_crud_still_gets_an_immediate_sync_result_without_any_relay_tick(crm_app, backend):
     with _client() as client:
         response = client.post("/units", json=UNIT)
-    assert response.json()["sync"]["status"] == "sync_pending"
-    assert len(backend.requests) == 0
+    assert response.json()["sync"]["status"] == "synced"
+    assert len(backend.requests) == 1, "đường đồng bộ v1 vẫn tự gửi ngay, không chờ relay"
 
 
 # --- Vòng nền: không tự chồng lấn lượt của chính nó ---------------------------

@@ -1,0 +1,63 @@
+{
+  "_comment": "FIXTURE TỔNG HỢP — KHÔNG PHẢI DỮ LIỆU CRM THẬT. Phong bì v2 là DỰ THẢO: phía nhận CHƯA chấp nhận schema_version=2.",
+  "schema_version": 2,
+  "source_system": "mini_crm",
+  "source_instance_id": "synthetic-mini-crm",
+  "external_batch_id": "SYNTH-BATCH-0019",
+  "sync_mode": "incremental",
+  "project_ref": {
+    "external_project_id": "SYNTH-P-0001"
+  },
+  "source_extracted_at": "2026-08-12T02:00:00+07:00",
+  "records": [
+    {
+      "entity": "project",
+      "operation": "upsert",
+      "external_id": "SYNTH-P-0001",
+      "source_revision": 1,
+      "payload": {
+        "name": "Khu do thi Ben Xanh",
+        "launch_date": "2026-06-01"
+      }
+    },
+    {
+      "entity": "area",
+      "operation": "upsert",
+      "external_id": "SYNTH-AR-0001",
+      "source_revision": 1,
+      "payload": {
+        "area_name": "A1",
+        "unit_type": "2PN",
+        "bedrooms": 2,
+        "area_sqm": 68.5,
+        "total_units": 120
+      }
+    },
+    {
+      "entity": "unit",
+      "operation": "upsert",
+      "external_id": "SYNTH-U-0101",
+      "source_revision": 1,
+      "payload": {
+        "area_ref": {
+          "external_area_id": "SYNTH-AR-0001"
+        },
+        "unit_code": "A1-01-01",
+        "unit_status": "available"
+      }
+    },
+    {
+      "entity": "deal",
+      "operation": "upsert",
+      "external_id": "SYNTH-D-0101",
+      "source_revision": 1,
+      "payload": {
+        "external_unit_id": "SYNTH-U-0101",
+        "deal_status": "reserved",
+        "reserved_at": "2026-08-10T09:00:00+07:00",
+        "sold_at": null,
+        "lost_at": null
+      }
+    }
+  ]
+}

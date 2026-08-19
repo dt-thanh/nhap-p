@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from app import crud, scope
 from app.auth import MiniCrmPrincipal, require_role, require_scope
-from app.human_auth import require_resource_visibility
 from app.schemas import UnitCreate, UnitOut, UnitPatch, UnitWriteOut
 from fastapi import APIRouter, Depends, Query, status
 
@@ -33,24 +32,14 @@ async def create_unit(
     return UnitWriteOut(record=UnitOut(**record), sync=sync.as_dict())
 
 
-@router.get(
-    "",
-    response_model=list[UnitOut],
-    summary="Liệt kê căn",
-    dependencies=[Depends(require_resource_visibility)],
-)
+@router.get("", response_model=list[UnitOut], summary="Liệt kê căn")
 async def list_units(
     include_deleted: bool = Query(default=False, description="Kèm cả căn đã tombstone"),
 ) -> list[UnitOut]:
     return [UnitOut(**row) for row in await crud.list_units(include_deleted=include_deleted)]
 
 
-@router.get(
-    "/{external_id}",
-    response_model=UnitOut,
-    summary="Đọc một căn",
-    dependencies=[Depends(require_resource_visibility)],
-)
+@router.get("/{external_id}", response_model=UnitOut, summary="Đọc một căn")
 async def get_unit(external_id: str) -> UnitOut:
     return UnitOut(**await crud.get_unit(external_id))
 
