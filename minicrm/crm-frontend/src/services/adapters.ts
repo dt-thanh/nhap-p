@@ -180,6 +180,8 @@ export function beAreaToFe(be: BEArea): Area {
     salesVelocity: 0,
     absorption: 0,
     status: "on_track",
+    bedrooms: be.bedrooms,
+    area_sqm: be.area_sqm,
   };
 }
 

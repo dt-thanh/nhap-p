@@ -5,19 +5,39 @@
 
 const BASE = "/api";
 
-/** Retrieve the stored JWT access token (if any). */
+/**
+ * Chọn token cho request:
+ *   1. Token JWT sau khi user đăng nhập (localStorage/sessionStorage).
+ *   2. Fallback DEV-only từ Vite env: VITE_DEV_BEARER_TOKEN.
+ *      - CHỈ đọc khi import.meta.env.DEV === true (vite build production sẽ
+ *        loại nhánh này bằng dead-code elimination).
+ *      - Giá trị lấy từ file `.env.local` của thư mục crm-frontend, KHÔNG
+ *        commit vào git. Xem `.env.example` để biết cách khai báo.
+ *   Nếu cả hai đều rỗng: request đi ra không có Authorization → backend trả
+ *   401/403 và UI hiện lỗi rõ ràng, thay vì âm thầm dùng token mặc định.
+ */
 function getToken(): string | null {
-  if (import.meta.env.DEV) return "mca_6NnhdFPLj4jZRRwcpB4JLz5XDxrBQuhD";
   try {
     const raw =
       localStorage.getItem("crm_auth") ||
       sessionStorage.getItem("crm_auth");
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed.token ?? parsed.access_token ?? null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const stored = parsed.token ?? parsed.access_token ?? null;
+      if (stored) return stored;
+    }
   } catch {
-    return null;
+    /* ignore corrupt storage */
   }
+
+  if (import.meta.env.DEV) {
+    const devToken = import.meta.env.VITE_DEV_BEARER_TOKEN;
+    if (typeof devToken === "string" && devToken.length > 0) {
+      return devToken;
+    }
+  }
+
+  return null;
 }
 
 export class ApiError extends Error {

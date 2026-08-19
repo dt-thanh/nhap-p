@@ -57,6 +57,9 @@ export interface Area {
   absorption: number; // %
   status: AreaStatus;
   thumbnailUrl?: string;
+  // Backend-native fields, giữ nguyên để edit UI seed lại được cùng giá trị.
+  bedrooms?: number;
+  area_sqm?: number;
 }
 
 // ---------- Unit (Sản phẩm / Căn) ----------

@@ -89,8 +89,9 @@ export async function fetchDashboard() {
 }
 
 // ---------- Projects ----------
-export async function fetchProjects(search = ""): Promise<Project[]> {
-  const beProjects = await apiGet<BEProject[]>("/projects?include_archived=true");
+export async function fetchProjects(search = "", includeArchived = false): Promise<Project[]> {
+  const qs = includeArchived ? "?include_archived=true" : "";
+  const beProjects = await apiGet<BEProject[]>(`/projects${qs}`);
   const beAreas = await apiGet<BEArea[]>("/areas?include_archived=true");
   let list = beProjects.map((p) => beProjectToFe(p, beAreas));
   if (search.trim()) {
@@ -148,9 +149,10 @@ export async function deleteProject(externalId: string): Promise<void> {
 }
 
 // ---------- Areas ----------
-export async function fetchAreas(projectId: string): Promise<Area[]> {
+export async function fetchAreas(projectId: string, includeArchived = false): Promise<Area[]> {
+  const archivedQs = includeArchived ? "&include_archived=true" : "";
   const beAreas = await apiGet<BEArea[]>(
-    `/areas?external_project_id=${projectId}&include_archived=true`,
+    `/areas?external_project_id=${projectId}${archivedQs}`,
   );
   return beAreas.map(beAreaToFe);
 }

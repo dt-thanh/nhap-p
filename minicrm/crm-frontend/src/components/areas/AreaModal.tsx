@@ -1,7 +1,23 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 
-interface AreaFormData {
+/**
+ * Payload gửi cho onSave.
+ * - Khi tạo: page bọc thêm `external_project_id` trước khi gọi createArea.
+ * - Khi sửa: gửi nguyên payload cho updateArea (backend AreaPatch không cho
+ *   sửa external_project_id — Area không đổi được project theo phase_a
+ *   domain_freeze §A1.6).
+ */
+export interface AreaFormData {
+  area_name: string;
+  unit_type: string;
+  bedrooms: number;
+  area_sqm: number;
+  total_units: number;
+}
+
+export interface AreaEditSeed {
+  id: string;
   area_name: string;
   unit_type: string;
   bedrooms: number;
@@ -10,28 +26,32 @@ interface AreaFormData {
 }
 
 interface Props {
-  area?: { id: string; name: string; type: string } | null;
-  projectId: string;
+  /** Không truyền = mode "create". Có id = mode "edit". */
+  area?: AreaEditSeed | null;
   onClose: () => void;
-  onSave: (data: AreaFormData & { external_project_id: string }) => void;
+  onSave: (data: AreaFormData) => void;
 }
 
 const UNIT_TYPES = ["Low Rise", "High Rise", "Villa", "Townhouse", "Penthouse"];
 
-export function AreaModal({ area, projectId, onClose, onSave }: Props) {
-  const [areaName, setAreaName] = useState(area?.name ?? "");
-  const [unitType, setUnitType] = useState(area?.type ?? UNIT_TYPES[0]);
-  const [bedrooms, setBedrooms] = useState(2);
-  const [areaSqm, setAreaSqm] = useState(65);
-  const [totalUnits, setTotalUnits] = useState(50);
+export function AreaModal({ area, onClose, onSave }: Props) {
+  const isEdit = !!area?.id;
+
+  const [areaName, setAreaName] = useState(area?.area_name ?? "");
+  const [unitType, setUnitType] = useState(area?.unit_type ?? UNIT_TYPES[0]);
+  const [bedrooms, setBedrooms] = useState<number>(area?.bedrooms ?? 2);
+  const [areaSqm, setAreaSqm] = useState<number>(area?.area_sqm ?? 65);
+  const [totalUnits, setTotalUnits] = useState<number>(area?.total_units ?? 50);
   const [error, setError] = useState("");
 
   function submit() {
     if (!areaName.trim()) return setError("Vui lòng nhập tên phân khu");
     if (!unitType.trim()) return setError("Vui lòng chọn loại căn");
+    if (bedrooms < 0) return setError("Số phòng ngủ phải ≥ 0");
+    if (areaSqm <= 0) return setError("Diện tích phải > 0");
     if (totalUnits < 0) return setError("Tổng căn phải ≥ 0");
+
     onSave({
-      external_project_id: projectId,
       area_name: areaName.trim(),
       unit_type: unitType.trim(),
       bedrooms,
@@ -45,9 +65,9 @@ export function AreaModal({ area, projectId, onClose, onSave }: Props) {
       <div className="w-full max-w-lg rounded-card bg-white shadow-panel">
         <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <h3 className="font-display text-xl font-semibold text-ink">
-            {area ? "Sửa phân khu" : "Thêm phân khu"}
+            {isEdit ? "Sửa phân khu" : "Thêm phân khu"}
           </h3>
-          <button onClick={onClose} className="text-ink-faint hover:text-ink">
+          <button onClick={onClose} className="text-ink-faint hover:text-ink" aria-label="Đóng">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -81,7 +101,7 @@ export function AreaModal({ area, projectId, onClose, onSave }: Props) {
         <div className="flex justify-end gap-3 border-t border-line px-6 py-4">
           <button onClick={onClose} className="btn-ghost">Huỷ</button>
           <button onClick={submit} className="btn-teal">
-            {area ? "Lưu thay đổi" : "Thêm phân khu"}
+            {isEdit ? "Lưu thay đổi" : "Thêm phân khu"}
           </button>
         </div>
       </div>

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ChevronRight, Plus, Trash2 } from "lucide-react";
-import { fetchProjectById, fetchAreas, createArea, deleteArea } from "../services";
-import type { AreaCreateData } from "../services";
+import { ChevronRight, Plus, Trash2, Pencil } from "lucide-react";
+import {
+  fetchProjectById, fetchAreas,
+  createArea, updateArea, deleteArea,
+} from "../services";
 import { Badge } from "../components/ui/Badge";
-import { AreaModal } from "../components/areas/AreaModal";
+import { AreaModal, type AreaFormData } from "../components/areas/AreaModal";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import type { Project, Area } from "../types";
 
@@ -13,6 +15,7 @@ export function ProjectDetail() {
   const [project, setProject] = useState<Project | null>(null);
   const [areas, setAreas] = useState<Area[]>([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState<Area | null>(null);
   const [deleting, setDeleting] = useState<Area | null>(null);
   const [error, setError] = useState("");
 
@@ -24,11 +27,23 @@ export function ProjectDetail() {
 
   useEffect(() => { reload(); }, [projectId]);
 
-  async function handleCreateArea(data: AreaCreateData & { external_project_id: string }) {
+  async function handleCreateArea(data: AreaFormData) {
+    if (!projectId) return;
     try {
       setError("");
-      await createArea(data);
+      await createArea({ ...data, external_project_id: projectId });
       setShowCreate(false);
+      reload();
+    } catch (e) { setError((e as Error).message); }
+  }
+
+  async function handleUpdateArea(data: AreaFormData) {
+    if (!editing) return;
+    try {
+      setError("");
+      // Backend AreaPatch KHÔNG chấp nhận external_project_id → chỉ gửi trường thay đổi.
+      await updateArea(editing.id, data);
+      setEditing(null);
       reload();
     } catch (e) { setError((e as Error).message); }
   }
@@ -96,8 +111,8 @@ export function ProjectDetail() {
                 <td className="td-cell font-mono text-xs text-ink-muted">{a.id}</td>
                 <td className="td-cell font-medium">{a.name}</td>
                 <td className="td-cell text-ink-muted">{a.type}</td>
-                <td className="td-cell">{(a as any).bedrooms ?? "—"}</td>
-                <td className="td-cell">{(a as any).area_sqm ?? "—"} m²</td>
+                <td className="td-cell">{a.bedrooms ?? "—"}</td>
+                <td className="td-cell">{a.area_sqm ?? "—"} m²</td>
                 <td className="td-cell">{a.totalUnits}</td>
                 <td className="td-cell">
                   <Badge tone={a.status === "on_track" ? "green" : "gray"}>
@@ -105,9 +120,14 @@ export function ProjectDetail() {
                   </Badge>
                 </td>
                 <td className="td-cell">
-                  <button onClick={() => setDeleting(a)} className="rounded p-1 text-ink-faint hover:bg-status-redbg hover:text-status-red" title="Lưu trữ">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  <div className="flex gap-1">
+                    <button onClick={() => setEditing(a)} className="rounded p-1 text-ink-faint hover:bg-surface-page hover:text-ink" title="Sửa phân khu">
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button onClick={() => setDeleting(a)} className="rounded p-1 text-ink-faint hover:bg-status-redbg hover:text-status-red" title="Lưu trữ">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -120,9 +140,22 @@ export function ProjectDetail() {
 
       {showCreate && projectId && (
         <AreaModal
-          projectId={projectId}
           onClose={() => setShowCreate(false)}
           onSave={handleCreateArea}
+        />
+      )}
+      {editing && (
+        <AreaModal
+          area={{
+            id: editing.id,
+            area_name: editing.name,
+            unit_type: editing.type,
+            bedrooms: editing.bedrooms ?? 0,
+            area_sqm: editing.area_sqm ?? 0,
+            total_units: editing.totalUnits,
+          }}
+          onClose={() => setEditing(null)}
+          onSave={handleUpdateArea}
         />
       )}
       {deleting && (
