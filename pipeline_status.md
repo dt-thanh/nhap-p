@@ -8,6 +8,139 @@ xoá hay sửa.
 
 ---
 
+## Current system flow (verified 2026-08-17)
+
+The backend is under `src/`; there are no `src/pipelines/` or `src/workers/`
+directories. RQ jobs in `src/jobs/` run in `src/worker.py`; APScheduler in
+`src/scheduler.py` only enqueues jobs. The API is mounted below `/api/v1` by
+`src/main.py`.
+
+## Pipeline Flow
+
+### Stage 1: Intake and contract gates
+- **Trigger**: `POST /api/v1/sync/{entity}` in `src/api/sync.py::start_sync`, or `POST /api/v1/files/upload` in `src/api/files.py::upload_file`.
+- **Input**: JSON envelope from CRM, or Excel/CSV file saved by `src/services/file_upload.py::FileUploadService.save`.
+- **Process**: JSON is byte-measured by `src/services/sync_payloads.py::measure`, authenticated, validated by `src/services/contract_validation.py::ContractValidator` / `contract_validation_v2.py::ContractValidatorV2`, adapted by `src/services/contract_adapter.py::adapt` / `adapt_v2`, and parsed by `src/services/json_payload.py::JsonPayloadParser`. File uploads validate project UUID, template, suffix, size, and checksum.
+- **Output**: A normalized `SyncEnvelope` for JSON, or an `upload_files` row with `status='pending'` and an RQ job for file parsing.
+- **Error handling**: JSON returns 400 for malformed JSON, 413 for oversized payloads, 401/403 for credential failures, 422 for contract/envelope failures, and 500 for unavailable contract schemas. File upload returns 415 for unsupported suffix, 413/422 for file validation, 409 for duplicate checksum, and 503 if enqueue fails; an enqueue failure removes the file and pending row.
+- **Status tracking**: `upload_files.uploaded_at` is the intake timestamp; file status begins at `pending`. API status is `202 Accepted` for a new file and `202 Accepted` for a new JSON sync (`200 OK` for replay). No websocket or event-stream status channel exists.
+
+### Stage 2: JSON sync idempotency, source identity, and projection
+- **Trigger**: `src/services/sync_runs.py::SyncRunService.run`, called by `start_sync`.
+- **Input**: Normalized `SyncEnvelope`; optional retained raw payload and credential ID.
+- **Process**: Resolves the project, detects an existing `(source_system, source_instance_id, external_batch_id)`, creates the run, then `apply_records` uses `src/services/source_identity.py::SourceIdentityService`, `src/services/history_guard.py`, and `src/services/domain_projection.py::DomainProjector`. Each record is isolated by a nested transaction and deterministic identity locks. Decisions include insert, update, stale skip, duplicate no-op, conflict, and tombstone.
+- **Output**: `upload_files` stores the batch result; `sync_payloads` stores the retained raw payload; `crm_source_records` stores source identity/state; projections write `projects`, `areas`, `units`, and `deals`; row errors write `upload_errors`.
+- **Error handling**: Per-record failures are persisted without rolling back valid records. `_terminal_status` returns `completed`, `completed_with_conflicts`, `partially_completed`, or `failed`. An unexpected failure calls `SyncRunService._finalize_failure` in a separate transaction and marks the run failed. `reprocess` only accepts `failed` or `partially_completed` runs with a retained payload; it clears prior errors before retrying.
+- **Status tracking**: `upload_files.status`, `rows_received`, `rows_ok`, `rows_failed`, `error_summary`, `uploaded_at`, and `finished_at`. `crm_source_records.last_decision`, `state`, `last_seen_at`, `conflict_detected_at`, and `deleted_at` track identity outcomes. The request returns `202 Accepted` for a new run and `200 OK` for an idempotent replay; polling is `GET /api/v1/sync-runs/{sync_run_id}` (`200 OK`).
+
+### Stage 3: File parse, validation, and relational import
+- **Trigger**: RQ job `src.jobs.parse_upload::run_parse_upload`, enqueued by `src/api/files.py::upload_file` on `INGEST_QUEUE`.
+- **Input**: Stored upload path plus template `sales`, `inventory`, or `areas`.
+- **Process**: `src/services/excel_parser.py::ExcelParserService.parse_to_csv` streams the source into a staging CSV. `src/services/import_records.py::ImportService.load` resolves area names once, validates rows, deduplicates hashes/keys, and performs transactional batch writes.
+- **Output**: `areas`, `sales_records`, or `inventory_snapshots`; parse/import errors go to `upload_errors`; `upload_files` is finalized. On successful import, `src/services/absorption.py::AbsorptionCalculatorService.recompute` is called in the same job.
+- **Error handling**: Row errors remain attached to the file. `ImportRejectedError` rolls back the import when the configured error threshold is exceeded. Structural parse errors, integrity errors, unreadable files, and unknown templates are converted by `_failed` into `upload_files.status='failed'` plus one persisted error. The upload API itself has no explicit RQ retry setting; the status/error endpoints are the recovery surface.
+- **Status tracking**: `upload_files.status` transitions `pending` → `processing` → `completed` or `failed`, with `rows_ok`, `rows_failed`, `finished_at`, and `error_summary`. The upload API returns `202 Accepted`; `GET /api/v1/files/{file_id}/status` returns `200 OK` and is intended for polling.
+
+### Stage 4: Absorption calculation and dashboard output
+- **Trigger**: File import calls `AbsorptionCalculatorService.recompute`; JSON sync calls post-commit domain recompute separately. Dashboard reads are `GET /api/v1/absorption` and `GET /api/v1/absorption/summary`.
+- **Input**: Legacy calculation reads `sales_records` and `inventory_snapshots`. Domain calculation uses `src/services/domain_absorption.py::DomainAbsorptionCalculatorService.compute` over `units`, `deals`, and `areas`.
+- **Process**: `AbsorptionCalculatorService.recompute` rebuilds only `calculator='legacy_aggregate'`. `DomainAbsorptionCalculatorService.persist` rebuilds only `calculator='domain_units_deals'`, scoped to changed areas when available. `src/api/dashboard.py` uses `DomainSalesAnalyticsService` for the default dashboard read and keeps legacy output as an explicit compatibility path.
+- **Output**: `absorption_daily` with `stat_date`, `units_sold`, rolling velocities, quality/observation fields, optional inventory/reservation values, calculator, and computation ID. API output contains trend points, summary KPIs, `data_source`, `data_status`, and sync freshness fields.
+- **Error handling**: File-job failures mark the upload failed. Domain recompute exceptions are re-raised so RQ marks the job failed and applies its configured retry. Dashboard validation failures return 422; missing data is represented as `no_data`/`no_units` rather than fabricated metrics.
+- **Status tracking**: `absorption_daily.computed_at` and `computation_id`; `upload_files.finished_at` for file-driven legacy recompute. HTTP reads return `200 OK`; invalid scope/range/calculator returns `422 Unprocessable Entity`.
+
+### Stage 5: Post-commit domain recompute
+- **Trigger**: `SyncRunService._enqueue_domain_recompute` after a committed JSON run with inserted, updated, or tombstoned projections; recovery also comes from `src/jobs/domain_recompute_audit.py::run_domain_recompute_audit`.
+- **Input**: Project UUID, affected area UUIDs, and originating sync-run UUID.
+- **Process**: `src/jobs/recompute_domain.py::run_domain_recompute` calls `_recompute`, which computes and persists domain absorption. The write is delete-and-reinsert within the selected calculator and area scope, making RQ retry idempotent.
+- **Output**: Updated `absorption_daily` rows for `domain_units_deals`; no source tables are changed.
+- **Error handling**: Enqueue uses `Retry(max=3, interval=[10, 30, 60])`. If Redis enqueue fails after the sync commit, the error is logged and the sync response remains successful; the stale-lineage audit detects the gap later. Job computation failures are re-raised for RQ retry/failure visibility.
+- **Status tracking**: RQ job ID and structured logs `domain.recompute.enqueued`, `.started`, `.finished`, `.failed`; output rows use `computed_at` and `computation_id`. There is no dedicated domain-run table or HTTP job-status endpoint; `GET /api/v1/ops/domain-recompute` reports stale lineage with `200 OK`.
+
+### Stage 6: Reconciliation and lineage audit
+- **Trigger**: `POST /api/v1/reconciliation/runs`, scheduled `src/jobs/domain_recompute_audit.py::run_domain_recompute_audit`, or `src/services/domain_recompute_audit.py::audit`.
+- **Input**: Project/snapshot scope and source instance; audit reads completed API-push `upload_files` and domain `absorption_daily` timestamps.
+- **Process**: `src/services/reconciliation.py::ReconciliationService.run` checks entity/scope counts, external IDs, mirror consistency, duplicate active deals, orphan deals, missing areas, rejected records, tombstones, and snapshot safety. It persists one run and its findings. The domain audit compares latest applied sync `finished_at` with latest domain `computed_at` and can enqueue a full-project recompute.
+- **Output**: `reconciliation_runs`, `reconciliation_findings`, and optional domain recompute RQ jobs. `scope='internal'` proves self-consistency; `scope='snapshot'` is snapshot-scoped. `scope='source'` is explicitly rejected because no live CRM source is available.
+- **Error handling**: Reconciliation records `failed` when error findings exist; validation/auth/scope errors return 422/401. Audit repair failures are logged as diagnostics and do not hide the stale finding. Database failures make the audit job fail visibly.
+- **Status tracking**: `reconciliation_runs.started_at`, `finished_at`, `status`, `passed`, finding counts, and `checks_run`; each finding has `created_at`. Run/detail/findings endpoints return `200 OK`; invalid or unauthorized requests return `401`/`422`/`404` as applicable.
+
+### Stage 7: Parallel legacy/domain comparison
+- **Trigger**: `POST /api/v1/parallel-run/{project_id}`, or scheduled `src/jobs/parallel_run.py::run_parallel_run_capture` when enabled by `src/scheduler.py`.
+- **Input**: Project UUID; legacy source tables and domain source tables are read independently by `ParallelRunCaptureService` and `ParallelRunComparator`.
+- **Process**: `src/services/parallel_run.py::ParallelRunCaptureService.capture` computes both sides, classifies differences with `src/services/comparison_rules.py::classify`, and inserts an append-only observation. It never calls `persist()` for `absorption_daily`.
+- **Output**: `calculator_comparisons`; read history and classified verdicts from the same service. No calculator switch or source projection is changed.
+- **Error handling**: Manual unknown project returns 404. Scheduled `capture_all` logs an individual project failure and continues; an infrastructure failure is re-raised to the RQ failed registry. No explicit retry is configured on the scheduled capture enqueue.
+- **Status tracking**: `calculator_comparisons.compared_at`, `created_at`, `trigger`, `matches`, data-availability flags, difference/anomaly counts, and JSON details. Manual and read endpoints return `200 OK`; operations-token failures are 401/403.
+
+### Stage 8: Ranking configuration and asynchronous ranking
+- **Trigger**: `POST /api/v1/ranking/run` for synchronous calculation; `POST /api/v1/ranking/runs`, `POST /api/v1/ranking/features/survey`, and config publish/rollback for queued calculation.
+- **Input**: Live `units`/`deals`, `areas`, published `ranking_configs`, and optional survey features.
+- **Process**: `src/ranking/service.py::enqueue_ranking` creates/coalesces a DB `ranking_runs` row before Redis enqueue. `src/jobs/rank_project.py::rank_project` calls `run_ranking`, which claims the run, materializes feature snapshots, scores/ranks units with `src/ranking/engine.py`, and replaces current project scores.
+- **Output**: `feature_snapshots`, `ranking_scores`, and `ranking_runs`; results are read by `GET /api/v1/ranking` and `GET /api/v1/ranking/runs/{run_id}`.
+- **Error handling**: Queue enqueue uses `Retry(max=3, interval=[10, 30, 60])`. DB `queued` state survives Redis failure. A second worker receiving the same run gets `RUN_NOT_CLAIMABLE` and exits cleanly. Calculation failures update `ranking_runs.status='failed'`, `error_summary`, and `finished_at`, then re-raise for RQ retry.
+- **Status tracking**: `ranking_runs.status` is `queued` → `running` → `completed` or `failed`; `attempt`, `enqueued_at`, `started_at`, `finished_at`, and processed/ranked/skipped counts provide timing and outcome. Async enqueue returns `202 Accepted`; synchronous and read routes return `200 OK`; invalid inputs return `422`.
+
+### Stage 9: Advisory agent, human approval, and allow-listed execution
+- **Trigger**: `POST /api/v1/agent/recommendations` or `POST /api/v1/chat`; approval/execution are explicit follow-on actions.
+- **Input**: Ranking output and read-only project/unit/deal context assembled by `src/agents/advisory_tools.py::collect_advisory_context` and `run_advisory_agent`.
+- **Process**: `src/api/agent.py::create_recommendation` persists an advisory recommendation; `POST /api/v1/agent/recommendations/{rec_id}/approve` or `/reject` records the human decision; `/execute` runs only the approved allow-listed action and writes application-owned campaign/execution records. `src/services/ai.py::generate_content` calls the LLM with `store=False`.
+- **Output**: `agent_recommendations`, then optional `sales_campaigns`, `sales_campaign_units`, and `agent_executions`. Units/deals are not mutated by execution.
+- **Error handling**: Recommendations begin `pending_approval`; there is no auto-approval. LLM network/429/5xx errors receive one retry with exponential delay before a typed 503/429/4xx failure. Approval and execution enforce role, scope, state, and action allow-list checks.
+- **Status tracking**: `agent_recommendations.generated_at`, `decided_at`, `executed_at`, `status`, and `execution_status`; `agent_executions.started_at`, `finished_at`, `status`, `error`, and `result`; campaign creation uses `created_at`. Create returns `202 Accepted`; reads and successful decisions return `200 OK`; auth/state validation failures use 401/403/404/409/422.
+
+### Stage 10: Forecast scheduler (not a live data pipeline yet)
+- **Trigger**: `src/scheduler.py::enqueue_daily_forecast`, scheduled by `settings.forecast_cron` into `FORECAST_QUEUE`.
+- **Input**: Optional area IDs; the intended source is `absorption_daily`.
+- **Process**: `src/jobs/forecast.py::run_daily_forecast` currently only logs start/finish and returns zero processed areas. Prophet, sell-out confidence intervals, LangGraph explanation, alerts, and progress notification are TODO (MVP 2).
+- **Output**: No database rows are written by the current job. Although `forecast_jobs`, `forecasts`, `forecast_points`, `explanations`, and `alerts` exist in `0001_initial_schema`, no current forecast implementation populates them.
+- **Error handling**: No forecast calculation or explicit retry logic is currently implemented. **TODO: verify** whether a manual `/api/forecasts/run` endpoint is intended; no such router was found under `src/api/`.
+- **Status tracking**: RQ job execution logs only; no forecast status row is produced by the current implementation.
+
+## Database Schema Summary
+
+- `projects`, `areas`: catalog hierarchy and source identity/content fields; areas belong to projects.
+- `upload_files`: shared intake/run record for file uploads and JSON API-push syncs; status, counts, source metadata, snapshot metadata, and `finished_at`.
+- `upload_errors`: row/JSON-path validation and processing errors linked to `upload_files`, with `created_at`, retry, and resolution fields.
+- `crm_source_records`: source-record identity, revision/hash, decision, conflict, and tombstone state.
+- `sales_records`, `inventory_snapshots`: legacy file-import facts linked to areas and upload files.
+- `units`, `deals`: mirrored domain inventory and deal facts; soft deletion and source revision timestamps are retained.
+- `absorption_daily`: derived legacy/domain absorption series, calculator lineage, quality flags, and `computed_at`.
+- `sync_credentials`, `sync_payloads`: hashed machine credentials and retained raw sync payloads; payloads are linked one-to-one to runs.
+- `reconciliation_runs`, `reconciliation_findings`: reconciliation lifecycle and individual checks/findings.
+- `calculator_comparisons`: append-only legacy/domain comparison observations and verdict inputs.
+- `feature_snapshots`, `ranking_configs`, `ranking_runs`, `ranking_scores`: ranking features, immutable/versioned weights, run lifecycle, and current unit scores.
+- `agent_recommendations`, `sales_campaigns`, `sales_campaign_units`, `agent_executions`: advisory/HITL decision and allow-listed execution records.
+- `users`, `settings`, `user_areas`, `refresh_tokens`, `audit_logs`: initial authentication, configuration, user scope, token, and audit tables; no current pipeline stage writes them directly in the inspected flow.
+- `forecast_jobs`, `forecasts`, `forecast_points`, `explanations`, `alerts`: forecast-era schema from `alembic/versions/0001_initial_schema.py`; current `src/jobs/forecast.py` does not populate them.
+- `suggestions`, `llm_calls`, `proposals`, `approvals`: initial AI/market schema. **TODO: verify** their production ownership; current ranking/advisory pipeline uses the `agent_*` and campaign tables above.
+
+Schema provenance: base tables are created in `alembic/versions/0001_initial_schema.py`; sync identity in `0006_sync_foundation.py`; domain mirror in `0007_s3_domain_model.py`; credentials/payload retention in `0008_sync_credentials.py`, `0009_sync_payloads.py`, and `0010_sync_payload_retention.py`; reconciliation in `0011_reconciliation.py`; calculator provenance/comparisons in `0012_calculator_provenance.py` and `0013_calculator_comparisons.py`; ranking in `0014_ranking_foundation.py` and `0015_ranking_results.py`; conflicts/hierarchy in `0016_completed_with_conflicts.py` and `0017_hierarchy_projection.py`; advisory/execution in `0018_agent_recommendations.py` and `0020_agent_advisory_execution.py`. Later revisions `0019`, `0021`, `0023`, `0024`, and `0025` are fixture/data or data-label changes, not new pipeline stages.
+
+## API Endpoints
+
+- `POST /api/v1/files/upload` — starts Stage 3; `GET /api/v1/files`, `/api/v1/files/{file_id}/status`, `/errors`, and `/errors.csv` monitor its run and errors.
+- `POST /api/v1/sync/{entity}` — starts Stage 2; `POST /api/v1/sync-runs/{sync_run_id}/reprocess` retries a retained failed/partial run; `GET /api/v1/sync-runs/{sync_run_id}`, `/errors`, `/api/v1/sync-runs`, `/api/v1/sync-errors`, and `/payload` monitor it.
+- `GET /api/v1/absorption` and `GET /api/v1/absorption/summary` — read Stage 4 derived trend/KPI output.
+- `POST /api/v1/reconciliation/runs` — starts Stage 6; `GET /api/v1/reconciliation/runs/{run_id}` and `/findings` monitor it.
+- `GET /api/v1/ops/domain-recompute` — monitors Stage 5 stale lineage and optional scheduled repair outcome.
+- `POST /api/v1/parallel-run/{project_id}` — starts Stage 7 synchronously; `GET /api/v1/parallel-run/{project_id}` and `/verdicts` read its history.
+- `POST /api/v1/ranking/run` — runs Stage 8 synchronously; `POST /api/v1/ranking/runs` and `POST /api/v1/ranking/features/survey` enqueue it; `GET /api/v1/ranking` and `GET /api/v1/ranking/runs/{run_id}` read results/status; config draft/publish/rollback routes are `GET/POST /api/v1/ranking/configs` and `POST /api/v1/ranking/configs/{version}/publish|rollback`.
+- `POST /api/v1/agent/recommendations` — starts Stage 9; `GET /api/v1/agent/recommendations` and `/{rec_id}` monitor recommendations; `POST /approve`, `/reject`, and `/execute` advance explicit HITL states.
+- `POST /api/v1/chat` — read-only advisory response path using the agent context; it does not create a pipeline run or bypass approval.
+- `GET /api/v1/projects`, `/projects/{external_id}`, `/areas`, `/areas/{external_id}`, and catalog/dashboard reads expose stored pipeline outputs but do not trigger a pipeline stage.
+- No websocket endpoint was found. `GET /api/v1/files/{file_id}/errors.csv` uses `StreamingResponse` only to stream a finite CSV error export.
+
+## Monitoring & Observability
+
+- **Logs**: structured logs from `src/logging_config.py`; request errors are handled in `src/main.py::unhandled_exception_handler` with an `error_id` and request ID; worker/scheduler logs identify queue jobs and durations without logging secrets.
+- **Metrics**: no external metrics backend was found. Operational timestamps/counts are stored in `upload_files`, `absorption_daily`, `reconciliation_runs`, `calculator_comparisons`, `ranking_runs`, `ranking_scores`, `agent_recommendations`, and `agent_executions`; job logs include duration/count fields.
+- **Queues**: `INGEST_QUEUE` handles parse, domain recompute, lineage audit, parallel capture, and ranking; `FORECAST_QUEUE` handles the current forecast stub. `src/worker.py` prioritizes ingest before forecast.
+- **Retries**: domain recompute and ranking enqueue use RQ retry intervals `[10, 30, 60]` with maximum 3 retries; LLM calls retry once after transient network/429/5xx responses; sync reprocess is explicit and payload-backed; file parse has no configured automatic retry.
+- **Alerts**: stale domain lineage is logged by `src/services/domain_recompute_audit.py::audit`; reconciliation findings and comparison differences/anomalies are persisted. No external alert/notification sink or websocket progress channel is currently implemented. Forecast alert generation remains TODO (MVP 2).
+
+---
+
 # Đợt 2026-08-15 (b) — Tiếp tục tích hợp frontend/backend: trạng thái dự án, phạm vi upload, transport history
 
 Status: **COMPLETE trong phạm vi frontend/backend integration được duyệt**. Không

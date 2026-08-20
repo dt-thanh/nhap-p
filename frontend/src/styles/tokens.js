@@ -4,30 +4,37 @@
 // Mọi component lấy màu/chữ/khoảng cách từ đây; KHÔNG hardcode mã màu ở nơi khác.
 // Đổi nhận diện toàn app = sửa file này.
 //
-// Nhận diện: indigo (trí tuệ/AI) chủ đạo · emerald cho tín hiệu tích cực
-// (đã bán / khả năng bán cao) · amber cảnh báo · rose rủi ro.
+// Nhận diện: graphite/charcoal chủ đạo · champagne gold cho điểm nhấn
+// · emerald cho tín hiệu tích cực · amber cảnh báo · rose rủi ro.
 // Chữ: Space Grotesk (tiêu đề, số) + Inter (nội dung) — nạp trong index.html.
 // ===========================================================================
 
 export const color = {
-  canvas:   "#f6f6fb",
-  surface:  "#ffffff",
-  border:   "#e8e8f0",
-  borderStrong: "#d8d8e6",
+  canvas:   "#F7F7F4",
+  surface:  "#FFFFFF",
+  border:   "#E1E1DE",
+  borderStrong: "#C8C8C2",
 
-  ink:      "#1a1a2e",
-  body:     "#4a4a63",
-  muted:    "#8888a0",
+  ink:      "#161616",
+  body:     "#4A4A4A",
+  muted:    "#707070",
 
-  accent:     "#5b52e6",
-  accentSoft: "#efeefe",
+  accent:     "#C7A73A",
+  accentHover: "#B49328",
+  accentSoft: "#F4EBC7",
 
-  danger:   "#d24d63",
-  dangerSoft: "#fbe9ec",
-  warn:     "#c8880f",
-  warnSoft: "#fbf1dd",
-  ok:       "#0fae7a",
-  okSoft:   "#e3f7ef",
+  danger:   "#B8474F",
+  dangerSoft: "#F9E7E8",
+  warn:     "#B7791F",
+  warnSoft: "#FBF1D8",
+  ok:       "#248A62",
+  okSoft:   "#E4F3EC",
+
+  sidebar:            "#111111",
+  sidebarSurface:    "#2A2A2A",
+  sidebarText:       "#F7F7F7",
+  sidebarMuted:      "#B8B8B8",
+  sidebarActiveSoft: "rgba(199,167,58,.16)",
 };
 
 export const font = {

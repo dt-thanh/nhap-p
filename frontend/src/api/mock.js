@@ -176,7 +176,84 @@ function dataQuality() {
   };
 }
 
+// Scoped dashboard mock contract. Keep this shape aligned with the real
+// `/v1/projects`, `/v1/areas`, `/v1/inventory`, and `/v1/absorption` routes so
+// switching USE_MOCK does not hide scope or metric-contract regressions.
+const MOCK_PROJECTS = [
+  { project_id: "p1", external_id: "P-0001", name: "Vinhomes Ocean Park", launch_date: "2025-06-01", status: "active" },
+  { project_id: "p2", external_id: "P-0002", name: "Masteri Waterfront", launch_date: "2025-07-01", status: "active" },
+];
+
+const MOCK_SCOPED_AREAS = [
+  { area_id: "a1", external_id: "A-0001", project_external_id: "P-0001", area_name: "Phân khu S1", unit_type: "2PN", bedrooms: 2, area_sqm: 61, total_units: 120, units_remaining: 34 },
+  { area_id: "a2", external_id: "A-0002", project_external_id: "P-0001", area_name: "Phân khu S2", unit_type: "3PN", bedrooms: 3, area_sqm: 86, total_units: 80, units_remaining: 61 },
+  { area_id: "a3", external_id: "A-0003", project_external_id: "P-0002", area_name: "Toà M1", unit_type: "2PN", bedrooms: 2, area_sqm: 61, total_units: 200, units_remaining: 40 },
+];
+
+function mockScopedAreas(projectExternalId) {
+  return MOCK_SCOPED_AREAS.filter((area) => area.project_external_id === projectExternalId);
+}
+
+function mockSummary(path) {
+  const params = new URLSearchParams(path.split("?")[1] || "");
+  const selected = MOCK_SCOPED_AREAS.find((area) => area.area_id === params.get("area_id"));
+  const areas = selected ? [selected] : mockScopedAreas(MOCK_PROJECTS.find((project) => project.project_id === params.get("project_id"))?.external_id);
+  const total = areas.reduce((sum, area) => sum + area.total_units, 0);
+  const remaining = areas.reduce((sum, area) => sum + area.units_remaining, 0);
+  const sold = total - remaining;
+  const points = selected ? makeSeries(selected.area_id) : [];
+  const latest = points.at(-1);
+  const velocity7d = latest?.velocity_7d ?? null;
+  const velocity30d = latest?.velocity_30d ?? null;
+  return {
+    total_units: total,
+    units_remaining: remaining,
+    units_sold: sold,
+    sell_through: total > 0 ? (sold / total) * 100 : null,
+    velocity_7d: velocity7d,
+    velocity_30d: velocity30d,
+    avg_velocity_30d: velocity30d,
+    estimated_weeks_to_sell_out: remaining > 0 && velocity30d > 0 ? remaining / (velocity30d * 7) : null,
+    updated_at: new Date().toISOString(),
+    calculator: "legacy_aggregate",
+  };
+}
+
+function mockTrend(path) {
+  const params = new URLSearchParams(path.split("?")[1] || "");
+  const areaId = params.get("area_id") || "a1";
+  return {
+    area_id: areaId,
+    granularity: params.get("granularity") || "day",
+    points: makeSeries(areaId).map((point) => ({
+      ...point,
+      is_observed: true,
+      data_quality_status: "ok",
+    })),
+  };
+}
+
 const routes = [
+  { match: (p) => p === "/v1/projects", handler: () => MOCK_PROJECTS },
+  {
+    match: (p) => p.startsWith("/v1/areas?") && p.includes("external_project_id="),
+    handler: (path) => mockScopedAreas(new URLSearchParams(path.split("?")[1] || "").get("external_project_id")),
+  },
+  {
+    match: (p) => p.startsWith("/v1/inventory?"),
+    handler: (path) => {
+      const projectId = new URLSearchParams(path.split("?")[1] || "").get("external_project_id");
+      const areas = mockScopedAreas(projectId);
+      return {
+        project_id: MOCK_PROJECTS.find((project) => project.external_id === projectId)?.project_id,
+        calculator: "domain_units_deals",
+        areas: areas.map((area) => ({ ...area, id: area.area_id, name: area.area_name, units_sold: area.total_units - area.units_remaining, absorption_rate: (area.total_units - area.units_remaining) / area.total_units * 100 })),
+        anomalies: [],
+      };
+    },
+  },
+  { match: (p) => p.startsWith("/v1/absorption/summary"), handler: mockSummary },
+  { match: (p) => p.startsWith("/v1/absorption?"), handler: mockTrend },
   { match: (p) => p === "/dashboard/summary", handler: () => dashSummary() },
   { match: (p) => p.startsWith("/dashboard/trend"), handler: () => dashTrend() },
   { match: (p) => p === "/dashboard/areas", handler: () => DASH_AREAS },

@@ -1,0 +1,181 @@
+file,column,status,dtype,source,logic
+units_ranking.csv,unit_id,PRESENT,str,units.id,
+units_ranking.csv,external_unit_id,PRESENT,str,units.external_unit_id,
+units_ranking.csv,unit_code,PRESENT,str,units.unit_code,
+units_ranking.csv,project_id,PRESENT,str,projects.id,
+units_ranking.csv,project_external_id,PRESENT,str,,
+units_ranking.csv,project_name,PRESENT,str,projects.name,
+units_ranking.csv,area_id,PRESENT,str,areas.id,
+units_ranking.csv,area_external_id,PRESENT,str,,
+units_ranking.csv,area_name,PRESENT,str,areas.area_name,
+units_ranking.csv,unit_status,PRESENT,str,units.status,
+units_ranking.csv,unit_type,PRESENT,str,units.unit_type,
+units_ranking.csv,area_bedrooms,PRESENT,int,areas.bedrooms,
+units_ranking.csv,area_sqm,PRESENT,Decimal,areas.area_sqm,
+units_ranking.csv,area_total_units_planned,PRESENT,int,areas.total_units,
+units_ranking.csv,absorption_calculator,PRESENT,str,projects.absorption_calculator,
+units_ranking.csv,is_available,PRESENT,int,,1 when units.status='available' (the unit_available feature's raw form)
+units_ranking.csv,has_active_deal,PRESENT,int,,1 when the unit has a live reserved or sold deal
+units_ranking.csv,deals_total,PRESENT,int,,
+units_ranking.csv,funnel_deals_total,PRESENT,int,,"count of live deals in (lead, qualified, interested, viewing)"
+units_ranking.csv,deals_lead,PRESENT,int,,
+units_ranking.csv,deals_qualified,PRESENT,int,,
+units_ranking.csv,deals_interested,PRESENT,int,,
+units_ranking.csv,deals_viewing,PRESENT,int,,
+units_ranking.csv,deals_reserved,PRESENT,int,,
+units_ranking.csv,deals_sold,PRESENT,int,,
+units_ranking.csv,deals_lost,PRESENT,int,,
+units_ranking.csv,score,PRESENT,Decimal,ranking_scores.score,
+units_ranking.csv,score_percent,PRESENT,float,,src.ranking.bands.as_percent: score*100 rounded to 1dp
+units_ranking.csv,band,PRESENT,str,,"src.ranking.bands.band_for: high>=0.66, medium>=0.33, else low"
+units_ranking.csv,rank_in_area,PRESENT,int,ranking_scores.rank_in_area,
+units_ranking.csv,rank_in_project,PRESENT,int,ranking_scores.rank_in_project,
+units_ranking.csv,weight_coverage,PRESENT,Decimal,ranking_scores.weight_coverage,
+units_ranking.csv,min_weight_coverage,PRESENT,Decimal,ranking_configs.min_weight_coverage,
+units_ranking.csv,was_skipped,PRESENT,int,,always 0: ranking_scores stores only units that passed min_weight_coverage
+units_ranking.csv,ranking_config_version,PRESENT,int,ranking_configs.version,
+units_ranking.csv,ranking_run_id,PRESENT,str,ranking_scores.ranking_run_id,
+units_ranking.csv,ranking_trigger,PRESENT,str,,
+units_ranking.csv,ranking_computed_at,PRESENT,datetime,ranking_scores.computed_at,
+units_ranking.csv,feature_freshness_at,PRESENT,datetime,ranking_scores.feature_freshness_at,
+units_ranking.csv,ranking_run_finished_at,PRESENT,datetime,,
+units_ranking.csv,unit_created_at,PRESENT,datetime,,
+units_ranking.csv,unit_updated_at,PRESENT,datetime,,
+units_ranking.csv,unit_source_updated_at,PRESENT,datetime,,
+units_ranking.csv,feat_unit_available_value,PRESENT,str,,1.0 if available else 0.0
+units_ranking.csv,feat_unit_available_weight,PRESENT,str,,
+units_ranking.csv,feat_unit_available_direction,PRESENT,str,,
+units_ranking.csv,feat_unit_available_contribution,PRESENT,str,,
+units_ranking.csv,feat_unit_available_source,PRESENT,str,,
+units_ranking.csv,feat_unit_available_is_missing,PRESENT,int,,
+units_ranking.csv,feat_unit_demand_norm_value,PRESENT,str,,"min(funnel_deals_total / DEMAND_SATURATION=3, 1)"
+units_ranking.csv,feat_unit_demand_norm_weight,PRESENT,str,,
+units_ranking.csv,feat_unit_demand_norm_direction,PRESENT,str,,
+units_ranking.csv,feat_unit_demand_norm_contribution,PRESENT,str,,
+units_ranking.csv,feat_unit_demand_norm_source,PRESENT,str,,
+units_ranking.csv,feat_unit_demand_norm_is_missing,PRESENT,int,,
+units_ranking.csv,feat_area_velocity_norm_value,PRESENT,str,,"min((area sold in 30d / live mirrored units) / VELOCITY_SATURATION=0.20, 1)"
+units_ranking.csv,feat_area_velocity_norm_weight,PRESENT,str,,
+units_ranking.csv,feat_area_velocity_norm_direction,PRESENT,str,,
+units_ranking.csv,feat_area_velocity_norm_contribution,PRESENT,str,,
+units_ranking.csv,feat_area_velocity_norm_source,PRESENT,str,,
+units_ranking.csv,feat_area_velocity_norm_is_missing,PRESENT,int,,
+units_ranking.csv,feat_area_conversion_norm_value,PRESENT,str,,area sold deals / area live deals
+units_ranking.csv,feat_area_conversion_norm_weight,PRESENT,str,,
+units_ranking.csv,feat_area_conversion_norm_direction,PRESENT,str,,
+units_ranking.csv,feat_area_conversion_norm_contribution,PRESENT,str,,
+units_ranking.csv,feat_area_conversion_norm_source,PRESENT,str,,
+units_ranking.csv,feat_area_conversion_norm_is_missing,PRESENT,int,,
+units_ranking.csv,features_missing_count,PRESENT,int,,count of features whose contribution source is missing_defaulted/missing_skipped
+units_ranking.csv,features_total_count,PRESENT,int,,
+leads_deals_agents.csv,deal_id,PRESENT,str,deals.id,
+leads_deals_agents.csv,external_deal_id,PRESENT,str,,
+leads_deals_agents.csv,unit_id,PRESENT,str,units.id,
+leads_deals_agents.csv,external_unit_id,PRESENT,str,units.external_unit_id,
+leads_deals_agents.csv,unit_code,PRESENT,str,units.unit_code,
+leads_deals_agents.csv,unit_type,PRESENT,str,units.unit_type,
+leads_deals_agents.csv,unit_status,PRESENT,str,units.status,
+leads_deals_agents.csv,area_id,PRESENT,str,areas.id,
+leads_deals_agents.csv,area_external_id,PRESENT,str,,
+leads_deals_agents.csv,area_name,PRESENT,str,areas.area_name,
+leads_deals_agents.csv,area_bedrooms,PRESENT,int,areas.bedrooms,
+leads_deals_agents.csv,area_sqm,PRESENT,Decimal,areas.area_sqm,
+leads_deals_agents.csv,project_id,PRESENT,str,projects.id,
+leads_deals_agents.csv,project_external_id,PRESENT,str,,
+leads_deals_agents.csv,project_name,PRESENT,str,projects.name,
+leads_deals_agents.csv,deal_status,PRESENT,str,deals.status,
+leads_deals_agents.csv,deal_source_status,PRESENT,str,deals.source_status,
+leads_deals_agents.csv,funnel_stage,PRESENT,str,,derived from deals.status: funnel|holding|closed_won|closed_lost
+leads_deals_agents.csv,is_funnel,PRESENT,int,,
+leads_deals_agents.csv,is_qualified_or_beyond,PRESENT,int,,
+leads_deals_agents.csv,is_viewing,PRESENT,int,,
+leads_deals_agents.csv,is_holding,PRESENT,int,,
+leads_deals_agents.csv,is_closed_won,PRESENT,int,,
+leads_deals_agents.csv,is_closed_lost,PRESENT,int,,
+leads_deals_agents.csv,reserved_at,PRESENT,datetime,deals.reserved_at,
+leads_deals_agents.csv,sold_at,PRESENT,datetime,deals.sold_at,
+leads_deals_agents.csv,lost_at,PRESENT,datetime,deals.lost_at,
+leads_deals_agents.csv,deal_created_at,PRESENT,datetime,,
+leads_deals_agents.csv,deal_updated_at,PRESENT,datetime,,
+leads_deals_agents.csv,deal_source_updated_at,PRESENT,datetime,,
+leads_deals_agents.csv,last_activity_at,PRESENT,datetime,,
+leads_deals_agents.csv,deal_deleted_at,PRESENT,null,,
+leads_deals_agents.csv,is_deleted,PRESENT,int,,
+leads_deals_agents.csv,source_revision,PRESENT,int,,
+leads_deals_agents.csv,deals_on_same_unit,PRESENT,int,,count of deals sharing this unit - proxy for interaction volume
+leads_deals_agents.csv,days_reserved_to_sold,PRESENT,int,,"sold_at - reserved_at in days, NULL when either is absent"
+absorption_forecasting.csv,snapshot_date,PRESENT,date,absorption_daily.stat_date,
+absorption_forecasting.csv,calculator,PRESENT,str,absorption_daily.calculator,
+absorption_forecasting.csv,project_id,PRESENT,str,projects.id,
+absorption_forecasting.csv,project_external_id,PRESENT,str,,
+absorption_forecasting.csv,project_name,PRESENT,str,projects.name,
+absorption_forecasting.csv,project_active_calculator,PRESENT,str,,
+absorption_forecasting.csv,is_active_lineage,PRESENT,int,,1 when this row's calculator equals projects.absorption_calculator
+absorption_forecasting.csv,launch_date,PRESENT,date,,
+absorption_forecasting.csv,area_id,PRESENT,str,areas.id,
+absorption_forecasting.csv,area_external_id,PRESENT,str,,
+absorption_forecasting.csv,area_name,PRESENT,str,areas.area_name,
+absorption_forecasting.csv,area_bedrooms,PRESENT,int,areas.bedrooms,
+absorption_forecasting.csv,area_sqm,PRESENT,Decimal,areas.area_sqm,
+absorption_forecasting.csv,area_total_units_planned,PRESENT,int,areas.total_units,
+absorption_forecasting.csv,units_sold,PRESENT,int,absorption_daily.units_sold,
+absorption_forecasting.csv,velocity_7d,PRESENT,Decimal,absorption_daily.velocity_7d,
+absorption_forecasting.csv,velocity_30d,PRESENT,Decimal,absorption_daily.velocity_30d,
+absorption_forecasting.csv,units_remaining,PRESENT,int,absorption_daily.units_remaining,
+absorption_forecasting.csv,units_reserved,PRESENT,int,absorption_daily.units_reserved,
+absorption_forecasting.csv,data_quality_status,PRESENT,str,absorption_daily.data_quality_status,
+absorption_forecasting.csv,is_observed,PRESENT,int,,
+absorption_forecasting.csv,computed_at,PRESENT,datetime,,
+absorption_forecasting.csv,units_remaining_is_missing,PRESENT,int,,
+absorption_forecasting.csv,units_reserved_is_missing,PRESENT,int,,
+absorption_forecasting.csv,live_units_mirrored,PRESENT,int,,"count of non-deleted units in the area, as of export"
+absorption_forecasting.csv,units_available_now,PRESENT,int,,
+absorption_forecasting.csv,units_reserved_now,PRESENT,int,,
+absorption_forecasting.csv,units_sold_now,PRESENT,int,,
+absorption_forecasting.csv,units_blocked_now,PRESENT,int,,
+absorption_forecasting.csv,area_deals_sold,PRESENT,int,,
+absorption_forecasting.csv,area_deals_alive,PRESENT,int,,
+absorption_forecasting.csv,area_conversion_norm,PRESENT,Decimal,,"area sold deals / area live deals, same definition as the ranking feature"
+ranking_scores.csv,id,PRESENT,UUID,,
+ranking_scores.csv,unit_id,PRESENT,UUID,units.id,
+ranking_scores.csv,area_id,PRESENT,UUID,areas.id,
+ranking_scores.csv,project_id,PRESENT,UUID,projects.id,
+ranking_scores.csv,ranking_run_id,PRESENT,UUID,ranking_scores.ranking_run_id,
+ranking_scores.csv,config_version_id,PRESENT,UUID,,
+ranking_scores.csv,score,PRESENT,Decimal,ranking_scores.score,
+ranking_scores.csv,rank_in_area,PRESENT,int,ranking_scores.rank_in_area,
+ranking_scores.csv,rank_in_project,PRESENT,int,ranking_scores.rank_in_project,
+ranking_scores.csv,weight_coverage,PRESENT,Decimal,ranking_scores.weight_coverage,
+ranking_scores.csv,contributions,PRESENT,str,ranking_scores.contributions,
+ranking_scores.csv,feature_freshness_at,PRESENT,datetime,ranking_scores.feature_freshness_at,
+ranking_scores.csv,computed_at,PRESENT,datetime,,
+units_ranking.csv,bathrooms,ABSENT,,,no bathroom column on units or areas
+units_ranking.csv,price,ABSENT,,,no price column anywhere in the schema; Mini CRM states it carries no prices
+units_ranking.csv,price_per_sqm,ABSENT,,,"derived from price, which does not exist"
+units_ranking.csv,floor,ABSENT,,,no floor column on units
+units_ranking.csv,orientation,ABSENT,,,no orientation column on units
+units_ranking.csv,view,ABSENT,,,no view column; `view_quality` exists only as a survey feature key with no data
+units_ranking.csv,confidence,ABSENT,,,feature_snapshots.confidence exists but the ranking pipeline never populates it (0/616 rows non-null)
+leads_deals_agents.csv,lead_id,ABSENT,,,no lead entity; a lead is a deals row with status='lead'
+leads_deals_agents.csv,customer_id,ABSENT,,,no customer table exists in either service
+leads_deals_agents.csv,lead_source,ABSENT,,,not modelled
+leads_deals_agents.csv,budget,ABSENT,,,not modelled
+leads_deals_agents.csv,financing_status,ABSENT,,,not modelled
+leads_deals_agents.csv,preferred_project,ABSENT,,,"requires a customer entity, which does not exist"
+leads_deals_agents.csv,preferred_area,ABSENT,,,"requires a customer entity, which does not exist"
+leads_deals_agents.csv,preferred_unit_type,ABSENT,,,"requires a customer entity, which does not exist"
+leads_deals_agents.csv,preferred_bedrooms,ABSENT,,,"requires a customer entity, which does not exist"
+leads_deals_agents.csv,preferred_price_range,ABSENT,,,requires a customer entity and prices; neither exists
+leads_deals_agents.csv,contact_timestamps,ABSENT,,,no contact/interaction table
+leads_deals_agents.csv,next_follow_up_at,ABSENT,,,not modelled
+leads_deals_agents.csv,viewing_appointment,ABSENT,,,only deals.status='viewing' exists; no appointment record
+leads_deals_agents.csv,interaction_counts,ABSENT,,,no interaction table; `deals_on_same_unit` is the nearest available proxy
+leads_deals_agents.csv,notes,ABSENT,,,no free-text field on deals; Mini CRM carries no PII by design
+leads_deals_agents.csv,assigned_sales_agent,ABSENT,,,"not modelled; `agent_*` tables are the AI advisory agent, not sales staff"
+absorption_forecasting.csv,unit_id,ABSENT,,,absorption_daily is area-level; it has no unit dimension
+absorption_forecasting.csv,released_units,ABSENT,,,'released' is not a unit status (available/reserved/sold/blocked)
+absorption_forecasting.csv,price_metrics,ABSENT,,,no price column anywhere
+absorption_forecasting.csv,weekly_absorption,ABSENT,,,not persisted; only daily + rolling 7d/30d exist
+absorption_forecasting.csv,monthly_absorption,ABSENT,,,not persisted; only daily + rolling 7d/30d exist
+absorption_forecasting.csv,inventory_aging,ABSENT,,,"units carry no status-change timestamp, so time-in-status cannot be derived"
+absorption_forecasting.csv,forecast_target,ABSENT,,,forecasting is a stub (src/jobs/forecast.py returns zero rows); no forecast output exists to export

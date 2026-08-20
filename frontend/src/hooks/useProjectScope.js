@@ -26,7 +26,7 @@ const AREA_PARAM = "area";
  *   `/projects/:externalId/dashboard`), giá trị đó là NGUỒN SỰ THẬT cho dự án
  *   — query `?project=` bị bỏ qua để không có hai nơi cùng giữ một trạng
  *   thái. Không truyền gì (mặc định) giữ NGUYÊN hành vi cũ: dự án đọc từ
- *   `?project=`, như `CatalogPage.jsx` đang dùng.
+ *   `?project=`, như các trang dùng chung ngữ cảnh project đang dùng.
  */
 export function useProjectScope({ projectExternalId: routeProjectExternalId } = {}) {
   const [searchParams, setSearchParams] = useSearchParams();

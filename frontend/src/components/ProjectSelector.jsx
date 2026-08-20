@@ -11,7 +11,7 @@ export default function ProjectSelector({ projects = [], value, onChange, loadin
   if (status === "unauthorized") {
     return (
       <div style={S.unauthorized} role="alert">
-        Chưa đăng nhập hoặc token đã hết hạn — không thấy được dự án nào. Kết nối lại ở góc trên bên phải.
+        Chưa đăng nhập hoặc token đã hết hạn — không thấy được dự án nào trong phạm vi hiện tại.
       </div>
     );
   }

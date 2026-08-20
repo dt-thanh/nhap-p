@@ -3,8 +3,8 @@
 Chạy qua ASGI in-process với `client` fixture của tests/conftest.py, giống
 tests/test_api/test_sync.py.
 
-Không có tầng xác thực trong mã nguồn (MVP 3 mới làm — SRS §2.4); test chốt lại
-hiện trạng đó thay vì giả vờ có auth.
+Các route được gọi qua fixture với token dashboard test; các test nghiệp vụ giữ
+nguyên scope ALL để tập trung vào dữ liệu domain.
 """
 
 from __future__ import annotations
@@ -329,17 +329,18 @@ async def test_inventory_surfaces_invalid_relationships(client):
 # --- /absorption/summary mở rộng --------------------------------------------
 
 
-async def test_summary_keeps_existing_fields_and_defaults_to_legacy(client):
-    """Trường cũ còn nguyên; bộ tính mặc định vẫn là bộ cũ — KHÔNG tự cắt sang."""
+async def test_summary_defaults_to_the_domain_dashboard_source(client):
+    """Dashboard mặc định đọc cùng lineage domain với Area Comparison."""
     await _seed_stock(client)
 
     body = (await client.get(f"/api/v1/absorption/summary?project_id={PROJECT_ID}")).json()
 
     assert set(body) >= {"units_remaining", "units_sold", "avg_velocity_30d", "updated_at"}
-    assert body["calculator"] == "legacy_aggregate"
-    # Bộ tính cũ đọc `sales_records` (rỗng) — số của bản sao CRM KHÔNG rò sang.
-    assert body["units_sold"] == 0
-    assert body["units_reserved"] is None, "dữ liệu tổng hợp không dựng lại được số giữ chỗ; NULL chứ không phải 0"
+    assert body["calculator"] == "domain_units_deals"
+    assert body["data_source"] == "domain_units_deals"
+    assert body["units_sold"] == 1
+    assert body["units_reserved"] == 1
+    assert body["units_remaining"] == 1
 
 
 async def test_summary_can_be_asked_for_the_domain_calculator(client):
@@ -353,6 +354,26 @@ async def test_summary_can_be_asked_for_the_domain_calculator(client):
     assert body["units_sold"] == 1
     assert body["units_reserved"] == 1
     assert body["units_remaining"] == 1
+
+
+async def test_domain_trend_exposes_historical_metadata_and_scope(client):
+    await _seed_stock(client)
+    areas_body = (await client.get(f"/api/v1/inventory?project_id={PROJECT_ID}")).json()["areas"]
+    a1_id = next(row["area_id"] for row in areas_body if row["area_name"] == "A1")
+
+    response = await client.get(
+        "/api/v1/absorption",
+        params={"project_id": str(PROJECT_ID), "area_id": a1_id, "year": 2026, "granularity": "month"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data_source"] == "domain_units_deals"
+    assert body["available_years"] == [2026]
+    assert body["granularity"] == "month"
+    assert body["points"][-1]["units_sold"] == 1
+    assert body["points"][-1]["cumulative_sold"] == 1
+    assert body["points"][-1]["period_granularity"] == "month"
 
 
 async def test_summary_rejects_an_unknown_calculator(client):
@@ -375,8 +396,7 @@ async def test_parallel_run_reports_differences_and_names_the_production_calcula
     assert body["domain_units_sold"] == 1
     assert body["domain_units_reserved"] == 1
     assert {d["metric"] for d in body["differences"]} >= {"units_sold", "units_reserved"}
-    # Điểm mấu chốt: chạy song song KHÔNG cắt sang.
-    assert body["production_calculator"] == "legacy_aggregate"
+    assert body["production_calculator"] == "domain_units_deals"
 
 
 async def test_parallel_run_does_not_change_what_the_dashboard_reads(client):

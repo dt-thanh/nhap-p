@@ -328,8 +328,16 @@ async def test_summary_reports_inventory_sales_and_velocity(session_factory, are
 
     assert summary.units_sold == 8
     assert summary.units_remaining == 92
+    assert summary.total_units == 100
+    assert summary.velocity_7d == Decimal("4.0000")
+    assert summary.velocity_30d == Decimal("4.0000")
     assert summary.avg_velocity_30d == Decimal("4.0000")  # (3+5)/2
     assert summary.updated_at is not None
+
+    scoped = await AreaService(session_factory).summary(PROJECT_ID, area_id=area_id)
+    assert scoped.total_units == 100
+    assert scoped.units_sold == 8
+    assert scoped.units_remaining == 92
 
 
 async def test_summary_of_empty_project_is_all_zeros(session_factory):

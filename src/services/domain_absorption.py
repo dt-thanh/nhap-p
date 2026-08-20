@@ -5,10 +5,10 @@ bên kia cộng `sales_records.units_sold` theo ngày, bên này đếm từng c
 dịch. Nhờ đó mới có được số căn đang giữ chỗ và tồn kho theo từng căn — hai thứ
 mà dữ liệu tổng hợp không dựng lại được.
 
-**Bộ tính này KHÔNG phải nguồn sản xuất.** `compute()` trả kết quả trong bộ nhớ và
-không ghi gì; muốn ghi phải gọi `persist()` một cách tường minh. Đường đọc của
-dashboard vẫn là bộ tính cũ cho tới khi có quyết định cắt sang — xem
-`ParallelRunComparator`.
+`compute()` trả kết quả trong bộ nhớ và không ghi gì; muốn ghi phải gọi `persist()`
+một cách tường minh. Dashboard domain analytics đọc trực tiếp `units`/`deals`
+qua `DomainSalesAnalyticsService`; `absorption_daily` chỉ còn là projection
+phục vụ các đường tương thích và đối chiếu.
 
 Quy tắc đếm:
 
@@ -177,7 +177,7 @@ class DomainAbsorptionCalculatorService:
                 for row in (
                     (
                         await session.execute(
-                            sa.select(units.c.area_id, deals.c.status, sa.func.count().label("n"))
+                            sa.select(units.c.area_id, deals.c.status, sa.func.count(sa.distinct(deals.c.unit_id)).label("n"))
                             .select_from(deals.join(units, deals.c.unit_id == units.c.id))
                             .where(live_units, live_deals, deals.c.status.in_(("reserved", "sold")))
                             .group_by(units.c.area_id, deals.c.status)
@@ -222,16 +222,17 @@ class DomainAbsorptionCalculatorService:
                     )
 
             # --- Chuỗi bán theo ngày ---
+            effective_sold = DomainSalesAnalyticsService._effective_sold(date.today())
             sold_rows = (
                 await session.execute(
                     sa.select(
                         units.c.area_id,
-                        sa.func.date(deals.c.sold_at).label("stat_date"),
+                        effective_sold.c.sale_date.label("stat_date"),
                         sa.func.count().label("units_sold"),
                     )
-                    .select_from(deals.join(units, deals.c.unit_id == units.c.id))
-                    .where(live_units, live_deals, deals.c.status == "sold", deals.c.sold_at.isnot(None))
-                    .group_by(units.c.area_id, sa.func.date(deals.c.sold_at))
+                    .select_from(effective_sold.join(units, effective_sold.c.unit_id == units.c.id))
+                    .where(live_units, effective_sold.c.sale_date <= date.today())
+                    .group_by(units.c.area_id, effective_sold.c.sale_date)
                 )
             ).all()
 
@@ -465,3 +466,386 @@ class ParallelRunComparator:
             anomalies=len(report.anomalies),
         )
         return report
+
+
+@dataclass(frozen=True, slots=True)
+class DomainAnalyticsSummary:
+    """KPI và metadata được tính trực tiếp từ bản sao `units`/`deals`."""
+
+    total_units: int
+    units_sold: int
+    units_remaining: int
+    units_reserved: int
+    sell_through: Decimal | None
+    velocity_7d: Decimal | None
+    velocity_30d: Decimal | None
+    estimated_weeks_to_sell_out: Decimal | None
+    updated_at: datetime | None
+    earliest_sale_date: date | None
+    latest_sale_date: date | None
+    available_years: list[int]
+    data_status: str
+    message: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class DomainAnalyticsPoint:
+    stat_date: date
+    period_end: date
+    granularity: str
+    units_sold: int
+    cumulative_sold: int
+    sell_through: Decimal | None
+    velocity_7d: Decimal | None
+    velocity_30d: Decimal | None
+    is_observed: bool
+    data_quality_status: str
+
+
+@dataclass(frozen=True, slots=True)
+class DomainAnalyticsTrend:
+    area_id: uuid.UUID | None
+    granularity: str
+    points: list[DomainAnalyticsPoint]
+    earliest_sale_date: date | None
+    latest_sale_date: date | None
+    available_years: list[int]
+    data_status: str
+    message: str | None
+
+
+class DomainSalesAnalyticsService:
+    """Read-only analytics over the canonical Project → Area → Unit → Deal graph.
+
+    The source tables are a CRM mirror.  A live ``sold`` deal is the effective
+    sale for a unit; old/lost rows remain audit history but cannot create a
+    second sale.  The query deliberately ranks live sold rows per unit so a
+    malformed historical mirror cannot double-count a unit in KPI or trend data.
+    """
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession] | None = None) -> None:
+        self._session_factory = session_factory or get_session_factory()
+
+    @staticmethod
+    def _effective_sold(as_of: date):
+        sale_date = sa.cast(deals.c.sold_at, sa.Date).label("sale_date")
+        rank = sa.func.row_number().over(
+            partition_by=deals.c.unit_id,
+            order_by=[
+                deals.c.sold_at.desc(),
+                deals.c.source_revision.desc().nullslast(),
+                deals.c.source_updated_at.desc().nullslast(),
+                deals.c.updated_at.desc(),
+                deals.c.id.desc(),
+            ],
+        ).label("deal_rank")
+        ranked = (
+            sa.select(deals.c.unit_id, deals.c.sold_at, sale_date, rank)
+            .where(
+                deals.c.deleted_at.is_(None),
+                deals.c.status == "sold",
+                deals.c.sold_at.isnot(None),
+                sa.cast(deals.c.sold_at, sa.Date) <= as_of,
+            )
+            .cte("ranked_domain_sold")
+        )
+        return sa.select(
+            ranked.c.unit_id,
+            ranked.c.sold_at,
+            ranked.c.sale_date,
+        ).where(ranked.c.deal_rank == 1).cte("effective_domain_sold")
+
+    @staticmethod
+    def _scope_join(project_id: uuid.UUID, area_id: uuid.UUID | None, unit_type: str | None):
+        join = units.join(areas, units.c.area_id == areas.c.id)
+        conditions = [
+            areas.c.project_id == project_id,
+            units.c.deleted_at.is_(None),
+            ~units.c.status.in_(OUT_OF_STOCK_STATUSES),
+        ]
+        if area_id is not None:
+            conditions.append(units.c.area_id == area_id)
+        if unit_type is not None:
+            conditions.append(areas.c.unit_type == unit_type)
+        return join, conditions
+
+    async def summary(
+        self,
+        project_id: uuid.UUID | str,
+        *,
+        area_id: uuid.UUID | str | None = None,
+        unit_type: str | None = None,
+        as_of: date | None = None,
+    ) -> DomainAnalyticsSummary:
+        project_uuid = uuid.UUID(str(project_id))
+        area_uuid = uuid.UUID(str(area_id)) if area_id is not None else None
+        today = as_of or date.today()
+        effective = self._effective_sold(today)
+        scope_join, scope = self._scope_join(project_uuid, area_uuid, unit_type)
+        sold_join = effective.join(units, effective.c.unit_id == units.c.id).join(areas, units.c.area_id == areas.c.id)
+        sold_scope = [*scope, effective.c.unit_id == units.c.id]
+
+        async with self._session_factory() as session:
+            total_units = int(await session.scalar(sa.select(sa.func.count()).select_from(scope_join).where(*scope)) or 0)
+            units_sold = int(
+                await session.scalar(sa.select(sa.func.count()).select_from(sold_join).where(*sold_scope)) or 0
+            )
+            units_reserved = int(
+                await session.scalar(
+                    sa.select(sa.func.count(sa.distinct(deals.c.unit_id)))
+                    .select_from(deals.join(scope_join, deals.c.unit_id == units.c.id))
+                    .where(*scope, deals.c.deleted_at.is_(None), deals.c.status == "reserved")
+                )
+                or 0
+            )
+            earliest, latest = (
+                await session.execute(
+                    sa.select(sa.func.min(effective.c.sale_date), sa.func.max(effective.c.sale_date))
+                    .select_from(sold_join)
+                    .where(*sold_scope)
+                )
+            ).one()
+            year_rows = await session.execute(
+                sa.select(sa.extract("year", effective.c.sale_date).label("year"))
+                .select_from(sold_join)
+                .where(*sold_scope)
+                .distinct()
+                .order_by(sa.extract("year", effective.c.sale_date))
+            )
+            available_years = [int(row.year) for row in year_rows]
+            recent = (
+                await session.execute(
+                    sa.select(
+                        sa.func.count().filter(effective.c.sale_date >= today - timedelta(days=6)).label("seven"),
+                        sa.func.count().filter(effective.c.sale_date >= today - timedelta(days=29)).label("thirty"),
+                    )
+                    .select_from(sold_join)
+                    .where(*sold_scope)
+                )
+            ).one()
+            updated_at = await session.scalar(
+                sa.select(sa.func.max(units.c.updated_at)).select_from(scope_join).where(*scope)
+            )
+
+        remaining = max(total_units - units_sold, 0)
+        sell_through = _percent(units_sold, total_units)
+        velocity_7d = Decimal(int(recent.seven or 0)) if units_sold else None
+        velocity_30d = (Decimal(int(recent.thirty or 0)) * Decimal(7) / Decimal(30)) if units_sold else None
+        estimated = _weeks_to_sell_out(remaining, velocity_30d)
+        if total_units == 0:
+            data_status, message = "no_units", "Phạm vi chưa có căn hộ."
+        elif units_sold == 0:
+            data_status, message = "no_data", "Phân khu này chưa có dữ liệu giao dịch."
+        else:
+            data_status, message = "ready", None
+        return DomainAnalyticsSummary(
+            total_units=total_units,
+            units_sold=units_sold,
+            units_remaining=remaining,
+            units_reserved=units_reserved,
+            sell_through=sell_through,
+            velocity_7d=velocity_7d,
+            velocity_30d=velocity_30d,
+            estimated_weeks_to_sell_out=estimated,
+            updated_at=updated_at,
+            earliest_sale_date=earliest,
+            latest_sale_date=latest,
+            available_years=available_years,
+            data_status=data_status,
+            message=message,
+        )
+
+    async def trend(
+        self,
+        project_id: uuid.UUID | str,
+        *,
+        area_id: uuid.UUID | str | None = None,
+        unit_type: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        year: int | None = None,
+        granularity: str | None = None,
+        as_of: date | None = None,
+    ) -> DomainAnalyticsTrend:
+        project_uuid = uuid.UUID(str(project_id))
+        area_uuid = uuid.UUID(str(area_id)) if area_id is not None else None
+        today = as_of or date.today()
+        summary = await self.summary(project_uuid, area_id=area_uuid, unit_type=unit_type, as_of=today)
+        start, end = _resolve_window(
+            summary.earliest_sale_date,
+            today,
+            date_from=date_from,
+            date_to=date_to,
+            year=year,
+        )
+        chosen = granularity or _default_granularity(start, end)
+        if chosen not in {"day", "week", "month"}:
+            raise ValueError("granularity must be day, week, or month")
+        if date_from is not None and date_to is not None and date_from > date_to:
+            raise ValueError("from must be before or equal to to")
+
+        effective = self._effective_sold(today)
+        scope_join, scope = self._scope_join(project_uuid, area_uuid, unit_type)
+        sold_join = effective.join(units, effective.c.unit_id == units.c.id).join(areas, units.c.area_id == areas.c.id)
+        sold_scope = [*scope, effective.c.unit_id == units.c.id]
+        period_expr = _period_expression(effective, chosen)
+        async with self._session_factory() as session:
+            rows = (
+                await session.execute(
+                    sa.select(period_expr.label("period_start"), sa.func.count().label("units_sold"))
+                    .select_from(sold_join)
+                    .where(*sold_scope, effective.c.sale_date >= start, effective.c.sale_date <= end)
+                    .group_by(period_expr)
+                    .order_by(period_expr)
+                )
+            ).all()
+            baseline = int(
+                await session.scalar(
+                    sa.select(sa.func.count())
+                    .select_from(sold_join)
+                    .where(*sold_scope, effective.c.sale_date < start)
+                )
+                or 0
+            )
+            daily_counts: dict[date, int] = {}
+            if chosen == "day":
+                moving_start = max(summary.earliest_sale_date or start, start - timedelta(days=29))
+                daily_rows = (
+                    await session.execute(
+                        sa.select(effective.c.sale_date, sa.func.count().label("units_sold"))
+                        .select_from(sold_join)
+                        .where(*sold_scope, effective.c.sale_date >= moving_start, effective.c.sale_date <= end)
+                        .group_by(effective.c.sale_date)
+                    )
+                ).all()
+                daily_counts = {row.sale_date: int(row.units_sold) for row in daily_rows}
+
+        counts = {row.period_start: int(row.units_sold) for row in rows}
+        if not counts:
+            message = (
+                "Phân khu này chưa có dữ liệu giao dịch."
+                if summary.latest_sale_date is None
+                else "Không có dữ liệu giao dịch trong khoảng thời gian đã chọn."
+            )
+            return DomainAnalyticsTrend(
+                area_id=area_uuid,
+                granularity=chosen,
+                points=[],
+                earliest_sale_date=summary.earliest_sale_date,
+                latest_sale_date=summary.latest_sale_date,
+                available_years=summary.available_years,
+                data_status="no_units" if summary.total_units == 0 else "no_data",
+                message=message,
+            )
+
+        periods = _periods(start, end, chosen)
+        cumulative = baseline
+        points: list[DomainAnalyticsPoint] = []
+        for period_start, period_end in periods:
+            sold = counts.get(period_start, 0)
+            cumulative += sold
+            if chosen == "day":
+                v7 = _moving_average(daily_counts, period_start, 7, summary.earliest_sale_date)
+                v30 = _moving_average(daily_counts, period_start, 30, summary.earliest_sale_date)
+            else:
+                v7 = v30 = None
+            points.append(
+                DomainAnalyticsPoint(
+                    stat_date=period_start,
+                    period_end=period_end,
+                    granularity=chosen,
+                    units_sold=sold,
+                    cumulative_sold=cumulative,
+                    sell_through=_percent(cumulative, summary.total_units),
+                    velocity_7d=v7,
+                    velocity_30d=v30,
+                    is_observed=sold > 0,
+                    data_quality_status="ok" if summary.earliest_sale_date and (period_start - summary.earliest_sale_date).days >= 29 else "warning",
+                )
+            )
+        return DomainAnalyticsTrend(
+            area_id=area_uuid,
+            granularity=chosen,
+            points=points,
+            earliest_sale_date=summary.earliest_sale_date,
+            latest_sale_date=summary.latest_sale_date,
+            available_years=summary.available_years,
+            data_status="ready",
+            message=None,
+        )
+
+
+def _percent(numerator: int, denominator: int) -> Decimal | None:
+    if denominator <= 0:
+        return None
+    return (Decimal(numerator) / Decimal(denominator) * Decimal(100)).quantize(Decimal("0.0001"))
+
+
+def _weeks_to_sell_out(remaining: int, velocity_30d: Decimal | None) -> Decimal | None:
+    if remaining <= 0:
+        return Decimal(0)
+    if velocity_30d is None or velocity_30d <= 0:
+        return None
+    return (Decimal(remaining) / velocity_30d).quantize(Decimal("0.0001"))
+
+
+def _resolve_window(
+    earliest: date | None,
+    today: date,
+    *,
+    date_from: date | None,
+    date_to: date | None,
+    year: int | None,
+) -> tuple[date, date]:
+    if year is not None and (date_from is not None or date_to is not None):
+        raise ValueError("year cannot be combined with from/to")
+    if year is not None:
+        return date(year, 1, 1), min(date(year, 12, 31), today)
+    if (date_from is None) != (date_to is None):
+        raise ValueError("from and to must be provided together")
+    if date_from is not None and date_to is not None:
+        if date_from > date_to:
+            raise ValueError("from must be before or equal to to")
+        return date_from, date_to
+    return earliest or today, today
+
+
+def _default_granularity(date_from: date, date_to: date) -> str:
+    return "month" if (date_to - date_from).days > 90 else "day"
+
+
+def _period_expression(effective, granularity: str):
+    if granularity == "day":
+        return effective.c.sale_date
+    if granularity == "week":
+        return sa.cast(sa.func.date_trunc("week", effective.c.sold_at), sa.Date)
+    return sa.cast(sa.func.date_trunc("month", effective.c.sold_at), sa.Date)
+
+
+def _periods(date_from: date, date_to: date, granularity: str) -> list[tuple[date, date]]:
+    if granularity == "day":
+        return [(date_from + timedelta(days=i), date_from + timedelta(days=i)) for i in range((date_to - date_from).days + 1)]
+    if granularity == "week":
+        cursor = date_from - timedelta(days=date_from.weekday())
+        last = date_to - timedelta(days=date_to.weekday())
+        step = timedelta(days=7)
+    else:
+        cursor = date(date_from.year, date_from.month, 1)
+        last = date(date_to.year, date_to.month, 1)
+        step = None
+    result = []
+    while cursor <= last:
+        if granularity == "week":
+            period_end = cursor + timedelta(days=6)
+        else:
+            next_month = date(cursor.year + (cursor.month == 12), 1 if cursor.month == 12 else cursor.month + 1, 1)
+            period_end = next_month - timedelta(days=1)
+        result.append((cursor, period_end))
+        cursor = cursor + step if step else next_month
+    return result
+
+
+def _moving_average(counts: dict[date, int], day: date, window: int, first_available: date | None) -> Decimal:
+    start = max(first_available or day, day - timedelta(days=window - 1))
+    values = [counts.get(start + timedelta(days=i), 0) for i in range((day - start).days + 1)]
+    return (Decimal(sum(values)) / Decimal(len(values))).quantize(Decimal("0.0001"))

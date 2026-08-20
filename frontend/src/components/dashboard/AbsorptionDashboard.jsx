@@ -17,31 +17,38 @@ import {
 import { useProjectScope } from "../../hooks/useProjectScope";
 import { useAsync } from "../../hooks/useAsync";
 import { useBreakpoint } from "../../hooks/useBreakpoint";
-import { space } from "../../styles/tokens";
-import { deriveVelocityDirection } from "../../utils/velocity";
-
-import DashboardHeader from "./DashboardHeader";
-import FilterToolbar from "./FilterToolbar";
-import KpiCards from "./KpiCards";
-import AbsorptionTrendChart from "./AbsorptionTrendChart";
-import AreaComparison from "./AreaComparison";
-import AreaDetailTable from "./AreaDetailTable";
-import DataQualityPanel from "./DataQualityPanel";
+import { areaLabel } from "../../utils/areaLabel";
 import GlobalKeyframes from "../ui/GlobalKeyframes";
+import OverviewDashboard from "./OverviewDashboard";
 
-const RANGE_DAYS = { "30d": 30, "90d": 90, "12m": 365 };
+const RANGE_DAYS = { "7d": 7, "30d": 30, "90d": 90, "12m": 365 };
 const iso = (d) => d.toISOString().slice(0, 10);
 
-export default function AbsorptionDashboard({ projectExternalId }) {
+export default function AbsorptionDashboard({ projectExternalId, standalone = false }) {
   const { bp } = useBreakpoint();
   const navigate = useNavigate();
   const scope = useProjectScope({ projectExternalId });
   const [range, setRange] = useState("90d");
+  const [selectedYear, setSelectedYear] = useState("");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
-  const { from, to } = useMemo(() => {
+  const { from, to, year, granularity } = useMemo(() => {
+    if (range === "all") return { from: undefined, to: undefined, year: undefined, granularity: "month" };
+    if (range === "currentYear") {
+      const now = new Date();
+      return { from: `${now.getUTCFullYear()}-01-01`, to: iso(now), year: undefined, granularity: "month" };
+    }
+    if (range === "year" && selectedYear) {
+      return { from: undefined, to: undefined, year: selectedYear, granularity: "month" };
+    }
+    if (range === "custom") {
+      return { from: customFrom || undefined, to: customTo || undefined, year: undefined, granularity: customFrom && customTo && daysBetween(customFrom, customTo) > 90 ? "month" : "day" };
+    }
     const days = RANGE_DAYS[range] || 90;
-    return { from: iso(new Date(Date.now() - days * 86400000)), to: iso(new Date()) };
-  }, [range]);
+    return { from: iso(new Date(Date.now() - days * 86400000)), to: iso(new Date()), year: undefined, granularity: range === "12m" ? "month" : "day" };
+  }, [range, selectedYear, customFrom, customTo]);
+  const dateRangeReady = range !== "custom" || Boolean(from && to);
 
   // Chưa chọn phân khu nào qua URL -> tự chọn phân khu ĐẦU TIÊN của dự án
   // này, và ghi lựa chọn đó vào URL (không phải một mặc định ẩn trong state)
@@ -62,16 +69,16 @@ export default function AbsorptionDashboard({ projectExternalId }) {
   const summary = useAsync(
     () =>
       projectInternalId
-        ? getDashboardSummary({ projectId: projectInternalId, areas: scope.areas, calculator: "legacy_aggregate" })
+        ? getDashboardSummary({ projectId: projectInternalId, areaId: areaInternalId, areas: scope.areas, calculator: "domain_units_deals" })
         : Promise.resolve(null),
-    [projectInternalId, scope.areas],
+    [projectInternalId, areaInternalId, scope.areas],
   );
   const trend = useAsync(
     () =>
-      areaInternalId
-        ? getDashboardTrend({ areaId: areaInternalId, areaTotalUnits, from, to, granularity: "day" })
-        : Promise.resolve({ points: [], latestVelocity7d: null, latestVelocity30d: null }),
-    [areaInternalId, areaTotalUnits, from, to],
+      projectInternalId && dateRangeReady
+        ? getDashboardTrend({ projectId: projectInternalId, areaId: areaInternalId, areaTotalUnits, totalSold: summary.data?.units_sold, from, to, year, granularity, calculator: "domain_units_deals" })
+        : Promise.resolve({ points: [], latestVelocity7d: null, latestVelocity30d: null, dataStatus: "no_data" }),
+    [projectInternalId, areaInternalId, areaTotalUnits, summary.data?.units_sold, from, to, year, granularity, dateRangeReady],
   );
   const areas = useAsync(
     () => getDashboardAreas({ externalProjectId: scope.projectExternalId }),
@@ -80,7 +87,7 @@ export default function AbsorptionDashboard({ projectExternalId }) {
   const dq = useAsync(
     () =>
       projectInternalId
-        ? getDataQuality({ projectId: projectInternalId, externalProjectId: scope.projectExternalId, from, to })
+        ? getDataQuality({ projectId: projectInternalId, externalProjectId: scope.projectExternalId, from, to, calculator: "domain_units_deals" })
         : Promise.resolve(null),
     [projectInternalId, scope.projectExternalId, from, to],
   );
@@ -88,8 +95,7 @@ export default function AbsorptionDashboard({ projectExternalId }) {
   const refreshing = summary.loading || trend.loading || areas.loading || dq.loading;
   const refreshAll = () => { summary.reload(); trend.reload(); areas.reload(); dq.reload(); };
 
-  const velocityDirection = deriveVelocityDirection(trend.data?.latestVelocity7d, trend.data?.latestVelocity30d);
-  const headerTitle = scope.currentProject ? `${scope.currentProject.name} · Dashboard` : undefined;
+  const availableYears = summary.data?.available_years?.length ? summary.data.available_years : (trend.data?.availableYears || []);
 
   // `AreaComparison`/`AreaDetailTable` chỉ có `area_id` (UUID nội bộ, từ
   // `InventoryAreaOut` — không có `external_id`). Tra ngược qua `scope.areas`
@@ -97,10 +103,10 @@ export default function AbsorptionDashboard({ projectExternalId }) {
   // app (external_id, không phải UUID nội bộ).
   const onSelectArea = (internalAreaId) => {
     const external = (scope.areas || []).find((a) => a.area_id === internalAreaId)?.external_id;
-    if (external) navigate(`/projects/${scope.projectExternalId}/areas/${external}`);
+    if (!external) return;
+    if (standalone) scope.setAreaExternalId(external);
+    else navigate(`/projects/${scope.projectExternalId}/areas/${external}`);
   };
-
-  const twoCol = bp === "desktop" || bp === "laptop";
 
   // FilterToolbar (dùng lại NGUYÊN VẸN, không sửa) chỉ hiểu {id, name} — ánh
   // xạ đúng hình dạng đó ở đây thay vì đổi widget.
@@ -112,44 +118,60 @@ export default function AbsorptionDashboard({ projectExternalId }) {
     () =>
       (scope.areas || [])
         .filter((a) => a.external_id)
-        .map((a) => ({ id: a.external_id, name: `${a.area_name} · ${a.unit_type}` })),
+        .map((a) => ({ id: a.external_id, name: areaLabel(a) })),
     [scope.areas],
   );
 
   return (
     <>
       <GlobalKeyframes />
-      <DashboardHeader title={headerTitle} updatedAt={summary.data?.updated_at} onRefresh={refreshAll} refreshing={refreshing} />
-
-      <FilterToolbar
-        projects={toolbarProjects}
-        areas={toolbarAreas}
-        projectId={scope.projectExternalId}
-        areaId={scope.areaExternalId ?? "all"}
+      <OverviewDashboard
+        project={scope.currentProject}
+        area={currentArea}
+        summary={summary.data}
+        summaryLoading={summary.loading}
+        summaryError={summary.error}
+        onSummaryRetry={summary.reload}
+        trend={dateRangeReady ? trend.data?.points : []}
+        trendLoading={trend.loading}
+        trendError={trend.error}
+        onTrendRetry={trend.reload}
+        trendStatus={trend.data?.dataStatus}
+        trendMessage={trend.data?.message}
+        areas={areas.data}
+        areasLoading={areas.loading}
+        areasError={areas.error}
+        onAreasRetry={areas.reload}
+        dataQuality={dq.data}
+        dataQualityLoading={dq.loading}
+        dataQualityError={dq.error}
+        onDataQualityRetry={dq.reload}
+        refreshing={refreshing}
+        onRefresh={refreshAll}
+        toolbarProjects={toolbarProjects}
+        toolbarAreas={toolbarAreas}
+        projectExternalId={scope.projectExternalId}
+        areaExternalId={scope.areaExternalId}
         range={range}
-        onProject={(nextExternalId) => navigate(`/projects/${nextExternalId}/dashboard`)}
+        onProject={(nextExternalId) => standalone
+          ? scope.setProjectExternalId(nextExternalId)
+          : navigate(`/projects/${nextExternalId}/dashboard`)}
         onArea={(nextId) => scope.setAreaExternalId(nextId === "all" ? null : nextId)}
         onRange={setRange}
-        loading={scope.loadingProjects}
-        showProjectSelector
+        availableYears={availableYears}
+        selectedYear={selectedYear}
+        onYear={(nextYear) => { setSelectedYear(nextYear); setRange(nextYear ? "year" : "90d"); }}
+        customFrom={customFrom}
+        customTo={customTo}
+        onCustomFrom={setCustomFrom}
+        onCustomTo={setCustomTo}
+        onSelectArea={onSelectArea}
+        isWide={bp === "desktop" || bp === "laptop"}
       />
-
-      <KpiCards
-        summary={summary.data}
-        velocityDirection={velocityDirection}
-        loading={summary.loading}
-        error={summary.error}
-        onRetry={summary.reload}
-      />
-
-      <AbsorptionTrendChart series={trend.data?.points} loading={trend.loading} error={trend.error} onRetry={trend.reload} />
-
-      <div style={{ display: "grid", gridTemplateColumns: twoCol ? "1.4fr 1fr" : "1fr", gap: space(5) }}>
-        <AreaComparison areas={areas.data} loading={areas.loading} error={areas.error} onRetry={areas.reload} onSelectArea={onSelectArea} />
-        <DataQualityPanel dq={dq.data} loading={dq.loading} error={dq.error} onRetry={dq.reload} />
-      </div>
-
-      <AreaDetailTable areas={areas.data} loading={areas.loading} error={areas.error} onRetry={areas.reload} onSelectArea={onSelectArea} />
     </>
   );
+}
+
+function daysBetween(from, to) {
+  return Math.round((new Date(`${to}T00:00:00Z`) - new Date(`${from}T00:00:00Z`)) / 86400000);
 }

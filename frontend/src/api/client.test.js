@@ -1,6 +1,4 @@
-// Phase F/G required test: "API client auth headers", "401 handling",
-// "403 handling", "transport/project/area separation" (đọc backend vs ghi Mini
-// CRM là HAI client, HAI token, không rò rỉ sang nhau).
+// API client auth headers and stable 401/403 handling.
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 describe("api client (backend reads)", () => {
@@ -73,62 +71,6 @@ describe("api client (backend reads)", () => {
       throw new Error("phải ném lỗi");
     } catch (e) {
       expect(isAuthError(e)).toBe(false);
-    }
-  });
-});
-
-describe("minicrm client (Mini CRM writes) — tách riêng khỏi backend reads", () => {
-  beforeEach(() => {
-    vi.resetModules();
-    vi.stubGlobal("fetch", vi.fn());
-  });
-
-  it("posts to the same-origin /minicrm-api gateway, not the backend /api base", async () => {
-    const { minicrm, setMiniCrmToken } = await import("./client");
-    setMiniCrmToken("minicrm-token-xyz");
-    fetch.mockResolvedValue(new Response(JSON.stringify({ record: {} }), { status: 201 }));
-
-    await minicrm.post("/areas", { area_name: "A1" });
-
-    const [url, opts] = fetch.mock.calls[0];
-    expect(url).toBe("/minicrm-api/areas");
-    expect(opts.headers["Authorization"]).toBe("Bearer minicrm-token-xyz");
-  });
-
-  it("setAccessToken (backend) does NOT leak into Mini CRM requests", async () => {
-    const { minicrm, setAccessToken, setMiniCrmToken } = await import("./client");
-    setAccessToken("backend-token");
-    setMiniCrmToken(null);
-    fetch.mockResolvedValue(new Response(JSON.stringify({ record: {} }), { status: 201 }));
-
-    await minicrm.post("/areas", { area_name: "A1" });
-
-    const [, opts] = fetch.mock.calls[0];
-    expect(opts.headers["Authorization"]).toBeUndefined();
-  });
-
-  it("setMiniCrmToken does NOT leak into backend requests", async () => {
-    const { api, setMiniCrmToken, setAccessToken } = await import("./client");
-    setMiniCrmToken("minicrm-token-xyz");
-    setAccessToken(null);
-    fetch.mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
-
-    await api.get("/v1/projects");
-
-    const [, opts] = fetch.mock.calls[0];
-    expect(opts.headers["Authorization"]).toBeUndefined();
-  });
-
-  it("403 from Mini CRM (scope denied) is recognized by isAuthError", async () => {
-    const { minicrm, isAuthError } = await import("./client");
-    fetch.mockResolvedValue(
-      new Response(JSON.stringify({ detail: { error_code: "PROJECT_OUT_OF_SCOPE" } }), { status: 403 }),
-    );
-    try {
-      await minicrm.post("/areas", { external_project_id: "P-9999" });
-      throw new Error("phải ném lỗi");
-    } catch (e) {
-      expect(isAuthError(e)).toBe(true);
     }
   });
 });

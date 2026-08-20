@@ -9,6 +9,7 @@ import type {
   Project,
   Area,
   Unit,
+  SyncState,
   Deal,
   DealDetail,
   DealStage,
@@ -185,6 +186,33 @@ export function beAreaToFe(be: BEArea): Area {
   };
 }
 
+/** Suy trạng thái mirror từ ba trường backend trả về.
+ *
+ *  `mirrored_revision === source_revision` là ĐIỀU KIỆN DUY NHẤT để coi là đã
+ *  đồng bộ — không phải "có `mirrored_at` là xong". Một bản ghi đã sync ở
+ *  revision 2 rồi được sửa thành revision 3 vẫn còn `mirrored_at` cũ; nó đang
+ *  PENDING, và hiển thị nó là "đã đồng bộ" sẽ nói dối đúng vào lúc quan trọng.
+ *
+ *  Chưa từng mirror (`null`) = `pending`, KHÔNG phải `failed`: đường relay chạy
+ *  mỗi 5 giây, nên trạng thái bình thường ngay sau khi tạo là "đang chờ". Ta
+ *  không có tín hiệu nào ở đây để khẳng định một lần đẩy đã hỏng hẳn — muốn
+ *  biết điều đó phải hỏi `/outbox`, và đó là mặt vận hành, không phải mặt này. */
+function toSyncState(be: {
+  source_revision: number;
+  mirrored_revision?: number | null;
+  mirrored_at?: string | null;
+  last_sync_batch_id?: string | null;
+}): SyncState {
+  const mirrored = be.mirrored_revision ?? null;
+  return {
+    status: mirrored !== null && mirrored >= be.source_revision ? "synced" : "pending",
+    sourceRevision: be.source_revision,
+    mirroredRevision: mirrored,
+    mirroredAt: be.mirrored_at ?? null,
+    lastSyncBatchId: be.last_sync_batch_id ?? null,
+  };
+}
+
 // ---- Unit adapter ----
 
 export function beUnitToFe(be: BEUnit): Unit {
@@ -201,6 +229,7 @@ export function beUnitToFe(be: BEUnit): Unit {
     sizeSqft: 0,
     price: 0,
     status: unitStatus,
+    sync: toSyncState(be),
   };
 }
 

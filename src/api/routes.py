@@ -36,11 +36,12 @@ async def chat(
     principal: DashboardPrincipal = Depends(require_viewer),
 ) -> ChatResponse:
     """GPT plans read-only tools and synthesizes their scoped DB results."""
-    resolved_project_id = project_id
-    if resolved_project_id is None:
-        resolved_project_id = await _infer_project_id_from_message(
-            request.message, allowed_external_ids=_allowed_external_ids(principal)
-        )
+    # A project named in the latest question is stronger intent than a stale
+    # project selector in the UI.
+    mentioned_project_id = await _infer_project_id_from_message(
+        request.message, allowed_external_ids=_allowed_external_ids(principal)
+    )
+    resolved_project_id = mentioned_project_id or project_id
     _enforce_requested_project_scope(principal, resolved_project_id)
     try:
         response, tool_calls, sources, usage = await run_advisory_agent(
@@ -174,8 +175,3 @@ async def decide_proposal(
             status_code=409,
             detail={"code": str(exc), "message": "Use /agent/recommendations/{id}/approve for HITL decisions."},
         ) from exc
-
-
-@router.get("/market/audit")
-async def audit_logs(principal: DashboardPrincipal = Depends(require_viewer)):
-    return {"items": market_repository.logs}

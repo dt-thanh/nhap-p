@@ -1,0 +1,350 @@
+{
+  "dataset": "synthetic_v1",
+  "generated_at": "2026-08-18T12:00:13Z",
+  "reference_date": "2026-08-18",
+  "alembic_head": "0026_cloudinary_cover_images",
+  "generator": "scripts/generate_synthetic_dataset.py",
+  "null_marker": "\\N",
+  "timestamp_format": "ISO-8601 UTC (%Y-%m-%dT%H:%M:%SZ)",
+  "source_namespace": {
+    "source_system": "synthetic_csv",
+    "source_instance_id": "synthetic-csv-v1"
+  },
+  "uuid_namespace": "56f7f7bc-02a6-5650-8f0e-e41bea0e8181",
+  "source_files_inspected": [
+    "src/models/tables.py",
+    "src/ranking/engine.py",
+    "src/ranking/service.py",
+    "src/ranking/bands.py",
+    "src/services/domain_absorption.py",
+    "alembic/versions/0001_initial_schema.py",
+    "alembic/versions/0006_sync_foundation.py",
+    "alembic/versions/0007_s3_domain_model.py",
+    "alembic/versions/0014_ranking_foundation.py",
+    "alembic/versions/0015_ranking_results.py",
+    "alembic/versions/0017_hierarchy_projection.py",
+    "alembic/versions/0022_ranking_config_v2.py"
+  ],
+  "load_order": [
+    "projects",
+    "areas",
+    "upload_files",
+    "upload_errors",
+    "crm_source_records",
+    "units",
+    "deals",
+    "sales_records",
+    "inventory_snapshots"
+  ],
+  "tables": {
+    "projects": {
+      "rows": 3,
+      "columns": [
+        "id",
+        "name",
+        "launch_date",
+        "created_at",
+        "status",
+        "headline",
+        "introduce",
+        "cover_image_url",
+        "cover_image_public_id",
+        "created_by",
+        "reviewed_by",
+        "reviewed_at",
+        "review_reason",
+        "absorption_calculator",
+        "external_id",
+        "source_system",
+        "source_instance_id",
+        "source_revision",
+        "source_updated_at",
+        "updated_at"
+      ],
+      "sha256": "92896bf7ec019a6d6d730e8b937384451f0f231a0fd7419143d88c351c5ff525"
+    },
+    "areas": {
+      "rows": 9,
+      "columns": [
+        "id",
+        "project_id",
+        "area_name",
+        "unit_type",
+        "bedrooms",
+        "area_sqm",
+        "total_units",
+        "created_at",
+        "status",
+        "headline",
+        "introduce",
+        "cover_image_url",
+        "cover_image_public_id",
+        "created_by",
+        "reviewed_by",
+        "reviewed_at",
+        "review_reason",
+        "external_id",
+        "source_system",
+        "source_instance_id",
+        "source_revision",
+        "source_updated_at",
+        "updated_at"
+      ],
+      "sha256": "4e415e16e6e072067145a562556582ba88872276e385c5cd3da142cedb41c5a3"
+    },
+    "upload_files": {
+      "rows": 5,
+      "columns": [
+        "id",
+        "project_id",
+        "uploaded_by",
+        "filename",
+        "checksum",
+        "status",
+        "rows_ok",
+        "rows_failed",
+        "uploaded_at",
+        "source_system",
+        "source_instance_id",
+        "source_entity",
+        "input_format",
+        "transport_mode",
+        "sync_mode",
+        "schema_version",
+        "external_batch_id",
+        "rows_received",
+        "finished_at",
+        "last_source_cursor",
+        "error_summary",
+        "snapshot_id",
+        "chunk_index",
+        "chunk_total",
+        "snapshot_complete",
+        "snapshot_scope"
+      ],
+      "sha256": "2e40ea9c14cf296d9650b73868ca565a47dc8e34f26aba5c79fe483cebfe8364"
+    },
+    "upload_errors": {
+      "rows": 5,
+      "columns": [
+        "id",
+        "file_id",
+        "row_number",
+        "column_name",
+        "error_code",
+        "message",
+        "created_at",
+        "error_category",
+        "json_path",
+        "source_record_id",
+        "record_locator",
+        "field_name",
+        "raw_value_redacted",
+        "retry_status",
+        "resolved_at"
+      ],
+      "sha256": "a0046febb2292d792321212679ee1fe87b59a5d0d4b2a051808d736997114af8"
+    },
+    "crm_source_records": {
+      "rows": 7,
+      "columns": [
+        "id",
+        "source_system",
+        "source_instance_id",
+        "source_entity",
+        "source_record_id",
+        "first_sync_run_id",
+        "last_sync_run_id",
+        "external_batch_id",
+        "source_revision",
+        "source_updated_at",
+        "payload_hash",
+        "state",
+        "last_decision",
+        "conflict_count",
+        "conflict_payload_hash",
+        "conflict_detected_at",
+        "first_seen_at",
+        "last_seen_at",
+        "deleted_at"
+      ],
+      "sha256": "46fba03952517ee2d064b53622bf3193094692b561a5163e76c8ff33df7ded90"
+    },
+    "units": {
+      "rows": 200,
+      "columns": [
+        "id",
+        "source_system",
+        "source_instance_id",
+        "external_unit_id",
+        "area_id",
+        "unit_code",
+        "unit_type",
+        "status",
+        "source_revision",
+        "source_updated_at",
+        "deleted_at",
+        "created_at",
+        "updated_at"
+      ],
+      "sha256": "622e00b2d0a9e56e14afea730cf6e3587be74a431c3e9ba2d6a34aaa4263059f"
+    },
+    "deals": {
+      "rows": 131,
+      "columns": [
+        "id",
+        "source_system",
+        "source_instance_id",
+        "external_deal_id",
+        "unit_id",
+        "status",
+        "source_status",
+        "reserved_at",
+        "sold_at",
+        "lost_at",
+        "source_revision",
+        "source_updated_at",
+        "deleted_at",
+        "created_at",
+        "updated_at"
+      ],
+      "sha256": "f3298567b2a685d3c94ae4c47d61a44e2edb16f0e499693c50152b7356e5faf0"
+    },
+    "sales_records": {
+      "rows": 36,
+      "columns": [
+        "id",
+        "area_id",
+        "file_id",
+        "sold_date",
+        "units_sold",
+        "external_record_id",
+        "source_row_hash",
+        "created_at",
+        "source_updated_at"
+      ],
+      "sha256": "cfccf2059ea96c7ab12f95ffbf2c3af4482e9eaa6bbc8356945bdf621aea49e4"
+    },
+    "inventory_snapshots": {
+      "rows": 36,
+      "columns": [
+        "id",
+        "area_id",
+        "file_id",
+        "snapshot_date",
+        "units_remaining",
+        "snapshot_type",
+        "source_row_hash",
+        "created_at",
+        "source_updated_at"
+      ],
+      "sha256": "af3d67f4d8c1f6e17e6b60416434bdac5b6176218d3c3cc65ed5f94cb3a09d28"
+    }
+  },
+  "primary_keys": {
+    "projects": [
+      "id"
+    ],
+    "areas": [
+      "id"
+    ],
+    "upload_files": [
+      "id"
+    ],
+    "upload_errors": [
+      "id"
+    ],
+    "crm_source_records": [
+      "id"
+    ],
+    "units": [
+      "id"
+    ],
+    "deals": [
+      "id"
+    ],
+    "sales_records": [
+      "id"
+    ],
+    "inventory_snapshots": [
+      "id"
+    ]
+  },
+  "foreign_keys": [
+    {
+      "child": "areas",
+      "column": "project_id",
+      "parent": "projects",
+      "references": "id"
+    },
+    {
+      "child": "upload_files",
+      "column": "project_id",
+      "parent": "projects",
+      "references": "id"
+    },
+    {
+      "child": "upload_errors",
+      "column": "file_id",
+      "parent": "upload_files",
+      "references": "id"
+    },
+    {
+      "child": "crm_source_records",
+      "column": "first_sync_run_id",
+      "parent": "upload_files",
+      "references": "id"
+    },
+    {
+      "child": "crm_source_records",
+      "column": "last_sync_run_id",
+      "parent": "upload_files",
+      "references": "id"
+    },
+    {
+      "child": "units",
+      "column": "area_id",
+      "parent": "areas",
+      "references": "id"
+    },
+    {
+      "child": "deals",
+      "column": "unit_id",
+      "parent": "units",
+      "references": "id"
+    },
+    {
+      "child": "sales_records",
+      "column": "area_id",
+      "parent": "areas",
+      "references": "id"
+    },
+    {
+      "child": "sales_records",
+      "column": "file_id",
+      "parent": "upload_files",
+      "references": "id"
+    },
+    {
+      "child": "inventory_snapshots",
+      "column": "area_id",
+      "parent": "areas",
+      "references": "id"
+    },
+    {
+      "child": "inventory_snapshots",
+      "column": "file_id",
+      "parent": "upload_files",
+      "references": "id"
+    }
+  ],
+  "validation": {
+    "checks_run": 78,
+    "failed": []
+  },
+  "ranking_preview": {
+    "high": 19,
+    "medium": 121,
+    "low": 60
+  }
+}

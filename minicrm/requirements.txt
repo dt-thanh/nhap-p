@@ -14,11 +14,23 @@ pydantic>=2.9.0
 pydantic-settings>=2.6.0
 httpx>=0.27.0
 
+# Human-auth foundation. Argon2id is used directly; PyJWT is constrained to
+# the supported 2.x API. `secrets` from the Python standard library supplies
+# invite/reset/refresh randomness, so no extra token-generation package is
+# needed.
+argon2-cffi==23.1.0
+PyJWT==2.10.1
+
 # Kiểm phong bì theo BẢN SAO schema của Mini CRM (`minicrm/contracts/`) trước khi
 # gửi. Không import validator của backend: nếu Mini CRM hỏi đúng cái đối tượng mà
 # backend dùng để chấm điểm nó, nó sẽ luôn tự cho mình là đúng. Bản sao được canh
 # khỏi trôi bằng phép so SHA-256 ở `tests/test_contract_copy.py`.
 jsonschema>=4.23.0
+
+# Xác thực người dùng qua Microsoft Entra ID (CP4). `cryptography` là bắt buộc
+# cho RS256 — thiếu nó PyJWT im lặng KHÔNG hỗ trợ thuật toán bất đối xứng.
+pyjwt[crypto]>=2.10.0
+cryptography>=43.0.0
 
 # Test
 pytest>=8.0.0

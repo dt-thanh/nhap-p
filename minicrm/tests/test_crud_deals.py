@@ -19,6 +19,7 @@ Backend là GIẢ. Kết luận về hành vi backend nằm ở `test_real_backe
 from __future__ import annotations
 
 import sqlalchemy as sa
+from app import relay as relay_module
 from app.main import app
 from fastapi.testclient import TestClient
 
@@ -35,10 +36,19 @@ def _client():
     return TestClient(app, headers=ADMIN_AUTH_HEADER)
 
 
+def _relay():
+    import asyncio
+
+    return asyncio.run(relay_module.relay_tick())
+
+
 def _seed_unit(client, **overrides):
-    """Tạo một căn ĐÃ mirrored — điều kiện tiên quyết của mọi giao dịch."""
+    """Tạo một căn và chạy một lượt RelayLoop — điều kiện tiên quyết của Deal."""
     body = client.post("/units", json={**UNIT, **overrides}).json()
-    assert body["sync"]["status"] == "synced"
+    assert body["sync"]["status"] == "sync_pending"
+    import asyncio
+
+    asyncio.run(relay_module.relay_tick())
     return body["record"]["external_id"]
 
 
@@ -63,10 +73,13 @@ def test_a_deal_created_after_its_unit_is_accepted_and_pushed(crm_app, backend):
     body = response.json()
     assert body["record"]["external_id"] == "D-0001"
     assert body["record"]["source_revision"] == 1
-    assert body["sync"]["status"] == "synced"
+    assert body["sync"]["status"] == "sync_pending"
+    _relay()
 
     envelope = backend.envelopes[1]
     assert backend.requests[1]["url"] == "http://api:8000/api/v1/sync/deals"
+    assert envelope["schema_version"] == 2
+    assert envelope["project_ref"] == {"external_project_id": "BOOTSTRAP-PROJECT"}
     assert envelope["records"][0]["entity"] == "deal"
     assert envelope["records"][0]["payload"]["external_unit_id"] == unit_id
     assert envelope["records"][0]["payload"]["deal_status"] == "lead"
@@ -114,19 +127,17 @@ def test_a_deal_for_an_unmirrored_unit_is_rejected_before_sending(crm_app, backe
 
     assert response.status_code == 409
     assert response.json()["error_code"] == "UNIT_NOT_MIRRORED"
-    assert len(backend.requests) == 1, "chỉ có lô của căn (đã hỏng); lô giao dịch không được gửi"
+    assert len(backend.requests) == 0, "lô Unit và Deal đều chờ RelayLoop"
     assert _rows(crm_app, "crm_deals") == []
 
 
-def test_the_deal_becomes_possible_once_the_unit_batch_is_resent(crm_app, backend):
-    """Đường thoát cho tình huống trên, và nó phải TƯỜNG MINH."""
-    backend.fail_with(422, {"detail": {}})
+def test_the_deal_becomes_possible_once_the_unit_batch_is_relayed(crm_app, backend):
+    """Deal becomes possible after the canonical Unit v2 row is relayed."""
     with _client() as client:
         batch_id = client.post("/units", json=UNIT).json()["sync"]["external_batch_id"]
-
-        backend.accept()
-        assert client.post(f"/outbox/{batch_id}/resend").json()["sync"]["status"] == "synced"
-
+        assert client.post(f"/outbox/{batch_id}/resend").status_code == 409
+    _relay()
+    with _client() as client:
         response = client.post("/deals", json={"external_unit_id": "U-0001", "deal_status": "lead"})
     assert response.status_code == 201
 
@@ -149,6 +160,7 @@ def test_a_reserved_deal_carries_its_reserved_at(crm_app, backend):
         response = client.post(
             "/deals", json={"external_unit_id": unit_id, "deal_status": "reserved", "reserved_at": RESERVED_AT}
         )
+    _relay()
 
     assert response.status_code == 201
     payload = backend.envelopes[1]["records"][0]["payload"]
@@ -172,6 +184,7 @@ def test_reserved_to_sold_preserves_reserved_at_in_the_outgoing_payload(crm_app,
             "/deals", json={"external_unit_id": unit_id, "deal_status": "reserved", "reserved_at": RESERVED_AT}
         )
         response = client.patch("/deals/D-0001", json={"deal_status": "sold", "sold_at": SOLD_AT})
+    _relay()
 
     body = response.json()
     assert body["record"]["source_revision"] == 2
@@ -192,6 +205,7 @@ def test_reserved_to_lost_preserves_reserved_at_too(crm_app, backend):
             "/deals", json={"external_unit_id": unit_id, "deal_status": "reserved", "reserved_at": RESERVED_AT}
         )
         client.patch("/deals/D-0001", json={"deal_status": "lost", "lost_at": LOST_AT})
+    _relay()
 
     payload = backend.envelopes[2]["records"][0]["payload"]
     assert payload["deal_status"] == "lost"
@@ -209,6 +223,7 @@ def test_every_deal_payload_states_all_three_history_moments(crm_app, backend):
     with _client() as client:
         unit_id = _seed_unit(client)
         client.post("/deals", json={"external_unit_id": unit_id, "deal_status": "lead"})
+    _relay()
 
     payload = backend.envelopes[1]["records"][0]["payload"]
     assert set(payload) == {"external_unit_id", "deal_status", "reserved_at", "sold_at", "lost_at"}
@@ -286,6 +301,7 @@ def test_deleting_a_deal_is_a_soft_delete_and_sends_a_delete_record(crm_app, bac
         unit_id = _seed_unit(client)
         client.post("/deals", json={"external_unit_id": unit_id, "deal_status": "lead"})
         response = client.delete("/deals/D-0001")
+    _relay()
 
     body = response.json()
     assert response.status_code == 200

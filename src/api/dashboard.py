@@ -1,16 +1,15 @@
-"""Router dashboard MVP 1 (SRS §5.2) + đọc/sửa nội dung hiển thị dự án / phân khu.
+"""Router dashboard MVP 1 (SRS §5.2) + đọc ảnh bìa dự án / phân khu.
 
 Bốn endpoint đọc gốc: dự án, phân khu, chuỗi hấp thụ, thẻ tổng hợp.
 `absorption_daily` không ghi ở đây — worker tính lại sau mỗi lần nạp.
 
 ═══════════════════════════════════════════════════════════════════════════
- PHASE D (§D7/§D8): KHÔNG còn POST /projects, POST /areas
+ PHASE D (§D7/§D8): KHÔNG còn POST/PATCH /projects, POST/PATCH /areas
 ═══════════════════════════════════════════════════════════════════════════
 
-Hai route TẠO đã bị XOÁ — Mini CRM là nguồn sự thật cho Project/Area từ Phase D
-(`src/services/domain_projection.py`); tạo qua ingestion (`POST /sync/{entity}`),
-không qua đây nữa. `PATCH /projects/{id}`/`PATCH /areas/{id}` VẪN CÒN nhưng bị
-THU HẸP xuống `headline`/`introduce` — xem `src/services/projects.py`.
+Các route ghi Project/Area đã bị XOÁ — Mini CRM là nguồn sự thật cho Project/Area
+từ Phase D (`src/services/domain_projection.py`); ghi qua ingestion
+(`POST /sync/{entity}`), không qua đây.
 
 MỚI (§D8, đọc theo `external_id` — danh tính Mini CRM, khác UUID nội bộ):
 `GET /projects/{external_id}`, `GET /areas/{external_id}`. `GET /projects`/
@@ -22,13 +21,11 @@ MỚI (§D8, đọc theo `external_id` — danh tính Mini CRM, khác UUID nội
 ═══════════════════════════════════════════════════════════════════════════
 
 `GET /projects`, `GET /projects/{external_id}`, `GET /areas`,
-`GET /areas/{external_id}` giờ đòi tối thiểu vai trò `business_viewer`
-(`require_role`, `src/services/dashboard_auth.py`) VÀ phạm vi dự án — cưỡng chế
-ở TẦNG TRUY VẤN (`resolve_scope_project_ids` cho liệt kê không lọc,
-`require_project_in_scope` cho các route đã suy ra một dự án cụ thể), không chỉ
-ở tầng route. `/absorption`, `/absorption/summary`, ảnh bìa CHƯA được scope ở
-đợt này — nằm ngoài danh sách route "tối thiểu" của Phase E, xem
-pipeline_status.md.
+`GET /areas/{external_id}` và các endpoint absorption giờ đòi tối thiểu vai trò
+`business_viewer` (`require_role`, `src/services/dashboard_auth.py`) VÀ phạm vi
+dự án — cưỡng chế ở TẦNG TRUY VẤN (`resolve_scope_project_ids` cho liệt kê
+không lọc, `require_project_in_scope` cho các route đã suy ra một dự án cụ thể).
+Endpoint absorption suy phạm vi qua `area_id`/`project_id` trước khi đọc domain.
 """
 
 import uuid
@@ -47,12 +44,10 @@ from src.models.schemas import (
     AbsorptionSummaryOut,
     AreaDetail,
     AreaOut,
-    AreaUpdate,
     ImageDetail,
     MePermissionsOut,
     ProjectDetail,
     ProjectSummary,
-    ProjectUpdate,
 )
 from src.models.tables import areas as areas_table
 from src.models.tables import projects, upload_files
@@ -66,7 +61,7 @@ from src.services.dashboard_auth import (
 from src.services.domain_absorption import (
     CALCULATOR_DOMAIN,
     CALCULATOR_LEGACY,
-    DomainAbsorptionCalculatorService,
+    DomainSalesAnalyticsService,
 )
 from src.services.images import (
     AREA_OWNER,
@@ -75,32 +70,12 @@ from src.services.images import (
     ImageRejectedError,
     ImageService,
 )
-from src.services.projects import CatalogRejectedError, ProjectService, as_dict
 
 require_viewer = require_role("business_viewer")
+require_admin = require_role("admin")
 
 router = APIRouter(tags=["dashboard"])
 log = get_logger("src.api.dashboard")
-
-# error_code của service → mã HTTP. Router giữ ánh xạ này để service không phải
-# biết gì về HTTP, giống cách `src/api/files.py` xử lý UploadRejectedError.
-#
-# `PROJECT_NOT_ACTIVE`/`DUPLICATE_AREA` (của `create_project`/`create_area` cũ)
-# KHÔNG còn ở đây — hai lỗi đó thuộc về đường TẠO đã bị xoá ở Phase D (§D7).
-_CATALOG_STATUS = {
-    "PROJECT_NOT_FOUND": 404,
-    "AREA_NOT_FOUND": 404,
-    "NO_CHANGES": 422,
-    "FIELD_NOT_EDITABLE": 422,
-}
-
-
-def _catalog_http_error(exc: CatalogRejectedError) -> HTTPException:
-    return HTTPException(
-        status_code=_CATALOG_STATUS.get(exc.error_code, 422),
-        detail={"message": exc.message, "error_code": exc.error_code},
-    )
-
 
 # Phase 5.5 P0 (F-2, Bước 1B). Hai trạng thái kết thúc KHÔNG có bản ghi hỏng nào
 # — đụng độ được ghi nhận vẫn là "thành công" theo nghĩa "backend có bằng chứng
@@ -200,6 +175,49 @@ async def _resolve_project_scope(project_id: str | None, external_project_id: st
     return project_uuid, found_external_id
 
 
+async def _resolve_analytics_scope(
+    project_id: uuid.UUID | None,
+    area_id: uuid.UUID | None,
+    principal: DashboardPrincipal,
+) -> tuple[uuid.UUID, uuid.UUID | None]:
+    """Resolve and authorize the canonical analytics scope before querying data."""
+    async with get_session_factory()() as session:
+        if area_id is not None:
+            row = (
+                await session.execute(
+                    sa.select(areas_table.c.project_id, projects.c.external_id)
+                    .select_from(areas_table.join(projects, areas_table.c.project_id == projects.c.id))
+                    .where(areas_table.c.id == area_id)
+                )
+            ).one_or_none()
+            if row is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail={"message": "Không tìm thấy phân khu", "error_code": "AREA_NOT_FOUND"},
+                )
+            if project_id is not None and row.project_id != project_id:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"message": "Phân khu không thuộc dự án", "error_code": "AREA_PROJECT_MISMATCH"},
+                )
+            require_project_in_scope(principal, row.external_id)
+            return row.project_id, area_id
+
+        if project_id is None:
+            raise HTTPException(
+                status_code=422,
+                detail={"message": "Cần project_id hoặc area_id để xác định phạm vi", "error_code": "MISSING_SCOPE"},
+            )
+        external_id = await session.scalar(sa.select(projects.c.external_id).where(projects.c.id == project_id))
+        if external_id is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"message": "Không tìm thấy dự án", "error_code": "PROJECT_NOT_FOUND"},
+            )
+        require_project_in_scope(principal, external_id)
+        return project_id, None
+
+
 @router.get(
     "/me/permissions",
     response_model=MePermissionsOut,
@@ -281,36 +299,6 @@ async def get_project_by_external_id(
     )
 
 
-@router.patch(
-    "/projects/{project_id}",
-    response_model=ProjectDetail,
-    summary="Sửa thông tin dự án",
-)
-async def update_project(project_id: str, payload: ProjectUpdate) -> ProjectDetail:
-    """Chỉ ghi những trường có mặt trong body — trường vắng mặt giữ nguyên."""
-    changes = payload.model_dump(exclude_unset=True)
-    try:
-        record = await ProjectService().update_project(_uuid_or_422(project_id, "project_id"), changes)
-    except CatalogRejectedError as exc:
-        raise _catalog_http_error(exc) from exc
-    return ProjectDetail(**as_dict(record))
-
-
-@router.patch(
-    "/areas/{area_id}",
-    response_model=AreaDetail,
-    summary="Sửa thông tin phân khu",
-)
-async def update_area(area_id: str, payload: AreaUpdate) -> AreaDetail:
-    """Không đổi được `project_id` lẫn `status` — hai trường đó không có trong body."""
-    changes = payload.model_dump(exclude_unset=True)
-    try:
-        record = await ProjectService().update_area(_uuid_or_422(area_id, "area_id"), changes)
-    except CatalogRejectedError as exc:
-        raise _catalog_http_error(exc) from exc
-    return AreaDetail(**as_dict(record))
-
-
 @router.get("/areas", response_model=list[AreaOut], summary="Phân khu kèm tồn kho hiện tại")
 async def list_areas(
     project_id: str | None = Query(default=None, description="UUID dự án"),
@@ -390,23 +378,101 @@ async def get_area_by_external_id(
     )
 
 
-@router.get("/absorption", response_model=AbsorptionSeries, summary="Chuỗi tốc độ hấp thụ")
+@router.get("/absorption", response_model=AbsorptionSeries, summary="Chuỗi tốc độ hấp thụ theo dữ liệu căn hộ/giao dịch")
 async def absorption_series(
-    area_id: str = Query(..., description="UUID phân khu"),
+    area_id: str | None = Query(default=None, description="UUID phân khu; bỏ trống để tính toàn dự án"),
+    project_id: str | None = Query(default=None, description="UUID dự án khi tính toàn dự án hoặc để kiểm scope"),
     date_from: date | None = Query(default=None, alias="from"),
     date_to: date | None = Query(default=None, alias="to"),
-    granularity: str = Query(default="day", pattern="^(day|week)$"),
+    year: int | None = Query(default=None, ge=1900, le=3000),
+    unit_type: str | None = Query(default=None),
+    granularity: str | None = Query(default=None, pattern="^(day|week|month)$"),
+    calculator: str = Query(default=CALCULATOR_DOMAIN),
+    principal: DashboardPrincipal = Depends(require_viewer),
 ) -> AbsorptionSeries:
-    """SRS §5.2: chuỗi theo `area_id`, `from`, `to`, `granularity=day|week`."""
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "from phải trước hoặc bằng to", "error_code": "INVALID_DATE_RANGE"},
+        )
+    if year is not None and (date_from is not None or date_to is not None):
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "year không thể dùng cùng from/to", "error_code": "AMBIGUOUS_DATE_RANGE"},
+        )
+
+    area_uuid = _uuid_or_422(area_id, "area_id") if area_id else None
+    project_uuid = _uuid_or_422(project_id, "project_id") if project_id else None
+    project_uuid, area_uuid = await _resolve_analytics_scope(project_uuid, area_uuid, principal)
+
+    if calculator == CALCULATOR_DOMAIN:
+        try:
+            result = await DomainSalesAnalyticsService().trend(
+                project_uuid,
+                area_id=area_uuid,
+                unit_type=unit_type,
+                date_from=date_from,
+                date_to=date_to,
+                year=year,
+                granularity=granularity,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"message": str(exc), "error_code": "INVALID_ANALYTICS_RANGE"},
+            ) from exc
+        return AbsorptionSeries(
+            area_id=str(area_uuid) if area_uuid else None,
+            granularity=result.granularity,
+            points=[
+                AbsorptionPointOut(
+                    stat_date=point.stat_date,
+                    units_sold=point.units_sold,
+                    velocity_7d=point.velocity_7d,
+                    velocity_30d=point.velocity_30d,
+                    is_observed=point.is_observed,
+                    data_quality_status=point.data_quality_status,
+                    period_start=point.stat_date,
+                    period_end=point.period_end,
+                    period_granularity=point.granularity,
+                    cumulative_sold=point.cumulative_sold,
+                    sell_through=point.sell_through,
+                )
+                for point in result.points
+            ],
+            data_source=CALCULATOR_DOMAIN,
+            data_status=result.data_status,
+            message=result.message,
+            earliest_sale_date=result.earliest_sale_date,
+            latest_sale_date=result.latest_sale_date,
+            available_years=result.available_years,
+        )
+
+    if calculator != CALCULATOR_LEGACY:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": f"Bộ tính '{calculator}' không tồn tại", "error_code": "UNKNOWN_CALCULATOR"},
+        )
+    if area_uuid is None:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "Legacy absorption cần area_id", "error_code": "MISSING_AREA_ID"},
+        )
+    legacy_granularity = granularity or "day"
+    if legacy_granularity not in {"day", "week"}:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "Legacy absorption chỉ hỗ trợ day hoặc week", "error_code": "UNSUPPORTED_GRANULARITY"},
+        )
     points = await AreaService().absorption_series(
-        _uuid_or_422(area_id, "area_id"),
+        area_uuid,
         date_from=date_from,
         date_to=date_to,
-        granularity=granularity,
+        granularity=legacy_granularity,
     )
     return AbsorptionSeries(
-        area_id=area_id,
-        granularity=granularity,
+        area_id=str(area_uuid),
+        granularity=legacy_granularity,
         points=[
             AbsorptionPointOut(
                 stat_date=point.stat_date,
@@ -418,46 +484,65 @@ async def absorption_series(
             )
             for point in points
         ],
+        data_source=CALCULATOR_LEGACY,
+        data_status="ready" if points else "no_data",
+        message=None if points else "Không có dữ liệu trong khoảng thời gian đã chọn.",
     )
 
 
 @router.get(
     "/absorption/summary",
     response_model=AbsorptionSummaryOut,
-    summary="Tổng hợp toàn dự án cho thẻ số liệu",
+    summary="Tổng hợp dashboard theo project/area scope",
 )
 async def absorption_summary(
     project_id: str = Query(..., description="UUID dự án"),
+    area_id: str | None = Query(default=None, description="UUID phân khu; bỏ trống để tổng hợp toàn dự án"),
     calculator: str = Query(
-        default="legacy_aggregate",
-        description="legacy_aggregate (mặc định, đường sản xuất) | domain_units_deals (đối chiếu S3)",
+        default=CALCULATOR_DOMAIN,
+        description="domain_units_deals (đường dashboard) | legacy_aggregate (tương thích có chỉ định)",
     ),
+    principal: DashboardPrincipal = Depends(require_viewer),
 ) -> AbsorptionSummaryOut:
-    """SRS §5.2: tồn kho, đã bán, tốc độ trung bình 30 ngày.
+    """Trả KPI cùng một scope với trend: dự án hoặc phân khu đã chọn.
 
-    Mặc định vẫn là bộ tính cũ đọc dữ liệu tổng hợp — KHÔNG tự động cắt sang bộ
-    tính mới. `calculator=domain_units_deals` là đường ĐỐI CHIẾU, tính từ
-    `units`/`deals` và trả thêm `units_reserved` (thứ dữ liệu tổng hợp không dựng
-    lại được). Bộ tính mới không ghi gì xuống `absorption_daily`.
+    Mặc định dùng bộ tính domain đọc `units`/`deals`; `legacy_aggregate` chỉ còn
+    là compatibility path khi caller chỉ định tường minh. Dashboard frontend
+    không sử dụng đường legacy và không trộn hai nguồn trong cùng metric.
     """
     project_uuid = _uuid_or_422(project_id, "project_id")
+    area_uuid = _uuid_or_422(area_id, "area_id") if area_id else None
+    project_uuid, area_uuid = await _resolve_analytics_scope(project_uuid, area_uuid, principal)
     last_successful_sync, last_attempted_sync, last_sync_status = await _sync_freshness(project_uuid)
 
     if calculator == CALCULATOR_DOMAIN:
-        result = await DomainAbsorptionCalculatorService().compute(project_uuid)
-        newest = max((point.stat_date for point in result.points), default=None)
+        result = await DomainSalesAnalyticsService().summary(
+            project_uuid,
+            area_id=area_uuid,
+        )
         return AbsorptionSummaryOut(
             units_remaining=result.units_remaining,
             units_sold=result.units_sold,
             units_reserved=result.units_reserved,
-            # Bộ tính mới đếm theo từng căn, không suy ra vận tốc trung bình dự án
-            # theo cách của bộ cũ; để 0 thay vì bịa một con số không so được.
-            avg_velocity_30d=Decimal("0"),
-            updated_at=result.computed_at if newest else None,
+            available_remaining_units=max(result.units_remaining - result.units_reserved, 0),
+            avg_velocity_30d=result.velocity_30d,
+            total_units=result.total_units,
+            sell_through=result.sell_through,
+            velocity_7d=result.velocity_7d,
+            velocity_30d=result.velocity_30d,
+            estimated_weeks_to_sell_out=result.estimated_weeks_to_sell_out,
+            updated_at=result.updated_at,
             calculator=CALCULATOR_DOMAIN,
             last_successful_sync=last_successful_sync,
             last_attempted_sync=last_attempted_sync,
             last_sync_status=last_sync_status,
+            data_source=CALCULATOR_DOMAIN,
+            data_status=result.data_status,
+            message=result.message,
+            earliest_sale_date=result.earliest_sale_date,
+            latest_sale_date=result.latest_sale_date,
+            available_years=result.available_years,
+            velocity_unit="units_per_week",
         )
 
     if calculator != CALCULATOR_LEGACY:
@@ -466,20 +551,66 @@ async def absorption_summary(
             detail={"message": f"Bộ tính '{calculator}' không tồn tại", "error_code": "UNKNOWN_CALCULATOR"},
         )
 
-    summary = await AreaService().summary(project_uuid)
+    summary = await AreaService().summary(project_uuid, area_id=area_uuid)
+    metrics = _dashboard_metric_fields(
+        total_units=summary.total_units,
+        units_sold=summary.units_sold,
+        units_remaining=summary.units_remaining,
+        velocity_30d=summary.velocity_30d,
+    )
     return AbsorptionSummaryOut(
         units_remaining=summary.units_remaining,
         units_sold=summary.units_sold,
         avg_velocity_30d=summary.avg_velocity_30d,
+        total_units=summary.total_units,
+        sell_through=metrics["sell_through"],
+        velocity_7d=summary.velocity_7d,
+        velocity_30d=summary.velocity_30d,
+        estimated_weeks_to_sell_out=metrics["estimated_weeks_to_sell_out"],
         updated_at=summary.updated_at,
         # Dữ liệu tổng hợp không dựng lại được số căn đang giữ chỗ — NULL nói đúng
         # điều đó, còn 0 sẽ bị đọc thành "không có căn nào đang giữ".
         units_reserved=None,
+        available_remaining_units=None,
         calculator=CALCULATOR_LEGACY,
         last_successful_sync=last_successful_sync,
         last_attempted_sync=last_attempted_sync,
         last_sync_status=last_sync_status,
+        data_source=CALCULATOR_LEGACY,
+        data_status="ready" if summary.units_sold > 0 else ("no_units" if summary.total_units == 0 else "no_data"),
+        message=None if summary.units_sold > 0 else "Không có dữ liệu trong khoảng thời gian đã chọn.",
+        velocity_unit="units_per_day",
     )
+
+
+def _dashboard_metric_fields(*, total_units, units_sold, units_remaining, velocity_30d):
+    """Calculate only derived metrics whose source values are available.
+
+    Stored rolling velocities are in units/day. Forecast time is expressed in
+    weeks, so the denominator is the 30-day velocity converted to units/week.
+    """
+    total = Decimal(str(total_units)) if total_units is not None else None
+    sold = Decimal(str(units_sold)) if units_sold is not None else None
+    remaining = Decimal(str(units_remaining)) if units_remaining is not None else None
+    velocity = Decimal(str(velocity_30d)) if velocity_30d is not None else None
+
+    if total is not None and total < 0:
+        total = None
+    if sold is not None and sold < 0:
+        sold = None
+    if remaining is not None and remaining < 0:
+        remaining = None
+
+    sell_through = (sold / total * Decimal("100")) if total is not None and total > 0 and sold is not None else None
+    if remaining is None:
+        estimated = None
+    elif remaining <= 0:
+        estimated = Decimal("0")
+    elif velocity is None or velocity <= 0:
+        estimated = None
+    else:
+        estimated = (remaining / (velocity * Decimal("7"))).quantize(Decimal("0.0001"))
+    return {"sell_through": sell_through, "estimated_weeks_to_sell_out": estimated}
 
 
 # --- Ảnh bìa dự án / phân khu ----------------------------------------------
@@ -501,6 +632,7 @@ _IMAGE_STATUS = {
     "STORAGE_UPLOAD_FAILED": 502,
     "STORAGE_DELETE_FAILED": 502,
 }
+_ALLOWED_IMAGE_CONTENT_TYPES = frozenset({"image/jpeg", "image/png", "image/webp", "image/gif"})
 
 
 def _image_http_error(exc: ImageRejectedError) -> HTTPException:
@@ -518,9 +650,33 @@ async def _get_image(owner: ImageOwner, owner_id: str) -> ImageDetail:
     return ImageDetail(owner_id=record.owner_id, url=record.url, public_id=record.public_id)
 
 
+async def _require_image_scope(owner: ImageOwner, owner_id: str, principal: DashboardPrincipal) -> uuid.UUID:
+    """Resolve an image owner and enforce the same project scope as read APIs."""
+    owner_uuid = _uuid_or_422(owner_id, f"{owner.kind}_id")
+    async with get_session_factory()() as session:
+        if owner.kind == "project":
+            external_id = await session.scalar(sa.select(projects.c.external_id).where(projects.c.id == owner_uuid))
+        else:
+            external_id = await session.scalar(
+                sa.select(projects.c.external_id)
+                .select_from(areas_table.join(projects, areas_table.c.project_id == projects.c.id))
+                .where(areas_table.c.id == owner_uuid)
+            )
+    if external_id is None and owner.kind == "project":
+        # Legacy projects are only reachable by an ALL scope, matching the list/read behavior.
+        require_project_in_scope(principal, None)
+    else:
+        require_project_in_scope(principal, external_id)
+    return owner_uuid
+
+
 async def _put_image(owner: ImageOwner, owner_id: str, file: UploadFile, *, replace: bool) -> ImageDetail:
     owner_uuid = _uuid_or_422(owner_id, f"{owner.kind}_id")
     service = ImageService()
+    if file.content_type and file.content_type.lower() not in _ALLOWED_IMAGE_CONTENT_TYPES:
+        raise _image_http_error(
+            ImageRejectedError("UNSUPPORTED_IMAGE_FORMAT", "Chỉ chấp nhận ảnh JPEG, PNG, WebP hoặc GIF")
+        )
     action = service.replace if replace else service.create
     try:
         record = await action(owner, owner_uuid, file, file.filename or "")
@@ -538,7 +694,10 @@ async def _delete_image(owner: ImageOwner, owner_id: str) -> Response:
 
 
 @router.get("/projects/{project_id}/image", response_model=ImageDetail, summary="Xem ảnh bìa dự án")
-async def get_project_image(project_id: str) -> ImageDetail:
+async def get_project_image(
+    project_id: str, principal: DashboardPrincipal = Depends(require_viewer)
+) -> ImageDetail:
+    await _require_image_scope(PROJECT_OWNER, project_id, principal)
     return await _get_image(PROJECT_OWNER, project_id)
 
 
@@ -548,12 +707,19 @@ async def get_project_image(project_id: str) -> ImageDetail:
     status_code=status.HTTP_201_CREATED,
     summary="Tải ảnh bìa dự án (chưa có ảnh)",
 )
-async def create_project_image(project_id: str, file: UploadFile = File(...)) -> ImageDetail:
+async def create_project_image(
+    project_id: str, file: UploadFile = File(...), principal: DashboardPrincipal = Depends(require_admin)
+) -> ImageDetail:
+    # Legacy image paths remain as compatibility aliases, but mutations are admin-only.
+    await _require_image_scope(PROJECT_OWNER, project_id, principal)
     return await _put_image(PROJECT_OWNER, project_id, file, replace=False)
 
 
 @router.put("/projects/{project_id}/image", response_model=ImageDetail, summary="Thay ảnh bìa dự án")
-async def replace_project_image(project_id: str, file: UploadFile = File(...)) -> ImageDetail:
+async def replace_project_image(
+    project_id: str, file: UploadFile = File(...), principal: DashboardPrincipal = Depends(require_admin)
+) -> ImageDetail:
+    await _require_image_scope(PROJECT_OWNER, project_id, principal)
     return await _put_image(PROJECT_OWNER, project_id, file, replace=True)
 
 
@@ -562,12 +728,14 @@ async def replace_project_image(project_id: str, file: UploadFile = File(...)) -
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Xoá ảnh bìa dự án",
 )
-async def delete_project_image(project_id: str) -> Response:
+async def delete_project_image(project_id: str, principal: DashboardPrincipal = Depends(require_admin)) -> Response:
+    await _require_image_scope(PROJECT_OWNER, project_id, principal)
     return await _delete_image(PROJECT_OWNER, project_id)
 
 
 @router.get("/areas/{area_id}/image", response_model=ImageDetail, summary="Xem ảnh bìa phân khu")
-async def get_area_image(area_id: str) -> ImageDetail:
+async def get_area_image(area_id: str, principal: DashboardPrincipal = Depends(require_viewer)) -> ImageDetail:
+    await _require_image_scope(AREA_OWNER, area_id, principal)
     return await _get_image(AREA_OWNER, area_id)
 
 
@@ -577,12 +745,18 @@ async def get_area_image(area_id: str) -> ImageDetail:
     status_code=status.HTTP_201_CREATED,
     summary="Tải ảnh bìa phân khu (chưa có ảnh)",
 )
-async def create_area_image(area_id: str, file: UploadFile = File(...)) -> ImageDetail:
+async def create_area_image(
+    area_id: str, file: UploadFile = File(...), principal: DashboardPrincipal = Depends(require_admin)
+) -> ImageDetail:
+    await _require_image_scope(AREA_OWNER, area_id, principal)
     return await _put_image(AREA_OWNER, area_id, file, replace=False)
 
 
 @router.put("/areas/{area_id}/image", response_model=ImageDetail, summary="Thay ảnh bìa phân khu")
-async def replace_area_image(area_id: str, file: UploadFile = File(...)) -> ImageDetail:
+async def replace_area_image(
+    area_id: str, file: UploadFile = File(...), principal: DashboardPrincipal = Depends(require_admin)
+) -> ImageDetail:
+    await _require_image_scope(AREA_OWNER, area_id, principal)
     return await _put_image(AREA_OWNER, area_id, file, replace=True)
 
 
@@ -591,5 +765,57 @@ async def replace_area_image(area_id: str, file: UploadFile = File(...)) -> Imag
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Xoá ảnh bìa phân khu",
 )
-async def delete_area_image(area_id: str) -> Response:
+async def delete_area_image(area_id: str, principal: DashboardPrincipal = Depends(require_admin)) -> Response:
+    await _require_image_scope(AREA_OWNER, area_id, principal)
+    return await _delete_image(AREA_OWNER, area_id)
+
+
+# Settings API: the only user-facing write surface for project/area images.
+@router.post(
+    "/settings/projects/{project_id}/cover-image",
+    response_model=ImageDetail,
+    summary="Tải hoặc thay ảnh bìa dự án (admin)",
+)
+async def upload_project_cover_image(
+    project_id: str,
+    file: UploadFile = File(...),
+    principal: DashboardPrincipal = Depends(require_admin),
+) -> ImageDetail:
+    await _require_image_scope(PROJECT_OWNER, project_id, principal)
+    return await _put_image(PROJECT_OWNER, project_id, file, replace=True)
+
+
+@router.delete(
+    "/settings/projects/{project_id}/cover-image",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Xoá ảnh bìa dự án (admin)",
+)
+async def remove_project_cover_image(
+    project_id: str, principal: DashboardPrincipal = Depends(require_admin)
+) -> Response:
+    await _require_image_scope(PROJECT_OWNER, project_id, principal)
+    return await _delete_image(PROJECT_OWNER, project_id)
+
+
+@router.post(
+    "/settings/areas/{area_id}/cover-image",
+    response_model=ImageDetail,
+    summary="Tải hoặc thay ảnh bìa phân khu (admin)",
+)
+async def upload_area_cover_image(
+    area_id: str,
+    file: UploadFile = File(...),
+    principal: DashboardPrincipal = Depends(require_admin),
+) -> ImageDetail:
+    await _require_image_scope(AREA_OWNER, area_id, principal)
+    return await _put_image(AREA_OWNER, area_id, file, replace=True)
+
+
+@router.delete(
+    "/settings/areas/{area_id}/cover-image",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Xoá ảnh bìa phân khu (admin)",
+)
+async def remove_area_cover_image(area_id: str, principal: DashboardPrincipal = Depends(require_admin)) -> Response:
+    await _require_image_scope(AREA_OWNER, area_id, principal)
     return await _delete_image(AREA_OWNER, area_id)

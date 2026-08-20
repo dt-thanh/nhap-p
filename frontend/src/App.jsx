@@ -23,21 +23,22 @@ import AppLayout from "./components/AppLayout";
 import DashboardPage from "./pages/DashboardPage";
 import InventoryPage from "./pages/InventoryPage";
 import AgentPage from "./pages/AgentPage";
-import AuditPage from "./pages/AuditPage";
+import RankingPage from "./pages/RankingPage";
+import RankingConfigPage from "./pages/RankingConfigPage";
 
 import ProjectsPage from "./pages/ProjectsPage";
 import ProjectDetailPage from "./pages/ProjectDetailPage";
 import ProjectDashboardPage from "./pages/ProjectDashboardPage";
 import AreaDetailPage from "./pages/AreaDetailPage";
-import CatalogPage from "./pages/CatalogPage";
+import SettingsPage from "./pages/SettingsPage";
 
 import ImportSelectPage from "./pages/ImportSelectPage";
 import UploadPage from "./pages/UploadPage";
+import OverviewPage from "./pages/OverviewPage";
 
-export default function App() {
+export function AppRoutes() {
   return (
-    <BrowserRouter>
-      <Routes>
+    <Routes>
         {/* Các trang full-screen */}
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -45,33 +46,28 @@ export default function App() {
 
         {/* Các trang nằm trong app layout */}
         <Route element={<AppLayout />}>
+          <Route path="/overview" element={<OverviewPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/ai-agent" element={<AgentPage />} />
-          <Route path="/audit" element={<AuditPage />} />
+          <Route path="/ranking" element={<RankingPage />} />
+          <Route path="/ranking/configs" element={<RankingConfigPage />} />
 
           {/* Danh sách dự án */}
           <Route path="/projects" element={<ProjectsPage />} />
 
-          {/* Danh mục: tạo/sửa dự án & phân khu qua Mini CRM */}
-          <Route path="/catalog" element={<CatalogPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
 
-          {/* Giới thiệu chi tiết dự án */}
-          <Route
-            path="/projects/:externalId"
-            element={<ProjectDetailPage />}
-          />
+          {/* Giới thiệu chi tiết dự án + danh sách phân khu */}
+          <Route path="/projects/:externalId" element={<ProjectDetailPage />} />
+
+          {/* Dashboard độc lập của một phân khu */}
+          <Route path="/projects/:id/areas/:areaId" element={<AreaDetailPage />} />
 
           {/* Dashboard tổng của một dự án */}
           <Route
             path="/projects/:externalId/dashboard"
             element={<ProjectDashboardPage />}
-          />
-
-          {/* Chi tiết phân khu */}
-          <Route
-            path="/projects/:id/areas/:areaId"
-            element={<AreaDetailPage />}
           />
 
           {/* Import dữ liệu */}
@@ -81,7 +77,14 @@ export default function App() {
 
         {/* Route không tồn tại */}
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+    </Routes>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
     </BrowserRouter>
   );
 }

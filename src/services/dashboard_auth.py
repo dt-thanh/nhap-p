@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 import sqlalchemy as sa
-from fastapi import Header, HTTPException
+from fastapi import Cookie, Header, HTTPException
 
 from src.config import get_settings
 from src.logging_config import get_logger
@@ -102,7 +102,10 @@ def _extract_bearer(authorization: str | None) -> str | None:
     return value
 
 
-async def authenticate_dashboard(authorization: str | None) -> DashboardPrincipal:
+async def authenticate_dashboard(
+    authorization: str | None,
+    session_cookie: str | None = None,
+) -> DashboardPrincipal:
     """Xác thực `Authorization: Bearer <token>` → vai trò khớp token đó.
 
     503 khi CHƯA cấu hình token nào (đóng, không phải mở). 401 khi thiếu hoặc sai
@@ -111,11 +114,22 @@ async def authenticate_dashboard(authorization: str | None) -> DashboardPrincipa
     """
     settings = get_settings()
 
+    # CP5: đường Entra đứng TRƯỚC token tĩnh — nó là đường của người dùng thật.
+    from src.services import entra_auth  # import cục bộ: tránh vòng import config
+
+    entra_on = entra_auth.entra_configured()
+
+    if session_cookie and entra_on:
+        claims = entra_auth.read_session(session_cookie)
+        raw_scope = claims.get("scope", [])
+        scope: ProjectScope = "ALL" if raw_scope == "ALL" else frozenset(raw_scope or [])
+        return DashboardPrincipal(role=claims["role"], project_scope=scope)
+
     if settings.app_env == "development" and settings.dev_auth_bypass and authorization is None:
         # TODO: Remove DEV_AUTH_BYPASS when real local authentication is implemented.
         return DashboardPrincipal(role="admin", project_scope="ALL")
 
-    if not settings.dashboard_auth_configured:
+    if not settings.dashboard_auth_configured and not entra_on:
         raise HTTPException(
             status_code=503,
             detail={
@@ -130,6 +144,17 @@ async def authenticate_dashboard(authorization: str | None) -> DashboardPrincipa
             status_code=401,
             detail={"message": "Thiếu thông tin xác thực", "error_code": "MISSING_CREDENTIALS"},
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # JWT Entra nhận diện bằng HÌNH DẠNG (ba đoạn ngăn bởi dấu chấm) — không
+    # thử-rồi-bắt-lỗi, để mỗi request máy-với-máy không tạo một lần tra JWKS vô ích.
+    if entra_on and token.count(".") == 2:
+        identity = entra_auth.verify_token(token)
+        role_from_entra = entra_auth.resolve_role(identity)
+        raw = entra_auth.resolve_scope(identity)
+        return DashboardPrincipal(
+            role=role_from_entra,
+            project_scope="ALL" if raw == "ALL" else frozenset(raw),
         )
 
     scopes = _scope_map()
@@ -160,8 +185,9 @@ def require_role(minimum: DashboardRole):
 
     async def dependency(
         authorization: str | None = Header(default=None, alias="Authorization"),
+        absorbiq_session: str | None = Cookie(default=None, alias="absorbiq_session"),
     ) -> DashboardPrincipal:
-        principal = await authenticate_dashboard(authorization)
+        principal = await authenticate_dashboard(authorization, absorbiq_session)
         if _ROLE_LEVEL[principal.role] < _ROLE_LEVEL[minimum]:
             raise HTTPException(
                 status_code=403,

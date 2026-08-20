@@ -10,7 +10,7 @@ export function Logomark({ size = 32, light = false }) {
       style={{
         width: size, height: size, borderRadius: size * 0.28, position: "relative",
         display: "inline-block", flex: "none",
-        background: light ? "rgba(255,255,255,.2)" : `linear-gradient(135deg, ${color.accent}, #8b7ff0)`,
+        background: light ? "rgba(255,255,255,.2)" : `linear-gradient(135deg, ${color.accent}, ${color.accentHover})`,
       }}
       aria-hidden="true"
     >

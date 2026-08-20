@@ -20,9 +20,10 @@ from contextlib import asynccontextmanager
 from app import contract, crud
 from app.config import get_settings
 from app.relay import relay_loop
-from app.routers import areas, deals, outbox, projects, units
+from app.routers import areas, auth_routes, deals, outbox, projects, units
 from app.schemas import HealthOut
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 settings = get_settings()
@@ -52,6 +53,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS: cookie phiên là `HttpOnly` + cross-origin (UI 5174 → API 8100), nên
+# `allow_credentials=True` là BẮT BUỘC — và khi bật nó, trình duyệt TỪ CHỐI
+# origin "*". Vì vậy danh sách origin phải tường minh, từ env.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(auth_routes.router)
 app.include_router(projects.router)
 app.include_router(areas.router)
 app.include_router(units.router)

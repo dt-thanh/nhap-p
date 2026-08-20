@@ -1,0 +1,6 @@
+id,file_id,row_number,column_name,error_code,message,created_at,error_category,json_path,source_record_id,record_locator,field_name,raw_value_redacted,retry_status,resolved_at
+e1855f40-3630-5898-849c-9f5f4c2a349a,62ef2852-5df1-5b19-9ae9-7999a86421ed,\N,\N,UNKNOWN_UNIT_REF,Deal references a unit that is not mirrored yet,2026-07-04T00:00:00Z,business,$.records[7].unit_ref,syn1-D-ORPHAN-1,\N,\N,\N,open,\N
+7caa06c3-461b-55bc-a48a-42d5d3d26c65,62ef2852-5df1-5b19-9ae9-7999a86421ed,\N,\N,INVALID_ENUM,deal_status 'negotiating' is not in the accepted vocabulary,2026-07-04T00:00:00Z,field,$.records[19].deal_status,syn1-D-ORPHAN-2,\N,\N,\N,permanent,\N
+52589056-5423-51fe-93b6-b62f744d81ff,62ef2852-5df1-5b19-9ae9-7999a86421ed,\N,\N,HISTORY_TIMESTAMP_DROPPED,sold_at absent on a record that previously carried one,2026-07-04T00:00:00Z,business,$.records[41].sold_at,syn1-D-ORPHAN-3,\N,\N,\N,resolved,2026-07-05T00:00:00Z
+15bc90ed-36ef-541f-ad78-1fd24ef2fe46,3fa95c70-690b-5351-9a20-8bb960f310a7,\N,\N,UPSTREAM_TIMEOUT,Upstream closed the connection before the batch finished,2026-07-04T00:00:00Z,transport,\N,\N,\N,\N,\N,retrying,\N
+7156f2ac-2723-58de-8230-718519f28c54,5a1385fa-5102-50d4-8ea4-115200ffeeca,118,\N,UNPARSEABLE_DATE,sold_date '31/02/2026' is not a valid calendar date,2026-07-04T00:00:00Z,field,\N,\N,\N,\N,\N,permanent,\N

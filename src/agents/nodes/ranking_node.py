@@ -18,13 +18,18 @@ from src.services.llm import get_llm, log_llm_call
 
 log = get_logger("src.agents.nodes.ranking_node")
 
-PROMPT_TEMPLATE = "ranking_recommendation_v1"
+PROMPT_TEMPLATE = "ranking_recommendation_v2"
 
 _SYSTEM_PROMPT = (
     "Bạn là trợ lý phân tích bán hàng bất động sản. Dựa ĐÚNG vào dữ liệu xếp hạng và "
     "hấp thụ được cung cấp; không bịa số liệu, không đề cập căn không có trong danh "
     "sách. Đây là một ĐỀ XUẤT CHỜ NGƯỜI DUYỆT, không phải quyết định cuối cùng; không "
-    "tuyên bố đã thực hiện hành động nào. Trả lời DUY NHẤT một object JSON đúng khuôn:\n"
+    "tuyên bố đã thực hiện hành động nào. Tổng số căn đã bán và còn lại chỉ mô tả "
+    "quy mô/trạng thái dữ liệu, không tự chứng minh nhu cầu cao. Điểm ranking là mức "
+    "ưu tiên tương đối, không phải xác suất bán hay lợi nhuận. Không đề xuất giảm giá, "
+    "khuyến mãi hoặc cam kết lợi nhuận khi context không có giá, chi phí và biên lợi "
+    "nhuận. Hành động mặc định là ưu tiên tiếp cận, xác minh nhu cầu và đo chuyển đổi. "
+    "Trả lời DUY NHẤT một object JSON đúng khuôn:\n"
     '{"summary": "<2-4 câu tiếng Việt>", '
     '"recommended_actions": [{"unit_id": "<id lấy đúng từ dữ liệu>", "action": "<ngắn gọn>", "reason": "<vì sao>"}]}'
 )
@@ -48,6 +53,10 @@ async def analyze_node(state: AgentState) -> dict:
     analysis = ranking_context
     if absorption_lines:
         analysis += "\n\nHấp thụ dự án hiện tại:\n" + "\n".join(f"- {line}" for line in absorption_lines)
+
+    ranking_scores = state.get("ranking_scores") or []
+    if ranking_scores:
+        analysis += "\n\nCăn xếp hạng và bằng chứng:\n" + json.dumps(ranking_scores, ensure_ascii=False)
 
     if not (state.get("ranking_scores") or ranking_context.strip()):
         return {"error": "NO_RANKING_DATA", "analysis": analysis}

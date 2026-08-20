@@ -34,7 +34,6 @@ from src.models.tables import deals, projects, units
 from src.services.dashboard_auth import DashboardPrincipal, require_project_in_scope, require_role
 from src.services.domain_absorption import (
     CALCULATOR_DOMAIN,
-    CALCULATOR_LEGACY,
     DomainAbsorptionCalculatorService,
     ParallelRunComparator,
 )
@@ -47,7 +46,7 @@ MAX_UNITS_PER_PAGE = 500
 
 # Dashboard đang đọc bộ tính NÀO. Hằng số này là điểm cắt sang duy nhất; đổi nó
 # là một quyết định tường minh, không phải hệ quả phụ của việc chạy song song.
-PRODUCTION_CALCULATOR = CALCULATOR_LEGACY
+PRODUCTION_CALCULATOR = CALCULATOR_DOMAIN
 
 
 def _uuid_or_422(value: str, field: str) -> uuid.UUID:
@@ -180,6 +179,7 @@ async def inventory(
             units_sold=sum(r.units_sold for r in rows),
             units_reserved=sum(r.units_reserved for r in rows),
             units_remaining=sum(r.units_remaining for r in rows),
+            available_remaining_units=sum(r.units_remaining for r in rows),
             units_blocked=sum(r.units_blocked for r in rows),
         )
 
@@ -208,6 +208,7 @@ async def inventory(
                 units_sold=row.units_sold,
                 units_reserved=row.units_reserved,
                 units_remaining=row.units_remaining,
+                available_remaining_units=row.units_remaining,
                 units_blocked=row.units_blocked,
             )
             for row in rows
@@ -293,15 +294,19 @@ async def _load_units(
     response_model=ParallelRunOut,
     summary="Chạy cả hai bộ tính và báo chênh lệch — KHÔNG đổi số liệu sản xuất",
 )
-async def parallel_run(project_id: str = Query(..., description="UUID dự án")) -> ParallelRunOut:
+async def parallel_run(
+    project_id: str = Query(..., description="UUID dự án"),
+    principal: DashboardPrincipal = Depends(require_viewer),
+) -> ParallelRunOut:
     """Đối chiếu bộ tính cũ và bộ tính mới trên cùng một dự án.
 
     Thuần đọc. Không ghi `absorption_daily`, không đổi đường đọc của dashboard.
     `production_calculator` trong kết quả cho biết dashboard đang thực sự đọc bộ
-    nào — nó vẫn là bộ cũ cho tới khi có quyết định cắt sang tường minh.
+    nào. Dashboard hiện đọc domain analytics; legacy chỉ còn để đối chiếu.
     """
-    project_uuid = _uuid_or_422(project_id, "project_id")
+    project_uuid, project_external_id = await _resolve_project_scope(project_id, None)
     await _require_project(project_uuid)
+    require_project_in_scope(principal, project_external_id)
 
     report = await ParallelRunComparator().compare(project_uuid)
     return ParallelRunOut(

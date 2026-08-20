@@ -9,6 +9,7 @@ v1 CỦA CHÚNG vẫn gửi thật và cần một backend giả để không c�
 
 from __future__ import annotations
 
+from app import relay as relay_module
 from app.main import app
 from fastapi.testclient import TestClient
 
@@ -133,17 +134,19 @@ def test_captured_v2_area_payload_references_project_by_external_id(crm_app, bac
 # --- C4: Unit/Deal — MỘT ý định v2 THÊM, v1 không đổi --------------------------
 
 
-def test_unit_create_under_a_local_area_produces_a_v2_event_alongside_v1(crm_app, backend):
+def test_unit_create_under_a_local_area_produces_exactly_one_v2_event(crm_app, backend):
     with _client() as client:
         v1_before = client.get("/outbox", params={"entity": "units"}).json()["total"]
         v2_before = _v2_total(client, "units_v2")
 
         response = client.post("/units", json=UNIT)
         assert response.status_code == 201
-        assert set(response.json()) == {"record", "sync"}, "v1 KHÔNG đổi hình dạng phản hồi"
+        assert set(response.json()) == {"record", "sync"}
 
-        assert client.get("/outbox", params={"entity": "units"}).json()["total"] == v1_before + 1
+        assert client.get("/outbox", params={"entity": "units"}).json()["total"] == v1_before
         assert _v2_total(client, "units_v2") == v2_before + 1
+        assert response.json()["sync"]["status"] == "sync_pending"
+        assert backend.requests == []
 
 
 def test_unit_v2_payload_uses_the_bootstrap_area_external_id(crm_app, backend):
@@ -192,16 +195,21 @@ def test_legacy_unit_without_a_local_area_produces_no_v2_event(crm_app, backend)
     with _client() as client:
         before = _v2_total(client, "units_v2")
         response = client.patch("/units/U-LEGACY-01", json={"unit_status": "reserved"})
-        assert response.status_code == 200
+        assert response.status_code == 422
+        assert response.json()["error_code"] == "UNIT_AREA_REQUIRED"
         assert _v2_total(client, "units_v2") == before, "căn di sản không có area_id — không dựng được ý định v2"
 
-        client.delete("/units/U-LEGACY-01")
+        response = client.delete("/units/U-LEGACY-01")
+        assert response.status_code == 422
+        assert response.json()["error_code"] == "UNIT_AREA_REQUIRED"
         assert _v2_total(client, "units_v2") == before
 
 
-def test_deal_create_update_delete_each_produce_one_v2_row(crm_app, backend):
+async def test_deal_create_update_delete_each_produce_one_v2_row(crm_app, backend):
     with _client() as client:
         client.post("/units", json=UNIT)
+    await relay_module.relay_tick()
+    with _client() as client:
         assert _v2_total(client, "deals_v2") == 0
 
         client.post("/deals", json={"external_unit_id": "U-0001", "deal_status": "lead"})
@@ -214,9 +222,11 @@ def test_deal_create_update_delete_each_produce_one_v2_row(crm_app, backend):
         assert _v2_total(client, "deals_v2") == 3
 
 
-def test_deal_v2_payload_has_no_project_or_area_ref(crm_app, backend):
+async def test_deal_v2_payload_has_no_project_or_area_ref(crm_app, backend):
     with _client() as client:
         client.post("/units", json=UNIT)
+    await relay_module.relay_tick()
+    with _client() as client:
         client.post("/deals", json={"external_unit_id": "U-0001", "deal_status": "lead"})
         batch_id = _v2_rows(client, "deals_v2")[0]["external_batch_id"]
         payload = client.get(f"/outbox/{batch_id}").json()["payload"]
@@ -279,27 +289,24 @@ def test_a_v2_row_http_status_is_still_null_immediately_after_write(crm_app, bac
     assert row["last_error"] is None
 
 
-def test_v2_capture_survives_a_v1_backend_outage(crm_app, backend):
-    """Ý định v2 được ghi TRONG CÙNG transaction với thay đổi nghiệp vụ, TRƯỚC khi
-    v1 cố gửi đi (xem thứ tự trong `crud.create_unit`) — nên nó phải còn nguyên dù
-    lần gửi v1 sau đó timeout/hỏng. Đây là bằng chứng "local commit không phụ
-    thuộc kết quả gửi", áp cho CẢ nhánh v2 lẫn nhánh v1 đã biết."""
+def test_v2_capture_is_committed_before_relay_delivery(crm_app, backend):
+    """The canonical v2 intent is committed before RelayLoop sends anything."""
     backend.time_out()
     with _client() as client:
         response = client.post("/units", json=UNIT)
         assert response.status_code == 201
         assert response.json()["sync"]["status"] == "sync_pending"
+        assert backend.requests == []
 
         assert _v2_total(client, "units_v2") == 1
         v2_row = _v2_rows(client, "units_v2")[0]
         assert v2_row["http_status"] is None
 
 
-def test_v1_resend_is_completely_unaffected_by_the_v2_guard(crm_app, backend):
-    """Kiểm hồi quy trực tiếp: dòng v1 (entity='units') vẫn gửi lại được bình
-    thường — `_reject_v2_delivery` chỉ chặn entity thuộc `V2_CAPTURE_ENTITIES`."""
+def test_canonical_unit_write_has_no_v1_resend_path(crm_app, backend):
+    """Canonical Unit writes expose only the relay-owned v2 row."""
     with _client() as client:
         batch_id = client.post("/units", json=UNIT).json()["sync"]["external_batch_id"]
         response = client.post(f"/outbox/{batch_id}/resend")
-        assert response.status_code == 200
-        assert response.json()["sync"]["status"] == "replayed"
+        assert response.status_code == 409
+        assert response.json()["error_code"] == "V2_DELIVERY_NOT_ENABLED"

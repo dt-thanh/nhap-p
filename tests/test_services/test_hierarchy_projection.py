@@ -705,15 +705,7 @@ def test_no_public_route_can_create_a_project_or_area_outside_ingestion():
     assert creating_routes == [], f"Vẫn còn route TẠO Project/Area ngoài ingestion: {creating_routes}"
 
 
-def test_project_service_editable_fields_exclude_all_canonical_columns():
-    from src.services.projects import AREA_EDITABLE, PROJECT_EDITABLE
+def test_no_project_or_area_write_service_remains():
+    from pathlib import Path
 
-    assert PROJECT_EDITABLE == {"headline", "introduce"}
-    assert AREA_EDITABLE == {"headline", "introduce"}
-
-
-def test_project_service_has_no_create_methods():
-    from src.services.projects import ProjectService
-
-    assert not hasattr(ProjectService, "create_project")
-    assert not hasattr(ProjectService, "create_area")
+    assert not Path("src/services/projects.py").exists()

@@ -10,8 +10,8 @@ gửi nào cả (backend chưa nhận v2). Module này thêm đúng MỘT vòng 
 CHÍNH những dòng outbox đã có — không ghi dòng mới, không đổi payload, không dựng
 đường gửi riêng — và gọi lại ĐÚNG `crud.deliver()` mà đường đồng bộ v1 đã dùng.
 
-Đủ điều kiện relay lại một dòng: `http_status IS NULL` (chưa từng có phản hồi —
-lỗi truyền tải, hoặc một phong bì v2 chưa từng được gửi) HOẶC `http_status >= 500`
+Đủ điều kiện relay lại một dòng v2: `http_status IS NULL` (chưa từng có phản hồi —
+một phong bì mới hoặc lỗi truyền tải) HOẶC `http_status >= 500`
 (backend lỗi phía nó, không phải lỗi hợp đồng). Một dòng có `http_status` 2xx hoặc
 4xx là ngõ cụt vĩnh viễn: 2xx nghĩa là đã tới nơi, 4xx nghĩa là backend đã NHÌN
 đúng payload này và từ chối nó — payload không đổi khi gửi lại (nguyên văn, từ cột
@@ -45,13 +45,10 @@ from app.models import crm_areas, crm_deals, crm_outbox, crm_projects, crm_units
 
 logger = logging.getLogger("minicrm.relay")
 
-# Nhãn outbox → bảng nghiệp vụ để đóng dấu mirrored sau khi gửi thành công. Bốn
-# nhãn v2 trỏ vào ĐÚNG bảng vật lý mà v1 dùng cho unit/deal — `units_v2`/`deals_v2`
-# chỉ khác NHÃN OUTBOX (cố ý, xem `sync_client.V2_CAPTURE_ENTITIES`), không khác
-# bảng lưu.
+# Nhãn outbox → bảng nghiệp vụ để đóng dấu mirrored sau khi gửi thành công. Vòng
+# relay chỉ xử lý các nhãn v2; các dòng Unit/Deal v1 cũ được giữ nguyên để đường
+# resend tường minh xử lý theo chính sách legacy, không bị relay tự động chạm vào.
 _TABLE_FOR_ENTITY: dict[str, sa.Table] = {
-    "units": crm_units,
-    "deals": crm_deals,
     "units_v2": crm_units,
     "deals_v2": crm_deals,
     "projects": crm_projects,
@@ -78,7 +75,10 @@ class RelayTickResult:
 def _pending_query(limit: int) -> Any:
     return (
         sa.select(crm_outbox)
-        .where(sa.or_(crm_outbox.c.http_status.is_(None), crm_outbox.c.http_status >= 500))
+        .where(
+            crm_outbox.c.entity.in_(tuple(sync_client.V2_CAPTURE_ENTITIES)),
+            sa.or_(crm_outbox.c.http_status.is_(None), crm_outbox.c.http_status >= 500),
+        )
         .order_by(crm_outbox.c.created_at.asc())
         .limit(limit)
     )

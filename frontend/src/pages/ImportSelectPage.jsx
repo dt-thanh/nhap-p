@@ -164,13 +164,13 @@ function ZoneCard({ z, onClick }) {
         {st && <span style={{ ...S.statusChip, color: st.fg(), background: st.bg() }}>{st.label}</span>}
       </div>
       <div style={S.zoneMeta}>
-        Còn <b style={{ color: color.ink }}>{z.units_remaining == null ? "N/A" : z.units_remaining}</b> / {z.total_units ?? "N/A"} căn
+        Còn <b style={{ color: color.ink }}>{z.units_remaining == null ? "Chưa có dữ liệu" : z.units_remaining}</b> / {z.total_units ?? "Chưa có dữ liệu"} căn
       </div>
       <div style={S.barWrap}>
         <div style={S.barTrack}>
           <div style={{ ...S.barFill, width: `${soldPct ?? 0}%` }} />
         </div>
-        <span style={S.barLabel}>{soldPct == null ? "N/A" : `${soldPct}% đã bán`}</span>
+        <span style={S.barLabel}>{soldPct == null ? "Chưa có dữ liệu" : `${soldPct}% đã bán`}</span>
       </div>
     </button>
   );

@@ -485,6 +485,11 @@ def _url(kind: str, owner_id) -> str:
     return f"/api/v1/{table}/{owner_id}/image"
 
 
+def _settings_url(kind: str, owner_id) -> str:
+    table = "projects" if kind == "project" else "areas"
+    return f"/api/v1/settings/{table}/{owner_id}/cover-image"
+
+
 @pytest.mark.parametrize("kind", ["project", "area"])
 async def test_http_missing_file_field_is_422(client, http, kind, area_id):
     """Không gửi phần `file` → FastAPI chặn ở validate, không chạm Cloudinary."""
@@ -519,6 +524,27 @@ async def test_http_full_lifecycle_status_codes(client, http, kind, area_id):
     gone = await client.get(url)
     assert gone.status_code == 404
     assert gone.json()["detail"]["error_code"] == "IMAGE_NOT_FOUND"
+
+
+@pytest.mark.parametrize("kind", ["project", "area"])
+async def test_settings_cover_image_endpoint_uploads_and_replaces(client, http, kind, area_id):
+    owner_id = PROJECT_ID if kind == "project" else area_id
+    response = await client.post(_settings_url(kind, owner_id), files={"file": ("a.png", PNG, "image/png")})
+
+    assert response.status_code == 200
+    assert response.json()["owner_id"] == str(owner_id)
+    assert http.uploaded
+
+
+async def test_settings_cover_image_requires_admin(client, http, area_id):
+    response = await client.post(
+        _settings_url("area", area_id),
+        files={"file": ("a.png", PNG, "image/png")},
+        headers={"Authorization": "Bearer conftest-dashboard-viewer-token"},
+    )
+
+    assert response.status_code == 403
+    assert http.uploaded == []
 
 
 @pytest.mark.parametrize("kind", ["project", "area"])

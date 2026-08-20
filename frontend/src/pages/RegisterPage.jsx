@@ -83,7 +83,7 @@ export default function RegisterPage() {
 }
 
 const S = {
-  brandPanel: { background: "linear-gradient(150deg, #5b52e6, #8b7ff0)", padding: 48, display: "flex", flexDirection: "column", justifyContent: "space-between", color: "#fff" },
+  brandPanel: { background: `linear-gradient(150deg, ${color.sidebar}, ${color.sidebarSurface})`, padding: 48, display: "flex", flexDirection: "column", justifyContent: "space-between", color: "#fff" },
   brandHead: { fontFamily: font.display, fontSize: 30, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-.02em" },
   brandSub: { fontSize: 15, opacity: 0.85, marginTop: 14, lineHeight: 1.6, maxWidth: "40ch" },
   brandFoot: { fontSize: 12, opacity: 0.6 },
@@ -96,7 +96,7 @@ const S = {
   pwWrap: { display: "flex", alignItems: "center", border: `1px solid ${color.borderStrong}`, borderRadius: radius.sm, paddingRight: 8, marginBottom: 16 },
   pwToggle: { background: "transparent", border: "none", color: color.accent, fontSize: size.tiny, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", padding: "4px 8px" },
   error: { background: color.dangerSoft, color: color.danger, borderRadius: radius.sm, padding: "9px 12px", fontSize: size.tiny, marginBottom: 16 },
-  submit: { width: "100%", background: color.accent, color: "#fff", border: "none", borderRadius: radius.sm, padding: 13, fontSize: size.small, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 12px rgba(91,82,230,.28)" },
+  submit: { width: "100%", background: color.accent, color: "#fff", border: "none", borderRadius: radius.sm, padding: 13, fontSize: size.small, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 12px rgba(199,167,58,.24)" },
   reg: { fontSize: size.small, color: color.muted, textAlign: "center", marginTop: 18 },
   link: { color: color.accent, fontWeight: 600, cursor: "pointer" },
   back: { fontSize: size.small, color: color.muted, textAlign: "center", marginTop: 8, cursor: "pointer" },

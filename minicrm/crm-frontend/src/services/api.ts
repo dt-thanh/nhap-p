@@ -6,38 +6,28 @@
 const BASE = "/api";
 
 /**
- * Chọn token cho request:
- *   1. Token JWT sau khi user đăng nhập (localStorage/sessionStorage).
- *   2. Fallback DEV-only từ Vite env: VITE_DEV_BEARER_TOKEN.
- *      - CHỈ đọc khi import.meta.env.DEV === true (vite build production sẽ
- *        loại nhánh này bằng dead-code elimination).
- *      - Giá trị lấy từ file `.env.local` của thư mục crm-frontend, KHÔNG
- *        commit vào git. Xem `.env.example` để biết cách khai báo.
- *   Nếu cả hai đều rỗng: request đi ra không có Authorization → backend trả
- *   401/403 và UI hiện lỗi rõ ràng, thay vì âm thầm dùng token mặc định.
+ * CP4: KHÔNG còn hàm chọn token nào ở đây.
+ *
+ * Trước: token đọc từ `localStorage.crm_auth`, kèm fallback
+ * `VITE_DEV_BEARER_TOKEN`. Cả hai đã bị GỠ — token phiên bây giờ nằm trong
+ * cookie `HttpOnly` do Mini CRM phát sau khi Entra xác thực, và trình duyệt tự
+ * đính kèm nhờ `credentials: "include"` bên dưới. JavaScript không đọc được nó,
+ * nên cũng không có gì để một script chèn vào trang đánh cắp.
+ *
+ * Hệ quả cho dev: không còn "token dán tay". Chạy `docker compose up` với
+ * MINICRM_ENTRA_* đã cấu hình rồi đăng nhập thật, hoặc bật đường token tĩnh
+ * bằng MINICRM_LEGACY_TOKEN_AUTH_ENABLED=true (opt-in TƯỜNG MINH, mặc định tắt,
+ * KHÔNG dùng cho production).
  */
-function getToken(): string | null {
-  try {
-    const raw =
-      localStorage.getItem("crm_auth") ||
-      sessionStorage.getItem("crm_auth");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      const stored = parsed.token ?? parsed.access_token ?? null;
-      if (stored) return stored;
-    }
-  } catch {
-    /* ignore corrupt storage */
-  }
 
-  if (import.meta.env.DEV) {
-    const devToken = import.meta.env.VITE_DEV_BEARER_TOKEN;
-    if (typeof devToken === "string" && devToken.length > 0) {
-      return devToken;
-    }
-  }
-
-  return null;
+/** Điều hướng cả trang sang `/auth/login` của backend, nơi bắt đầu vòng OIDC.
+ *  Không dùng `fetch`: bước kế tiếp là một 302 sang tên miền của Microsoft, và
+ *  người dùng PHẢI nhìn thấy thanh địa chỉ đó để biết mình đang gõ mật khẩu ở
+ *  đâu. Một luồng đăng nhập chạy ngầm trong XHR là đúng hình dạng của một trang
+ *  lừa đảo. */
+export function startLogin(returnTo?: string): void {
+  const qs = returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : "";
+  window.location.href = `${BASE}/auth/login${qs}`;
 }
 
 export class ApiError extends Error {
@@ -53,22 +43,40 @@ export class ApiError extends Error {
   }
 }
 
+/** Chống "bão refresh": nhiều request 401 cùng lúc phải dùng CHUNG một lần gọi
+ *  `/auth/refresh`, không mỗi cái một lần. */
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function tryRefreshSession(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(`${BASE}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+    })
+      .then((r) => r.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
+}
+
 export async function apiFetch<T = unknown>(
   path: string,
   opts: RequestInit = {},
+  skipAuthRecovery = false,
 ): Promise<T> {
-  const token = getToken();
   const headers: Record<string, string> = {
     ...(opts.headers as Record<string, string>),
   };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
   if (opts.body && typeof opts.body === "string") {
     headers["Content-Type"] = "application/json";
   }
 
-  const res = await fetch(`${BASE}${path}`, { ...opts, headers });
+  // `credentials: "include"` là thứ khiến cookie phiên `HttpOnly` được gửi kèm.
+  // Thiếu nó, MỌI request đều 401 dù đã đăng nhập thành công.
+  const res = await fetch(`${BASE}${path}`, { ...opts, headers, credentials: "include" });
 
   if (!res.ok) {
     let body: Record<string, unknown> = {};
@@ -77,11 +85,21 @@ export async function apiFetch<T = unknown>(
     } catch {
       /* non-JSON error */
     }
-    throw new ApiError(
-      res.status,
-      (body.error_code as string) ?? `HTTP_${res.status}`,
-      body,
-    );
+    const errorCode = (body.error_code as string) ?? `HTTP_${res.status}`;
+
+    // 401 trên một request BẤT KỲ = phiên đã hết hạn giữa chừng. Thử gia hạn
+    // im lặng đúng MỘT lần rồi phát lại request; vẫn hỏng thì mới đẩy người
+    // dùng về Entra. Không thử lại vòng hai: hai lần 401 liên tiếp nghĩa là
+    // refresh token cũng đã chết, và lặp thêm chỉ tạo vòng redirect vô hạn.
+    if (res.status === 401 && !skipAuthRecovery && !path.startsWith("/auth/")) {
+      const recovered = await tryRefreshSession();
+      if (recovered) {
+        return apiFetch<T>(path, opts, true);
+      }
+      startLogin(window.location.pathname);
+    }
+
+    throw new ApiError(res.status, errorCode, body);
   }
 
   // 204 No Content

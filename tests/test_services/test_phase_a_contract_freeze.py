@@ -18,7 +18,7 @@ Bốn nhóm, và nhóm thứ ba vẫn là nhóm dễ bị hiểu nhầm nhất:
 
 3.  **Ranh giới Phase A: runtime KHÔNG ĐỔI.** Runtime vẫn chỉ biết v1, vẫn chỉ
     biết `units`/`deals`, vẫn chưa có `project_scope`, và — MỚI ở đợt này — bốn
-    đường ghi Project/Area hiện có ở backend (`ProjectService`) vẫn NGUYÊN VẸN,
+    đường ghi Project/Area của ingestion vẫn NGUYÊN VẸN,
     vì gỡ chúng là việc của Phase D, không phải Phase A.
 
     **Khi Phase D/E bắt đầu, chính những test ở nhóm 3 sẽ ĐỎ. Đó là tín hiệu
@@ -81,7 +81,9 @@ V2_BUSINESS_INVALID_FIXTURES = [
 
 
 def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    content = path.read_bytes()
+    normalized = content.replace(b"\r\n", b"\n")
+    return hashlib.sha256(normalized).hexdigest()
 
 
 def _load(path: Path) -> dict:
@@ -354,33 +356,11 @@ def test_the_dashboard_principal_now_has_a_project_scope():
     )
 
 
-def test_the_legacy_backend_write_paths_into_projects_and_areas_are_now_restricted():
-    """ĐÃ ĐỎ ĐÚNG NHƯ DỰ BÁO khi Phase D bắt đầu — cập nhật baseline, không xoá test.
+def test_the_legacy_backend_write_service_is_removed():
+    """Project/Area writes are ingestion-owned; no legacy service may remain."""
+    from pathlib import Path
 
-    §A2.4/§D7: `create_project`/`create_area` (ghi CANONICAL, mâu thuẫn với mô
-    hình Mini-CRM-là-nguồn-sự-thật) đã bị XOÁ khỏi `ProjectService`.
-    `update_project`/`update_area` VẪN CÒN nhưng chỉ còn sửa được `headline`/
-    `introduce` — nội dung hiển thị backend SỞ HỮU RIÊNG (§A2.3), không phải
-    business write. Test này giờ canh chiều NGƯỢC LẠI: không đường nào trong
-    service này còn ghi được vào các cột CANONICAL nữa.
-    """
-    from src.services.projects import AREA_EDITABLE, PROJECT_EDITABLE, ProjectService
-
-    assert not hasattr(ProjectService, "create_project"), "create_project chưa bị xoá — mutation CANONICAL vẫn lộ ra"
-    assert not hasattr(ProjectService, "create_area"), "create_area chưa bị xoá — mutation CANONICAL vẫn lộ ra"
-    assert hasattr(ProjectService, "update_project")
-    assert hasattr(ProjectService, "update_area")
-
-    canonical_project_fields = {"name", "launch_date"}
-    canonical_area_fields = {"area_name", "unit_type", "bedrooms", "area_sqm", "total_units"}
-    assert PROJECT_EDITABLE.isdisjoint(canonical_project_fields), (
-        f"PROJECT_EDITABLE vẫn cho sửa trường CANONICAL: {PROJECT_EDITABLE & canonical_project_fields}"
-    )
-    assert AREA_EDITABLE.isdisjoint(canonical_area_fields), (
-        f"AREA_EDITABLE vẫn cho sửa trường CANONICAL: {AREA_EDITABLE & canonical_area_fields}"
-    )
-    assert PROJECT_EDITABLE == {"headline", "introduce"}
-    assert AREA_EDITABLE == {"headline", "introduce"}
+    assert not Path("src/services/projects.py").exists()
 
 
 # --- 4. Dữ liệu chính sách phân quyền nhất quán -----------------------------

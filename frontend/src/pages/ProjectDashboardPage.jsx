@@ -13,6 +13,7 @@ import { useAsync } from "../hooks/useAsync";
 import AbsorptionDashboard from "../components/dashboard/AbsorptionDashboard";
 import { color, size, radius, space, font } from "../styles/tokens";
 import { Skeleton } from "../components/ui/States";
+import { DASHBOARD_TEXT } from "../components/dashboard/labels";
 
 export default function ProjectDashboardPage() {
   const { externalId } = useParams();
@@ -35,7 +36,7 @@ export default function ProjectDashboardPage() {
             ? `Không có dự án nào khớp "${externalId}".`
             : forbidden
               ? "Token hiện tại không nằm trong phạm vi dự án này."
-              : error.message}
+              : "Đã xảy ra lỗi khi tải dự án. Vui lòng thử lại."}
         </p>
         <button style={S.backBtn} onClick={() => navigate("/projects")}>Về danh sách dự án</button>
       </div>
@@ -51,7 +52,7 @@ export default function ProjectDashboardPage() {
           {loading ? <Skeleton width={100} height={14} /> : project?.name}
         </span>
         <span style={S.sep}>/</span>
-        <span style={S.crumbCur}>Dashboard</span>
+        <span style={S.crumbCur}>{DASHBOARD_TEXT.dashboardTitle}</span>
       </div>
       <AbsorptionDashboard projectExternalId={externalId} />
     </>
@@ -69,6 +70,6 @@ const S = {
   backBtn: {
     background: color.accent, color: "#fff", border: "none", borderRadius: radius.sm,
     padding: `${space(2)}px ${space(4)}px`, fontSize: size.small, fontWeight: 600,
-    cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 12px rgba(91,82,230,.28)",
+    cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 12px rgba(199,167,58,.24)",
   },
 };

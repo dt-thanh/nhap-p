@@ -3,7 +3,7 @@
 // USE_MOCK = false: all data flows through real API.
 // ============================================================
 import type {
-  LoginResponse, Project, Area, Unit, Deal, DealDetail, SalesStaff, Kpi,
+  Project, Area, Unit, Deal, DealDetail, SalesStaff, Kpi,
 } from "../types";
 import { apiGet, apiPost, apiPatch, apiDelete } from "./api";
 import {
@@ -12,40 +12,21 @@ import {
   type BEArea, type BEAreaWriteOut,
   type BEUnit, type BEUnitWriteOut,
   type BEDeal, type BEDealWriteOut,
-  type BELoginOut,
 } from "./adapters";
 
 // ---------- Auth ----------
-export async function login(email: string, password: string): Promise<LoginResponse> {
-  try {
-    const res = await apiPost<BELoginOut>("/auth/login", {
-      login: email,
-      password,
-    });
-    return {
-      token: res.access_token,
-      user: {
-        id: String(res.user.id),
-        name: res.user.login,
-        email: res.user.email ?? email,
-        role: res.user.role,
-      },
-    };
-  } catch {
-    // Fallback: if human auth is not configured, allow demo login
-    // by checking health endpoint and accepting any credentials.
-    try {
-      const health = await apiGet<{ status: string }>("/health");
-      if (health.status === "ok") {
-        return {
-          token: "demo-token-" + Date.now(),
-          user: { id: "demo", name: email.split("@")[0], email, role: "admin" },
-        };
-      }
-    } catch { /* health also failed */ }
-    throw new Error("Không thể đăng nhập. Kiểm tra kết nối backend.");
-  }
-}
+// CP4: `login()` ĐÃ BỊ GỠ khỏi tầng service.
+//
+// Bản cũ gọi `POST /auth/login` với email+password, và khi endpoint đó lỗi thì
+// RƠI VỀ một nhánh "demo": gọi `/health`, thấy `status === "ok"` là trả về
+// `token: "demo-token-" + Date.now()` với `role: "admin"`. Nghĩa là bất kỳ ai
+// mở được trang, gõ một email bất kỳ, đều trở thành admin ngay khi backend
+// chưa cấu hình xác thực — đúng tình huống mà một môi trường mới dựng luôn rơi
+// vào. Nhánh đó không được "sửa cho an toàn hơn"; nó bị XOÁ.
+//
+// Đăng nhập bây giờ là một lần điều hướng trình duyệt sang Entra:
+//   `services/api.ts::startLogin()` → `GET /auth/login` → 302 tới Microsoft.
+// Xem `context/AuthContext.tsx`.
 
 // ---------- Dashboard ----------
 export async function fetchDashboard() {

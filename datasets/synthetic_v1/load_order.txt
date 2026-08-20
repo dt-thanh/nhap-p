@@ -1,0 +1,12 @@
+# FK-safe load order. NULL marker is \N.
+# COPY <table> (<cols>) FROM '<file>' WITH (FORMAT csv, HEADER true, NULL '\N');
+
+projects
+areas
+upload_files
+upload_errors
+crm_source_records
+units
+deals
+sales_records
+inventory_snapshots

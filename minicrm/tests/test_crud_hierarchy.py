@@ -18,6 +18,7 @@ khác Project/Area (Phase B, chưa có đường đẩy nào).
 from __future__ import annotations
 
 import sqlalchemy as sa
+from app import relay as relay_module
 from app.main import app
 from fastapi.testclient import TestClient
 
@@ -28,6 +29,12 @@ PROJECT = {"name": "Khu do thi Ben Xanh", "launch_date": "2026-06-01"}
 
 def _client():
     return TestClient(app, headers=ADMIN_AUTH_HEADER)
+
+
+def _relay():
+    import asyncio
+
+    return asyncio.run(relay_module.relay_tick())
 
 
 def _project(client) -> str:
@@ -67,14 +74,18 @@ def test_valid_project_and_area_are_accepted(crm_app, backend):
             "/units",
             json={"external_area_id": area["external_id"], "unit_code": "A1-01-01", "unit_status": "available"},
         )
+    _relay()
 
     assert response.status_code == 201
     body = response.json()["record"]
     assert body["area_name"] == "A1"
     assert body["unit_type"] == "2PN"
-    assert backend.envelopes[0]["records"][0]["payload"]["area_ref"] == {"area_name": "A1", "unit_type": "2PN"}, (
-        "hình dạng phong bì v1 KHÔNG đổi — vẫn area_name/unit_type, không phải external_area_id"
-    )
+    unit_envelope = next(envelope for envelope in backend.envelopes if envelope["records"][0]["entity"] == "unit")
+    assert unit_envelope["schema_version"] == 2
+    assert unit_envelope["project_ref"] == {"external_project_id": project_id}
+    assert unit_envelope["records"][0]["payload"]["area_ref"] == {
+        "external_area_id": area["external_id"]
+    }
 
 
 def test_missing_area_is_rejected(crm_app, backend):
@@ -255,7 +266,9 @@ def test_existing_unit_regression_id_sequence_and_tombstone_still_work(crm_app, 
             "/units", json={"external_area_id": area["external_id"], "unit_code": "U-01", "unit_status": "available"}
         ).json()["record"]
         assert first["external_id"] == "U-0001"
-        assert first["mirrored_revision"] == 1
+    _relay()
+    with _client() as client:
+        assert client.get(f"/units/{first['external_id']}").json()["mirrored_revision"] == 1
 
         client.delete(f"/units/{first['external_id']}")
         reborn_code_ok = client.post(
@@ -279,7 +292,8 @@ def test_deal_creation_is_unaffected_by_the_units_area_or_project(crm_app, backe
         unit = client.post(
             "/units", json={"external_area_id": area["external_id"], "unit_code": "U-01", "unit_status": "available"}
         ).json()["record"]
-
+    _relay()
+    with _client() as client:
         response = client.post("/deals", json={"external_unit_id": unit["external_id"], "deal_status": "lead"})
 
     assert response.status_code == 201
@@ -292,21 +306,35 @@ def test_deal_creation_still_rejects_a_missing_unit(crm_app, backend):
     assert response.json()["error_code"] == "UNIT_NOT_FOUND"
 
 
-def test_deal_unit_relationship_is_immutable_by_omission_from_the_patch_schema(crm_app, backend):
-    """`DealPatch` không có `external_unit_id` — cùng khuôn với `AreaPatch`
-    không có `external_project_id`. Gửi trường đó phải bị schema từ chối."""
+def test_deal_unit_reassignment_validates_the_project_chain(crm_app, backend):
     with _client() as client:
         project_id = _project(client)
         area = _area(client, project_id)
+        other_area = _area(client, project_id, area_name="A2", unit_type="3PN")
+        other_project = _project(client)
+        foreign_area = _area(client, other_project, area_name="B1", unit_type="2PN")
         unit = client.post(
             "/units", json={"external_area_id": area["external_id"], "unit_code": "U-01", "unit_status": "available"}
         ).json()["record"]
-        deal = client.post("/deals", json={"external_unit_id": unit["external_id"], "deal_status": "lead"}).json()[
-            "record"
-        ]
+        same_project_unit = client.post(
+            "/units", json={"external_area_id": other_area["external_id"], "unit_code": "U-02", "unit_status": "available"}
+        ).json()["record"]
+        foreign_unit = client.post(
+            "/units", json={"external_area_id": foreign_area["external_id"], "unit_code": "U-03", "unit_status": "available"}
+        ).json()["record"]
+    _relay()
+    with _client() as client:
+        deal = client.post("/deals", json={"external_unit_id": unit["external_id"], "deal_status": "lead"}).json()["record"]
+        same_project = client.patch(
+            f"/deals/{deal['external_id']}", json={"external_unit_id": same_project_unit["external_id"]}
+        )
+        foreign = client.patch(
+            f"/deals/{deal['external_id']}", json={"external_unit_id": foreign_unit["external_id"]}
+        )
 
-        response = client.patch(f"/deals/{deal['external_id']}", json={"external_unit_id": "U-9999"})
-    assert response.status_code == 422
+    assert same_project.status_code == 200
+    assert foreign.status_code == 409
+    assert foreign.json()["error_code"] == "DEAL_PROJECT_MISMATCH"
 
 
 # --- 3. Xoá/lưu trữ cha-con --------------------------------------------------
@@ -379,6 +407,8 @@ def test_unit_with_a_live_deal_cannot_be_deleted(crm_app, backend):
         unit = client.post(
             "/units", json={"external_area_id": area["external_id"], "unit_code": "U-01", "unit_status": "available"}
         ).json()["record"]
+    _relay()
+    with _client() as client:
         deal = client.post("/deals", json={"external_unit_id": unit["external_id"], "deal_status": "lead"}).json()[
             "record"
         ]
@@ -400,6 +430,8 @@ def test_unit_can_be_deleted_once_its_deal_is_deleted(crm_app, backend):
         unit = client.post(
             "/units", json={"external_area_id": area["external_id"], "unit_code": "U-01", "unit_status": "available"}
         ).json()["record"]
+    _relay()
+    with _client() as client:
         deal = client.post("/deals", json={"external_unit_id": unit["external_id"], "deal_status": "lead"}).json()[
             "record"
         ]

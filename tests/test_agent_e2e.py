@@ -2,18 +2,33 @@
 
 Dữ liệu dựng THẲNG bằng SQL (không qua seed_dev — seed_dev không gán
 `external_id`, và request/response của API này CHỈ nói external_id, khớp quy
-ước FE toàn dự án). `ranking_configs` v1 do migration 0014 seed KHÔNG sống sót
-qua `truncate_all` (xem `EXTRA_TRUNCATE_TABLES`, `tests/conftest.py`) nên mỗi
-test tự chèn đúng bản config đó.
+ước FE toàn dự án). `ranking_configs` do migration seed KHÔNG sống sót qua
+`truncate_all` (xem `EXTRA_TRUNCATE_TABLES`, `tests/conftest.py`) nên mỗi test
+tự chèn đúng bản config đang phát hành — nay là **v2** (0022).
 
-Bốn căn với kết quả tính TAY trước, rồi so với con số engine trả về — chứng
-minh động cơ đọc dữ liệu THẬT từ `units`/`deals`/`areas`, không phải mô phỏng:
+Năm căn với kết quả tính TAY trước, rồi so với con số engine trả về — chứng
+minh động cơ đọc dữ liệu THẬT từ `units`/`deals`/`areas`, không phải mô phỏng.
+Số liệu dựng cho ra toàn số thập phân CHẴN, để một sai lệch làm tròn không bị
+nhầm thành sai lệch công thức:
 
-    area total_units=10, area_velocity_norm = min((1 sold/30d)/10/0.20, 1) = 0.5
-    area_conversion_norm = 1 sold / 2 deal còn sống = 0.5
-    u1 (available, không deal):        0.5*1 + 0.2*1 + 0.2*0.5 + 0.1*0.5 = 0.85
-    u3 (available, deal reserved):     0.5*1 + 0.2*0 + 0.2*0.5 + 0.1*0.5 = 0.65
-    u4 (sold, deal sold):              0.5*0 + 0.2*0 + 0.2*0.5 + 0.1*0.5 = 0.15
+    5 căn còn sống trong phân khu; 1 deal sold trong 30 ngày qua
+    area_velocity_norm   = min( (1/5) / 0.20, 1 )      = 1.0
+    area_conversion_norm = 1 sold / 5 deal còn sống    = 0.2
+    unit_demand_norm(u2) = min( 3 deal phễu / 3, 1 )   = 1.0   (các căn khác: 0)
+
+    u1 (available, không deal):    0.35*1 + 0.25*0 + 0.20*1.0 + 0.20*0.2 = 0.59
+    u2 (available, 3 deal phễu):   0.35*1 + 0.25*1 + 0.20*1.0 + 0.20*0.2 = 0.84
+    u3 (available, deal reserved): 0.35*1 + 0.25*0 + 0.20*1.0 + 0.20*0.2 = 0.59
+    u4 (sold, deal sold):          0.35*0 + 0.25*0 + 0.20*1.0 + 0.20*0.2 = 0.24
+
+**u1 == u3 là ĐÚNG với v2, không phải lỗi.** v2 bỏ `has_active_deal` (0022:
+tương quan -1.0 với `unit_available` trên dữ liệu thật). u3 ở đây là một trạng
+thái BẤT THƯỜNG — `status='available'` mà lại có deal `reserved` — mà 0021 đã
+cưỡng chế không cho tồn tại trong dữ liệu thật. Canh bất biến đó là việc của một
+luật đối soát, không phải của bộ trọng số; xem docstring 0022.
+
+Mẫu số của `area_velocity_norm` là SỐ CĂN CÒN SỐNG (5), KHÔNG phải
+`areas.total_units` (10) — xem mục 1 docstring `src/ranking/service.py`.
 
 Chạy: `TEST_TARGET=tests/test_agent_e2e.py bash scripts/test_db.sh`
 """
@@ -51,16 +66,18 @@ API = "/api/v1/agent"
 VIEWER_HEADER = {"Authorization": f"Bearer {DASHBOARD_VIEWER_TOKEN}"}
 ADMIN_HEADER = {"Authorization": f"Bearer {DASHBOARD_ADMIN_TOKEN}"}
 
+# Bản sao trọng số v2 của `alembic/versions/0022_ranking_config_v2.py`. Chép chứ
+# không đọc từ DB: config do migration seed bị `truncate_all` xoá trước mỗi test.
 SEED_WEIGHTS = {
     "unit_available": {
-        "weight": "0.50",
+        "weight": "0.35",
         "direction": "positive",
         "missing_value_policy": "zero",
         "min_confidence": "0",
     },
-    "has_active_deal": {
-        "weight": "0.20",
-        "direction": "negative",
+    "unit_demand_norm": {
+        "weight": "0.25",
+        "direction": "positive",
         "missing_value_policy": "zero",
         "min_confidence": "0",
     },
@@ -71,7 +88,7 @@ SEED_WEIGHTS = {
         "min_confidence": "0",
     },
     "area_conversion_norm": {
-        "weight": "0.10",
+        "weight": "0.20",
         "direction": "positive",
         "missing_value_policy": "neutral",
         "min_confidence": "0",
@@ -105,11 +122,11 @@ async def _insert_config(session_factory, *, published: bool = True) -> None:
         await session.execute(
             sa.insert(ranking_configs).values(
                 id=uuid.uuid4(),
-                version=1,
+                version=2,
                 status="published" if published else "draft",
                 weights=SEED_WEIGHTS,
                 min_weight_coverage=Decimal("0.5"),
-                note="test v1",
+                note="test v2",
                 created_by="test",
                 created_at=now,
                 published_by="test" if published else None,
@@ -197,6 +214,25 @@ async def _insert_dataset(session_factory) -> None:
                 updated_at=now,
             )
         )
+
+        # u2: ĐÚNG `DEMAND_SATURATION` deal đang trong phễu, để `unit_demand_norm`
+        # bão hoà ở 1.0 CHẴN. Không dùng partial unique `uq_deals_active_per_unit`
+        # vì không trạng thái nào trong phễu là trạng thái GIỮ — một căn được phép
+        # có nhiều người cùng quan tâm, và đó chính là tín hiệu cần đo.
+        for i, funnel_status in enumerate(("lead", "qualified", "viewing"), start=1):
+            await session.execute(
+                sa.insert(deals).values(
+                    id=uuid.uuid4(),
+                    source_system="mini_crm",
+                    source_instance_id="test",
+                    external_deal_id=f"d-u2-{i}",
+                    unit_id=UNIT_IDS["u2"],
+                    status=funnel_status,
+                    source_status=funnel_status,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
         await session.commit()
 
 
@@ -247,6 +283,26 @@ async def test_authenticated_call_creates_a_pending_recommendation(http):
     assert uuid.UUID(body["ranking_run_id"])
 
 
+async def test_recommendation_is_grounded_and_uses_business_readable_unit_codes(http):
+    response = await http.post(
+        f"{API}/recommendations", json={"project_id": "P-AGENT-TEST-1"}, headers=ADMIN_HEADER
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert "## Thực trạng hiện tại" in body["summary"]
+    assert "## Điểm đáng lưu ý" in body["summary"]
+    assert "## Kế hoạch đề xuất" in body["summary"]
+    assert "cho thấy nhu cầu cao" not in body["summary"]
+    assert body["confidence"] == 1.0
+    assert body["confidence"] != 0.85
+    assert body["recommended_actions"]
+    assert all(action["unit_id"].startswith("u") for action in body["recommended_actions"])
+    assert all(action["action"] == "Ưu tiên tiếp cận và xác minh nhu cầu" for action in body["recommended_actions"])
+    assert all(item["area_name"] == "Tower A" for item in body["evidence"])
+    assert all("top_driver" in item and "signal_coverage" in item for item in body["evidence"])
+
+
 async def test_engine_reads_real_db_data_not_simulated(http):
     """`ranking_scores` phải khớp CON SỐ TÍNH TAY từ dữ liệu units/deals đã chèn
     — bằng chứng trực tiếp rằng động cơ đọc DB thật, không phải giả lập."""
@@ -265,11 +321,19 @@ async def test_engine_reads_real_db_data_not_simulated(http):
         run_row = (await session.execute(sa.select(ranking_runs).where(ranking_runs.c.id == run_id))).mappings().first()
 
     scores_by_unit = {str(r.unit_id): r.score for r in rows}
-    assert scores_by_unit[str(UNIT_IDS["u1"])] == Decimal("0.8500")
-    assert scores_by_unit[str(UNIT_IDS["u3"])] == Decimal("0.6500")
-    assert scores_by_unit[str(UNIT_IDS["u4"])] == Decimal("0.1500")
+    assert scores_by_unit[str(UNIT_IDS["u1"])] == Decimal("0.5900")
+    assert scores_by_unit[str(UNIT_IDS["u2"])] == Decimal("0.8400")
+    assert scores_by_unit[str(UNIT_IDS["u3"])] == Decimal("0.5900")
+    assert scores_by_unit[str(UNIT_IDS["u4"])] == Decimal("0.2400")
     assert run_row["status"] == "completed"
     assert run_row["units_ranked"] == 5
+
+    # Điều mà v1 KHÔNG làm được: một căn còn trống được xếp trên những căn còn
+    # trống khác CÙNG phân khu, nhờ tín hiệu mức căn (`unit_demand_norm`). Dưới
+    # v1, cả bốn căn `available` ở đây có ĐÚNG một điểm giống hệt nhau và
+    # `rank_in_project` hoàn toàn do tie-break `created_at` quyết định.
+    rank_by_unit = {str(r.unit_id): r.rank_in_project for r in rows}
+    assert rank_by_unit[str(UNIT_IDS["u2"])] == 1
 
     # O prompt gửi cho LLM phải chứa unit_id thật, không phải văn bản bịa.
     assert any(str(UNIT_IDS["u1"]) in call for call in http.fake_llm.calls)

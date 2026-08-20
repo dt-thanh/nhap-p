@@ -27,8 +27,9 @@ import secrets
 from dataclasses import dataclass
 from typing import Literal
 
+from app import entra, session as session_mod
 from app.config import get_settings
-from fastapi import Header, HTTPException
+from fastapi import Cookie, Header, HTTPException
 
 MiniCrmRole = Literal["business_viewer", "pipeline_operator", "admin"]
 
@@ -51,6 +52,12 @@ class MiniCrmPrincipal:
 
 def _configured_tokens() -> list[tuple[MiniCrmRole, str]]:
     settings = get_settings()
+    # CP4: token TĨNH chỉ còn sống khi được bật TƯỜNG MINH. Ở production
+    # (`legacy_token_auth_enabled=false`) hàm này trả rỗng, nên `auth_configured()`
+    # sai và đường token tĩnh biến mất hoàn toàn — kể cả khi biến môi trường
+    # token vẫn còn sót lại trong `.env` cũ.
+    if not settings.legacy_token_auth_enabled:
+        return []
     pairs: list[tuple[MiniCrmRole, str]] = [
         ("business_viewer", settings.auth_business_viewer_token.get_secret_value()),
         ("pipeline_operator", settings.auth_pipeline_operator_token.get_secret_value()),
@@ -91,20 +98,39 @@ def _extract_bearer(authorization: str | None) -> str | None:
     return value
 
 
-async def authenticate(authorization: str | None) -> MiniCrmPrincipal:
-    """Xác thực `Authorization: Bearer <token>` → vai trò + phạm vi khớp token đó.
+async def authenticate(
+    authorization: str | None,
+    session_cookie: str | None = None,
+) -> MiniCrmPrincipal:
+    """Ba lớp, theo ĐÚNG thứ tự này (CP4):
 
-    503 khi CHƯA cấu hình token nào. 401 khi thiếu hoặc sai token — không phân
-    biệt "thiếu" với "sai" trong thông báo, tránh lộ manh mối cho người đang dò.
+    1. **Cookie phiên** (`minicrm_session`) — đường của người dùng trình duyệt
+       sau khi đã qua Entra. Rẻ nhất (HMAC) và phổ biến nhất, nên đứng đầu.
+    2. **`Authorization: Bearer <JWT Entra>`** — đường của client không phải
+       trình duyệt (script, Product Backend gọi thay người dùng, test tích hợp).
+       Xác minh RS256 + JWKS thật.
+    3. **Token TĨNH D-14** — chỉ khi `MINICRM_LEGACY_TOKEN_AUTH_ENABLED=true`.
+
+    503 khi KHÔNG lớp nào được cấu hình. 401 khi có lớp nhưng không lớp nào
+    nhận — không phân biệt "thiếu" với "sai" trong thông báo.
     """
-    if not auth_configured():
+    entra_on = entra.entra_configured() and session_mod.session_configured()
+
+    if not entra_on and not auth_configured():
         raise HTTPException(
             status_code=503,
             detail={
-                "message": "Xác thực ghi của Mini CRM chưa được cấu hình (chưa có token vai trò nào).",
+                "message": "Xác thực Mini CRM chưa được cấu hình (chưa có Entra, chưa có token vai trò).",
                 "error_code": "AUTH_DISABLED",
             },
         )
+
+    # --- Lớp 1: cookie phiên -------------------------------------------------
+    if session_cookie and session_mod.session_configured():
+        claims = session_mod.read_session(session_cookie)
+        scope_raw = claims.get("scope", [])
+        scope: ProjectScope = "ALL" if scope_raw == "ALL" else frozenset(scope_raw or [])
+        return MiniCrmPrincipal(role=claims["role"], project_scope=scope)
 
     token = _extract_bearer(authorization)
     if not token:
@@ -114,6 +140,18 @@ async def authenticate(authorization: str | None) -> MiniCrmPrincipal:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # --- Lớp 2: JWT Entra ----------------------------------------------------
+    # Phân biệt bằng HÌNH DẠNG (JWT có ba đoạn ngăn bởi dấu chấm), không bằng
+    # thử-rồi-bắt-lỗi: thử `verify_token` trên một token tĩnh sẽ tạo một lần gọi
+    # JWKS vô ích cho mỗi request máy-với-máy.
+    if entra_on and token.count(".") == 2:
+        identity = entra.verify_token(token)
+        role = session_mod.resolve_role(identity)
+        scope_value = session_mod.resolve_scope(identity, role)
+        scope = "ALL" if scope_value == "ALL" else frozenset(scope_value)
+        return MiniCrmPrincipal(role=role, project_scope=scope)
+
+    # --- Lớp 3: token tĩnh D-14 (opt-in) ------------------------------------
     scopes = _scope_map()
     for role, configured in _configured_tokens():
         if secrets.compare_digest(configured, token):
@@ -134,8 +172,9 @@ def require_role(minimum: MiniCrmRole):
 
     async def dependency(
         authorization: str | None = Header(default=None, alias="Authorization"),
+        minicrm_session: str | None = Cookie(default=None, alias=session_mod.SESSION_COOKIE),
     ) -> MiniCrmPrincipal:
-        principal = await authenticate(authorization)
+        principal = await authenticate(authorization, minicrm_session)
         if _ROLE_LEVEL[principal.role] < _ROLE_LEVEL[minimum]:
             raise HTTPException(
                 status_code=403,

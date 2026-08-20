@@ -10,6 +10,7 @@ from src.api.files import router as files_router
 from src.api.inventory import router as inventory_router
 from src.api.ops import router as ops_router
 from src.api.parallel_run import router as parallel_run_router
+from src.api.ranking import router as ranking_router
 from src.api.reconciliation import router as reconciliation_router
 from src.api.routes import router
 from src.api.sync import router as sync_router
@@ -56,6 +57,12 @@ app.include_router(reconciliation_router, prefix="/api/v1")
 app.include_router(ops_router, prefix="/api/v1")
 app.include_router(parallel_run_router, prefix="/api/v1")
 app.include_router(agent_router, prefix="/api/v1")
+app.include_router(ranking_router, prefix="/api/v1")
+
+# CP5 — SSO qua Microsoft Entra ID (cùng tenant với Mini CRM).
+from src.api.auth import router as auth_router  # noqa: E402
+
+app.include_router(auth_router, prefix="/api/v1")
 
 
 @app.exception_handler(Exception)

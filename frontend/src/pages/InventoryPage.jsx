@@ -1,5 +1,5 @@
 // frontend/src/pages/InventoryPage.jsx
-// S05 — Giỏ hàng: tồn kho THẬT theo từng căn, chiếu từ Mini CRM (units/deals)
+// S05 — Tồn kho: dữ liệu THẬT theo từng căn, chiếu từ Mini CRM (units/deals)
 // qua GET /inventory (bộ tính domain_units_deals — KHÔNG phải dashboard cũ,
 // đọc units/deals trực tiếp, không qua sales_records/inventory_snapshots).
 //
@@ -13,6 +13,7 @@ import ProjectSelector from "../components/ProjectSelector";
 import { SectionState, fmt } from "../components/ui/States";
 import GlobalKeyframes from "../components/ui/GlobalKeyframes";
 import { color, size, radius, shadow, space, font } from "../styles/tokens";
+import { areaLabel } from "../utils/areaLabel";
 
 const STATUS_FILTERS = [
   { key: "all", label: "Tất cả" },
@@ -72,7 +73,7 @@ export default function InventoryPage() {
     <>
       <GlobalKeyframes />
       <div style={S.head}>
-        <h1 style={S.h1}>Giỏ hàng</h1>
+        <h1 style={S.h1}>Tồn kho</h1>
         <p style={S.sub}>Tồn kho từng căn theo dự án, chiếu trực tiếp từ dữ liệu vận hành (units/deals).</p>
       </div>
 
@@ -98,7 +99,7 @@ export default function InventoryPage() {
                 .filter((a) => a.external_id)
                 .map((a) => (
                   <option key={a.external_id} value={a.external_id}>
-                    {a.area_name} · {a.unit_type}
+                    {areaLabel(a)}
                   </option>
                 ))}
             </select>
@@ -128,8 +129,8 @@ export default function InventoryPage() {
             <div style={S.totals}>
               <TotalCard label="Tổng số căn" value={totals.total_units} />
               <TotalCard label="Đã bán" value={totals.units_sold} />
-              <TotalCard label="Đang giữ" value={totals.units_reserved} />
-              <TotalCard label="Còn trống" value={totals.units_remaining} />
+              <TotalCard label="Đang giữ chỗ" value={totals.units_reserved} />
+              <TotalCard label="Có thể bán ngay" value={totals.units_remaining} />
               <TotalCard label="Tạm khoá" value={totals.units_blocked} />
             </div>
           )}

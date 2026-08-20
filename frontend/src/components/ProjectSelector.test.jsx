@@ -26,7 +26,7 @@ describe("ProjectSelector", () => {
 
   it("shows a safe unauthorized message instead of an empty/broken selector", () => {
     render(<ProjectSelector projects={[]} value={null} onChange={() => {}} loading={false} status="unauthorized" />);
-    expect(screen.getByRole("alert")).toHaveTextContent(/kết nối lại/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(/không thấy được dự án nào/i);
   });
 
   it("shows a loading state, not an empty-looking selector", () => {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ChevronRight, Plus, Trash2, Pencil } from "lucide-react";
+import { absorbiqProjectUrl } from "../lib/absorbiq";
+import { ChevronRight, Plus, Trash2, Pencil, ExternalLink } from "lucide-react";
 import {
   fetchProjectById, fetchAreas,
   createArea, updateArea, deleteArea,
@@ -73,9 +74,25 @@ export function ProjectDetail() {
           <h1 className="font-display text-3xl font-bold text-ink">{project.name}</h1>
           <p className="mt-1 text-sm text-ink-muted">{project.tagline}</p>
         </div>
-        <button className="btn-teal" onClick={() => setShowCreate(true)}>
-          <Plus className="h-4 w-4" /> Thêm phân khu
-        </button>
+        <div className="flex items-center gap-2">
+          {/* CP6 — mở ĐÚNG dự án này ở AbsorbIQ, khớp theo `external_id`.
+              Ẩn hẳn khi chưa cấu hình VITE_PRODUCT_FRONTEND_URL: một nút dẫn
+              tới link hỏng tệ hơn là không có nút. */}
+          {absorbiqProjectUrl(project.id) && (
+            <a
+              className="btn-ghost"
+              href={absorbiqProjectUrl(project.id)!}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Mở dự án này trong AbsorbIQ (phân tích & dự báo)"
+            >
+              <ExternalLink className="h-4 w-4" /> Xem trong AbsorbIQ
+            </a>
+          )}
+          <button className="btn-teal" onClick={() => setShowCreate(true)}>
+            <Plus className="h-4 w-4" /> Thêm phân khu
+          </button>
+        </div>
       </div>
 
       {error && <div className="mb-4 rounded-lg bg-status-redbg px-4 py-2 text-sm text-status-red">{error}</div>}

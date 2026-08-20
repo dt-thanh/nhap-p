@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SyncBadge } from "../components/ui/SyncBadge";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
 import { fetchUnits, createUnit, updateUnit, deleteUnit } from "../services";
 import { apiGet } from "../services/api";
@@ -86,6 +87,7 @@ export function Units() {
               <th className="th-cell">Phân khu</th>
               <th className="th-cell">Loại</th>
               <th className="th-cell">Trạng thái</th>
+              <th className="th-cell">Đồng bộ</th>
               <th className="th-cell"></th>
             </tr>
           </thead>
@@ -99,6 +101,7 @@ export function Units() {
                   <td className="td-cell text-ink-muted">{u.tower}</td>
                   <td className="td-cell text-ink-muted">{u.type}</td>
                   <td className="td-cell"><Badge tone={st.tone} dot>{st.label}</Badge></td>
+                  <td className="td-cell"><SyncBadge sync={u.sync} /></td>
                   <td className="td-cell">
                     <div className="flex gap-1">
                       <button onClick={() => setModalUnit(u)} className="rounded p-1 text-ink-faint hover:bg-surface-page hover:text-ink" title="Sửa">
@@ -113,7 +116,7 @@ export function Units() {
               );
             })}
             {units.length === 0 && (
-              <tr><td colSpan={6} className="py-12 text-center text-ink-muted">Chưa có sản phẩm nào. Tạo phân khu trước, rồi thêm sản phẩm.</td></tr>
+              <tr><td colSpan={7} className="py-12 text-center text-ink-muted">Chưa có sản phẩm nào. Tạo phân khu trước, rồi thêm sản phẩm.</td></tr>
             )}
           </tbody>
         </table>

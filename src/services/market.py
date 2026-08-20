@@ -91,7 +91,6 @@ class DatabaseMarketRepository:
                 "description": "Market data is read from PostgreSQL; scenario mutation is disabled.",
             }
         ]
-        self.logs: list[dict] = []
 
     async def snapshot(self, project_id: str | None = None, *, allowed_external_ids=None) -> dict:
         project = await self._load_project(project_id, allowed_external_ids=allowed_external_ids)

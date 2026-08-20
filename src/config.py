@@ -96,6 +96,29 @@ class Settings(BaseSettings):
     # xem docs/crm/phase_a_domain_freeze.md §A7.3.
     dashboard_project_scope: SecretStr = SecretStr("")
 
+    # --- Microsoft Entra ID / SSO (CP5) --------------------------------------
+    # CÙNG TENANT với Mini CRM — đó là toàn bộ cơ chế SSO. Client id/secret có
+    # thể (nên) khác: hai app registration tách bạch, thu hồi được độc lập.
+    # KHÔNG hard-code; rỗng = đường Entra chưa bật.
+    entra_tenant_id: str = ""
+    entra_client_id: str = ""
+    entra_client_secret: SecretStr = SecretStr("")
+    entra_redirect_uri: str = ""
+    entra_post_logout_redirect_uri: str = ""
+    entra_authority_host: str = "https://login.microsoftonline.com"
+    entra_issuer: str = ""
+    entra_audience: str = ""
+    entra_scopes: str = "openid profile email offline_access"
+    entra_allowed_algorithms: str = "RS256"
+    entra_clock_skew_seconds: int = 60
+    entra_role_map: SecretStr = SecretStr("")
+    entra_project_scope: SecretStr = SecretStr("")
+
+    session_secret: SecretStr = SecretStr("")
+    session_ttl_seconds: int = 3600
+    session_cookie_secure: bool = True
+    session_cookie_samesite: str = "lax"
+
     # Cloudinary — lưu ảnh bìa dự án / phân khu.
     # SecretStr để repr(settings) không lộ key khi log hay debug.
     cloudinary_cloud_name: str = ""

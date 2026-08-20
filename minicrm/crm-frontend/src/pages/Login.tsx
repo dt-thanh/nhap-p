@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Mail, Lock, Eye, EyeOff, ArrowRight, Building2, LineChart, Users2, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Navigate, useSearchParams } from "react-router-dom";
+import { ArrowRight, Building2, LineChart, Users2, ShieldCheck } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 const FEATURES = [
@@ -10,30 +10,28 @@ const FEATURES = [
 ];
 
 export function Login() {
-  const { login } = useAuth();
-  const navigate = useNavigate();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPw, setShowPw] = useState(false);
-  const [remember, setRemember] = useState(true);
+  // CP4: KHÔNG còn ô email/mật khẩu. Mini CRM không nhận, không chuyển tiếp và
+  // không nhìn thấy mật khẩu người dùng — Microsoft Entra giữ toàn bộ phần đó.
+  // Một form mật khẩu ở đây, dù chỉ chuyển tiếp sang IdP, cũng dạy người dùng
+  // thói quen gõ mật khẩu công ty vào một trang không phải của Microsoft.
+  const { user, loading, login } = useAuth();
+  const [params] = useSearchParams();
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
 
-  async function handleSubmit() {
-    setError("");
-    if (!email.trim()) return setError("Vui lòng nhập email");
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setError("Email không hợp lệ");
-    if (!password) return setError("Vui lòng nhập mật khẩu");
-    setLoading(true);
-    try {
-      await login(email, password, remember);
-      navigate("/", { replace: true });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    const code = params.get("error");
+    if (!code) return;
+    setError(
+      code === "NO_ROLE_ASSIGNED"
+        ? "Tài khoản của bạn đã đăng nhập được nhưng chưa được cấp quyền trong Mini CRM. Liên hệ quản trị hệ thống để được gán app role."
+        : "Đăng nhập không thành công. Vui lòng thử lại hoặc liên hệ quản trị hệ thống.",
+    );
+  }, [params]);
+
+  if (loading) {
+    return <div className="flex min-h-screen items-center justify-center text-ink-muted">Đang kiểm tra phiên đăng nhập…</div>;
   }
+  if (user) return <Navigate to="/" replace />;
 
   return (
     <div className="flex min-h-screen bg-surface-page">
@@ -76,52 +74,20 @@ export function Login() {
           <p className="mt-1 text-sm text-ink-muted">Đăng nhập để tiếp tục vào AbsorptionForecast CRM</p>
 
           <div className="mt-7 space-y-5">
-            <div>
-              <label className="mb-1.5 block text-sm font-semibold text-ink">Email</label>
-              <div className="relative">
-                <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
-                <input value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSubmit()} className="input pl-10" placeholder="you@company.com" />
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-sm font-semibold text-ink">Mật khẩu</label>
-              <div className="relative">
-                <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
-                <input type={showPw ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSubmit()} className="input px-10" placeholder="Nhập mật khẩu" />
-                <button type="button" onClick={() => setShowPw((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-faint hover:text-ink" aria-label="Hiện/ẩn mật khẩu">
-                  {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-ink">
-                <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="h-4 w-4 rounded border-line-strong text-teal focus:ring-teal" />
-                Ghi nhớ đăng nhập
-              </label>
-              <button className="text-sm font-semibold text-teal hover:underline">Quên mật khẩu?</button>
-            </div>
-
             {error && <p className="rounded-lg bg-status-redbg px-3 py-2 text-sm text-status-red">{error}</p>}
 
-            <button onClick={handleSubmit} disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-gold to-gold-light py-3 text-sm font-semibold text-white transition-opacity hover:opacity-95 disabled:opacity-60">
-              {loading ? "Đang đăng nhập…" : "Đăng nhập"}
-              {!loading && <ArrowRight className="h-4 w-4" />}
-            </button>
-
-            <div className="flex items-center gap-3">
-              <div className="h-px flex-1 bg-line" />
-              <span className="text-xs text-ink-faint">hoặc tiếp tục với</span>
-              <div className="h-px flex-1 bg-line" />
-            </div>
-
-            <button className="btn-ghost w-full py-3">
-              <Building2 className="h-4 w-4" /> Đăng nhập bằng SSO
+            <button
+              onClick={() => login(params.get("return_to") ?? "/")}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-gold to-gold-light py-3 text-sm font-semibold text-white transition-opacity hover:opacity-95"
+            >
+              <Building2 className="h-4 w-4" />
+              Đăng nhập bằng tài khoản công ty
+              <ArrowRight className="h-4 w-4" />
             </button>
 
             <p className="rounded-lg bg-surface-page px-3 py-2 text-center text-xs text-ink-muted">
-              Chế độ demo: nhập email bất kỳ và mật khẩu ≥ 6 ký tự để vào.
+              Bạn sẽ được chuyển sang trang đăng nhập của Microsoft. Mini CRM
+              không lưu mật khẩu của bạn.
             </p>
           </div>
         </div>

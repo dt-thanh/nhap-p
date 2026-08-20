@@ -8,7 +8,9 @@ chối. Không có route nào set thẳng `status='approved'` ngoài `/approve`.
 from __future__ import annotations
 
 import uuid
+from collections import Counter
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException
@@ -49,6 +51,125 @@ require_approver = require_role("pipeline_operator")
 require_executor = require_role("admin")
 
 _RANKING_ERROR_STATUS = {"NO_ACTIVE_CONFIG": 503, "PROJECT_NOT_FOUND": 404}
+
+
+_FEATURE_LABELS = {
+    'unit_available': 'căn đang sẵn sàng bán',
+    'unit_demand_norm': 'mức quan tâm ở cấp căn',
+    'area_velocity_norm': 'tốc độ bán của phân khu',
+    'area_conversion_norm': 'khả năng chuyển đổi của phân khu',
+}
+
+
+def _as_decimal(value: object) -> Decimal:
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal('0')
+
+
+def _signal_coverage(contributions: dict) -> Decimal:
+    '''Tỷ trọng trọng số dùng tín hiệu thật, không tính giá trị điền mặc định.'''
+    total = sum((_as_decimal(item.get('weight')) for item in contributions.values()), Decimal('0'))
+    if total <= 0:
+        return Decimal('0')
+    resolved = sum(
+        (
+            _as_decimal(item.get('weight'))
+            for item in contributions.values()
+            if item.get('source') == 'resolved'
+        ),
+        Decimal('0'),
+    )
+    return (resolved / total).quantize(Decimal('0.0001'))
+
+
+def _top_driver(contributions: dict) -> str:
+    resolved = [
+        (key, _as_decimal(item.get('contribution')))
+        for key, item in contributions.items()
+        if item.get('source') == 'resolved'
+    ]
+    if not resolved:
+        return 'chưa có tín hiệu nổi trội'
+    key, _ = max(resolved, key=lambda item: item[1])
+    return _FEATURE_LABELS.get(key, key)
+
+
+def _proposal_quality(selected: list[dict]) -> tuple[str, float | None, int]:
+    '''Đánh giá rủi ro dùng ranking và độ phủ tín hiệu; không phải xác suất bán.'''
+    if not selected:
+        return 'high', None, 0
+    coverages = [_as_decimal(item['signal_coverage']) for item in selected]
+    average_coverage = sum(coverages, Decimal('0')) / Decimal(len(coverages))
+    distinct_scores = len({item['score'] for item in selected})
+    top_score = max(_as_decimal(item['score']) for item in selected)
+    top_ties = sum(1 for item in selected if _as_decimal(item['score']) == top_score)
+    if average_coverage < Decimal('0.50') or distinct_scores == 1:
+        risk = 'high'
+    elif average_coverage < Decimal('0.80') or top_ties > max(2, len(selected) // 2):
+        risk = 'medium'
+    else:
+        risk = 'low'
+    return risk, float(average_coverage.quantize(Decimal('0.0001'))), top_ties
+
+
+def _build_business_summary(
+    *,
+    project_name: str,
+    absorption,
+    status_counts: dict[str, int],
+    config_version: int,
+    selected: list[dict],
+    top_ties: int,
+) -> str:
+    available = status_counts.get('available', 0)
+    reserved = status_counts.get('reserved', 0)
+    sold_live = status_counts.get('sold', 0)
+    total_live = sum(status_counts.values())
+    score_values = [_as_decimal(item['score']) for item in selected]
+    score_range = (
+        f'{min(score_values):.4f}–{max(score_values):.4f}' if score_values else 'không có căn đủ điều kiện'
+    )
+    area_counts = Counter(item['area_name'] for item in selected)
+    area_note = 'chưa có căn đủ điều kiện'
+    if area_counts:
+        area_name, count = area_counts.most_common(1)[0]
+        area_note = f'{count}/{len(selected)} căn thuộc {area_name}'
+    tie_note = (
+        f'Có {top_ties} căn cùng điểm cao nhất; thứ tự giữa các căn đồng điểm chỉ là quy tắc phá hòa.'
+        if top_ties > 1
+        else 'Căn đứng đầu không đồng điểm với căn kế tiếp trong nhóm đề xuất.'
+    )
+    live_note = (
+        f'Bản ghi căn đang hoạt động gồm **{available} căn sẵn sàng bán**, '
+        f'**{reserved} căn giữ chỗ** và **{sold_live} căn đã bán** (tổng {total_live}).'
+    )
+    aggregate_note = (
+        f'Chuỗi tổng hợp bán hàng/tồn kho ghi nhận **{absorption.units_sold} căn đã bán** và '
+        f'**{absorption.units_remaining} căn còn lại**. Hai số này thuộc nguồn tổng hợp lịch sử, '
+        'không được dùng riêng để kết luận nhu cầu cao hay thấp.'
+    )
+    return '\n'.join(
+        [
+            '## Thực trạng hiện tại',
+            f'- **{project_name}:** {live_note}',
+            f'- {aggregate_note}',
+            f'- Ranking config v{config_version} chọn **{len(selected)} căn đang sẵn sàng bán**; dải điểm {score_range}.',
+            '',
+            '## Điểm đáng lưu ý',
+            f'- Mức tập trung của danh sách: {area_note}.',
+            f'- {tie_note}',
+            '- Điểm ranking là **mức ưu tiên tương đối**, không phải xác suất bán, doanh thu hay biên lợi nhuận.',
+            '- Database hiện chưa có đủ giá bán, chi phí ưu đãi và biên lợi nhuận để khuyến nghị giảm giá hoặc khẳng định tối đa hóa lợi nhuận.',
+            '',
+            '## Kế hoạch đề xuất',
+            f'1. Sau khi được duyệt, tạo danh sách ưu tiên cho {len(selected)} căn bên dưới; chưa đổi giá, trạng thái căn hay dữ liệu CRM.',
+            '2. Giao đội bán hàng xác minh nhu cầu và ghi nhận các mốc liên hệ → quan tâm → xem nhà → giữ chỗ trong 7 ngày.',
+            '3. So sánh tỷ lệ chuyển đổi của nhóm ưu tiên với nhóm đối chứng; chỉ mở rộng chiến dịch khi kết quả tốt hơn và dữ liệu đủ tin cậy.',
+            '4. Mọi thay đổi chính sách giá/ưu đãi phải là một đề xuất riêng, có dữ liệu biên lợi nhuận và người có thẩm quyền phê duyệt.',
+        ]
+    )
 
 
 def _uuid_or_422(value: str, field: str) -> uuid.UUID:
@@ -118,6 +239,9 @@ async def create_recommendation(
             "score": str(s.score),
             "rank_in_project": s.rank_in_project,
             "rank_in_area": s.rank_in_area,
+            'coverage': str(s.coverage),
+            'signal_coverage': str(_signal_coverage(s.contributions)),
+            'contributions': s.contributions,
         }
         for s in sorted((s for s in run.scores if not s.skipped), key=lambda s: s.rank_in_project)[:20]
     ]
@@ -167,6 +291,70 @@ async def create_recommendation(
             for item in evidence
         ]
 
+    # Khóa đầu ra hiển thị vào dữ liệu đã kiểm chứng. LLM không được tự chọn UUID,
+    # tự suy diễn nhu cầu, hoặc tự đề xuất giảm giá từ hai số tổng tồn/đã bán.
+    detail_query = (
+        sa.select(units.c.id, units.c.unit_code, units.c.unit_type, areas.c.area_name)
+        .select_from(units.join(areas, units.c.area_id == areas.c.id))
+        .where(units.c.id.in_([uuid.UUID(item['unit_id']) for item in selected]))
+    )
+    async with get_session_factory()() as session:
+        detail_rows = (await session.execute(detail_query)).all()
+        project_name = await session.scalar(sa.select(projects.c.name).where(projects.c.id == project_uuid))
+        status_rows = (
+            await session.execute(
+                sa.select(units.c.status, sa.func.count())
+                .select_from(units.join(areas, units.c.area_id == areas.c.id))
+                .where(areas.c.project_id == project_uuid, units.c.deleted_at.is_(None))
+                .group_by(units.c.status)
+            )
+        ).all()
+    details_by_id = {str(row.id): row for row in detail_rows}
+    selected = [
+        {
+            **item,
+            'unit_code': details_by_id[item['unit_id']].unit_code,
+            'unit_type': details_by_id[item['unit_id']].unit_type,
+            'area_name': details_by_id[item['unit_id']].area_name,
+        }
+        for item in selected
+        if item['unit_id'] in details_by_id
+    ]
+    risk_level, confidence, top_ties = _proposal_quality(selected)
+    status_counts = {str(status): int(count) for status, count in status_rows}
+    summary = _build_business_summary(
+        project_name=project_name or request.project_id,
+        absorption=absorption,
+        status_counts=status_counts,
+        config_version=run.config_version,
+        selected=selected,
+        top_ties=top_ties,
+    )
+    evidence = [
+        {
+            'unit_id': item['unit_id'],
+            'unit_code': item['unit_code'],
+            'area_name': item['area_name'],
+            'unit_type': item['unit_type'],
+            'rank': item['rank_in_project'],
+            'score': item['score'],
+            'signal_coverage': item['signal_coverage'],
+            'top_driver': _top_driver(item['contributions']),
+        }
+        for item in selected
+    ]
+    recommended_actions = [
+        {
+            'unit_id': item['unit_code'],
+            'action': 'Ưu tiên tiếp cận và xác minh nhu cầu',
+            'reason': (
+                f'Hạng {item["rank"]}, điểm {item["score"]} tại {item["area_name"]}; '
+                f'tín hiệu đóng góp chính: {item["top_driver"]}.'
+            ),
+        }
+        for item in evidence
+    ]
+
     rec_id = uuid.uuid4()
     generated_at = datetime.now(UTC)
     async with get_session_factory()() as session:
@@ -184,8 +372,8 @@ async def create_recommendation(
                 action_type="CREATE_PRIORITY_CAMPAIGN",
                 action_payload=action_payload,
                 evidence=evidence,
-                risk_level="low",
-                confidence="0.8500" if selected else None,
+                risk_level=risk_level,
+                confidence=str(confidence) if confidence is not None else None,
             )
         )
         await session.commit()
@@ -203,8 +391,8 @@ async def create_recommendation(
         action_type="CREATE_PRIORITY_CAMPAIGN",
         action_payload=action_payload,
         evidence=evidence,
-        risk_level="low",
-        confidence=0.85 if selected else None,
+        risk_level=risk_level,
+        confidence=confidence,
     )
 
 

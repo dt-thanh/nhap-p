@@ -1,13 +1,13 @@
 // frontend/src/components/ui/States.jsx
 // Các trạng thái UI dùng chung: Skeleton · Empty · Error (API/mạng).
-// Kèm fmt(): hiển thị "N/A" khi thiếu dữ liệu, NHƯNG giữ số 0 thật.
+// Kèm fmt(): hiển thị "Chưa có dữ liệu" khi thiếu dữ liệu, NHƯNG giữ số 0 thật.
 import React from "react";
 import { color, size, radius, space } from "../../styles/tokens";
 import Icon from "./Icon";
 
 // --- Định dạng giá trị: phân biệt "thiếu" (null/undefined) với 0 thật ---
 export function fmt(v, { suffix = "", digits } = {}) {
-  if (v === null || v === undefined || (typeof v === "number" && Number.isNaN(v))) return "N/A";
+  if (v === null || v === undefined || (typeof v === "number" && Number.isNaN(v))) return "Chưa có dữ liệu";
   let out = v;
   if (typeof v === "number") {
     out = digits != null ? v.toFixed(digits) : v.toLocaleString("vi-VN");
@@ -44,20 +44,32 @@ export function ErrorState({ error, onRetry, compact }) {
       <div style={{ ...S.emptyIcon, background: color.dangerSoft }}>
         <Icon name="warning" size={22} color={color.danger} />
       </div>
-      <div style={S.emptyTitle}>{isNet ? "Lỗi kết nối mạng" : "Không tải được dữ liệu"}</div>
+      <div style={S.emptyTitle}>{isNet ? "Lỗi kết nối mạng" : "Có lỗi xảy ra"}</div>
       <div style={S.emptyHint}>
-        {isNet ? "Kiểm tra kết nối rồi thử lại." : (error?.message || "Đã xảy ra lỗi từ máy chủ.")}
+        {getUserFacingError(error)}
       </div>
       {onRetry && <button style={S.retry} onClick={onRetry}>Thử lại</button>}
     </div>
   );
 }
 
+export function getUserFacingError(error) {
+  if (error?.network) return "Kiểm tra kết nối rồi thử lại.";
+  const code = error?.body?.detail?.error_code || error?.body?.error_code;
+  const messages = {
+    PROJECT_NOT_FOUND: "Không tìm thấy dự án.",
+    AREA_NOT_FOUND: "Không tìm thấy phân khu.",
+    UNAUTHORIZED: "Phiên đăng nhập không hợp lệ.",
+    FORBIDDEN: "Bạn không có quyền thực hiện thao tác này.",
+  };
+  return messages[code] || "Đã xảy ra lỗi khi tải dữ liệu. Vui lòng thử lại.";
+}
+
 /** Bọc một section: tự chọn hiển thị skeleton / error / empty / nội dung. */
-export function SectionState({ loading, error, empty, onRetry, skeleton, compact, children }) {
+export function SectionState({ loading, error, empty, onRetry, skeleton, compact, emptyTitle, emptyHint, children }) {
   if (loading) return skeleton || <DefaultSkeleton compact={compact} />;
   if (error) return <ErrorState error={error} onRetry={onRetry} compact={compact} />;
-  if (empty) return <EmptyState compact={compact} />;
+  if (empty) return <EmptyState title={emptyTitle} hint={emptyHint} compact={compact} />;
   return children;
 }
 

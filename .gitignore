@@ -68,3 +68,38 @@ data/*.csv
 # But allow these two CSV files
 !data/absorption_timeseries.csv
 !data/listings_lifecycle.csv
+# Thư mục nhận file người dùng tải lên (settings.upload_dir mặc định ./uploads).
+# Nội dung do runtime sinh ra, không thuộc mã nguồn.
+uploads/
+
+# Bản dump database trước khi migrate. Chứa dữ liệu thật, không được commit.
+backups/
+
+# Trạng thái CỦA MÁY ĐANG CHẠY cho scripts/seed_mini_crm_from_json.py — ánh xạ
+# fixture external_key -> external_id Mini CRM thật. Không phải dữ liệu seed,
+# không di chuyển được giữa các máy (external_id do sequence CỦA MỖI database
+# cấp), nên không commit.
+docs/.mini_crm_seed_state.json
+
+# Local AI tool overrides (per-machine, not shared)
+.codex\hooks.json
+<<<<<<< HEAD
+.claude/settings.local.json
+.claude/**/*.local.json
+.cursor/mcp.json
+
+.git\hooks\pre-push
+=======
+.git\hooks\pre-push
+# Dữ liệu THẬT của khách hàng, đặt tay vào máy dev. Không phải fixture, không
+# tái tạo được từ repo, và không được rời khỏi máy — cùng lý do với `backups/`.
+data/Real_data/
+
+# Checkpoint store CỦA MÁY ĐANG CHẠY cho LangGraph (`data/state_store.db/`).
+# Trạng thái runtime, không phải dữ liệu nguồn.
+data/state_store.db/
+
+# File khoá của LibreOffice/Excel khi một bảng tính đang mở. Rác của phiên làm
+# việc, và nó mang tên người + tên máy.
+.~lock.*#
+>>>>>>> origin/staging-recovered

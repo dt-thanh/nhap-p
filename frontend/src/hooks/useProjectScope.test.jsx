@@ -31,7 +31,7 @@ describe("useProjectScope", () => {
     ]);
     listAreasScoped.mockResolvedValue([]);
 
-    const { result } = renderHook(() => useProjectScope(), { wrapper: wrapper(["/catalog"]) });
+    const { result } = renderHook(() => useProjectScope(), { wrapper: wrapper(["/projects"]) });
 
     await waitFor(() => expect(result.current.loadingProjects).toBe(false));
     expect(result.current.projects.map((p) => p.external_id)).toEqual(["P-0001", "P-0002"]);
@@ -43,7 +43,7 @@ describe("useProjectScope", () => {
     listAreasScoped.mockResolvedValue([{ external_id: "A-0001", area_name: "Toa 1", area_id: "au1" }]);
 
     const { result } = renderHook(() => useProjectScope(), {
-      wrapper: wrapper(["/catalog?project=P-0001&area=A-0001"]),
+      wrapper: wrapper(["/projects?project=P-0001&area=A-0001"]),
     });
 
     await waitFor(() => expect(result.current.loadingProjects).toBe(false));
@@ -60,7 +60,7 @@ describe("useProjectScope", () => {
     listAreasScoped.mockResolvedValue([]);
 
     const { result } = renderHook(() => useProjectScope(), {
-      wrapper: wrapper(["/catalog?project=P-0001&area=A-0001"]),
+      wrapper: wrapper(["/projects?project=P-0001&area=A-0001"]),
     });
     await waitFor(() => expect(result.current.loadingProjects).toBe(false));
     expect(result.current.areaExternalId).toBe("A-0001");
@@ -75,7 +75,7 @@ describe("useProjectScope", () => {
     listProjects.mockResolvedValue([{ external_id: "P-0007", name: "X", project_id: "u7" }]);
     listAreasScoped.mockResolvedValue([]);
 
-    renderHook(() => useProjectScope(), { wrapper: wrapper(["/catalog?project=P-0007"]) });
+    renderHook(() => useProjectScope(), { wrapper: wrapper(["/projects?project=P-0007"]) });
 
     await waitFor(() => expect(listAreasScoped).toHaveBeenCalledWith("P-0007"));
     expect(listAreasScoped).not.toHaveBeenCalledWith(undefined);
@@ -84,7 +84,7 @@ describe("useProjectScope", () => {
   it("no project selected -> no area query at all, areas stay empty", async () => {
     listProjects.mockResolvedValue([{ external_id: "P-0001", name: "A", project_id: "u1" }]);
 
-    const { result } = renderHook(() => useProjectScope(), { wrapper: wrapper(["/catalog"]) });
+    const { result } = renderHook(() => useProjectScope(), { wrapper: wrapper(["/projects"]) });
 
     await waitFor(() => expect(result.current.loadingProjects).toBe(false));
     expect(result.current.areas).toEqual([]);
@@ -95,7 +95,7 @@ describe("useProjectScope", () => {
     const { ApiError } = await import("../api/client");
     listProjects.mockRejectedValue(new ApiError(403, "forbidden", null));
 
-    const { result } = renderHook(() => useProjectScope(), { wrapper: wrapper(["/catalog"]) });
+    const { result } = renderHook(() => useProjectScope(), { wrapper: wrapper(["/projects"]) });
 
     await waitFor(() => expect(result.current.projectsStatus).toBe("unauthorized"));
   });
@@ -158,11 +158,11 @@ describe("useProjectScope({ projectExternalId }) — route-scoped mode", () => {
     await waitFor(() => expect(result.current.currentArea?.external_id).toBe("A-0001"));
   });
 
-  it("calling the hook with no options at all (CatalogPage's existing usage) is unaffected by the new option", async () => {
+  it("calling the hook with no options remains query-param scoped", async () => {
     listProjects.mockResolvedValue([{ external_id: "P-0001", name: "A", project_id: "u1" }]);
     listAreasScoped.mockResolvedValue([]);
 
-    const { result } = renderHook(() => useProjectScope(), { wrapper: wrapper(["/catalog?project=P-0001"]) });
+    const { result } = renderHook(() => useProjectScope(), { wrapper: wrapper(["/projects?project=P-0001"]) });
 
     await waitFor(() => expect(result.current.loadingProjects).toBe(false));
     expect(result.current.projectExternalId).toBe("P-0001");

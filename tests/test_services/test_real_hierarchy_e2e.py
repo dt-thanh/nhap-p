@@ -133,10 +133,39 @@ def _latest_v2_envelope(outbox_entity: str) -> tuple[str, dict[str, Any]]:
     return batch_id, detail.json()["payload"]
 
 
-def _relay(outbox_entity: str, envelope: dict[str, Any]) -> httpx.Response:
-    """POST phong bì Mini CRM đã ký NGUYÊN VĂN sang backend — không sửa một byte."""
+def _direct_relay(outbox_entity: str, envelope: dict[str, Any]) -> httpx.Response:
+    """POST một phong bì trực tiếp cho các probe cố ý bypassing RelayLoop."""
     route = _ROUTE_ENTITY[outbox_entity]
     return _backend("POST", f"/sync/{route}", json=envelope)
+
+
+def _relay(outbox_entity: str, envelope: dict[str, Any]) -> httpx.Response:
+    """Chờ RelayLoop thật xử lý batch đã được Mini CRM commit.
+
+    Nếu envelope không còn là một dòng outbox (ví dụ orphan/cross-parent probe),
+    gửi trực tiếp để kiểm tra lỗi contract ở Backend. Các batch CRUD thật phải đi
+    qua RelayLoop, vì chỉ đường đó đóng dấu `mirrored_revision` ở Mini CRM.
+    """
+    batch_id = envelope["external_batch_id"]
+    detail = _minicrm("GET", f"/outbox/{batch_id}")
+    if detail.status_code != 200:
+        return _direct_relay(outbox_entity, envelope)
+
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        detail = _minicrm("GET", f"/outbox/{batch_id}")
+        if detail.status_code == 200:
+            state = detail.json()
+            if state["http_status"] is not None:
+                return httpx.Response(
+                    status_code=state["http_status"],
+                    request=httpx.Request("POST", f"{BACKEND_URL}/sync/{_ROUTE_ENTITY[outbox_entity]}"),
+                )
+        time.sleep(0.25)
+    return httpx.Response(
+        status_code=504,
+        request=httpx.Request("POST", f"{BACKEND_URL}/sync/{_ROUTE_ENTITY[outbox_entity]}"),
+    )
 
 
 def _unique(prefix: str) -> str:
@@ -284,8 +313,8 @@ def test_deal_update_reaches_the_backend_mirror(hierarchy):
 def test_duplicate_replay_of_the_same_batch_id_is_idempotent(hierarchy):
     """Gửi lại ĐÚNG batch id cũ → `replayed=true`, không sinh dòng thứ hai."""
     _, envelope = _latest_v2_envelope("projects")
-    first = _relay("projects", envelope)
-    second = _relay("projects", envelope)
+    first = _direct_relay("projects", envelope)
+    second = _direct_relay("projects", envelope)
 
     assert first.status_code in (200, 202)
     assert second.status_code == 200

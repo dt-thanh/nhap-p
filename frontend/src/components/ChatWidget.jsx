@@ -181,7 +181,7 @@ const S = {
     border: "none", borderRadius: radius.pill,
     padding: "12px 18px", fontSize: size.small, fontWeight: 600,
     fontFamily: "inherit", cursor: "pointer",
-    boxShadow: "0 6px 20px rgba(31,95,168,.32)",
+    boxShadow: "0 6px 20px rgba(0,0,0,.22)",
   },
   fabIcon: { fontSize: 16, lineHeight: 1 },
   fabText: { whiteSpace: "nowrap" },

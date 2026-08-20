@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from app import crud, scope
 from app.auth import MiniCrmPrincipal, require_role, require_scope
+from app.human_auth import require_resource_visibility
 from app.schemas import DealCreate, DealOut, DealPatch, DealWriteOut
 from fastapi import APIRouter, Depends, Query, status
 
@@ -36,12 +37,22 @@ async def create_deal(
     return DealWriteOut(record=DealOut(**record), sync=sync.as_dict())
 
 
-@router.get("", response_model=list[DealOut], summary="Liệt kê giao dịch")
+@router.get(
+    "",
+    response_model=list[DealOut],
+    summary="Liệt kê giao dịch",
+    dependencies=[Depends(require_resource_visibility)],
+)
 async def list_deals(include_deleted: bool = Query(default=False)) -> list[DealOut]:
     return [DealOut(**row) for row in await crud.list_deals(include_deleted=include_deleted)]
 
 
-@router.get("/{external_id}", response_model=DealOut, summary="Đọc một giao dịch")
+@router.get(
+    "/{external_id}",
+    response_model=DealOut,
+    summary="Đọc một giao dịch",
+    dependencies=[Depends(require_resource_visibility)],
+)
 async def get_deal(external_id: str) -> DealOut:
     return DealOut(**await crud.get_deal(external_id))
 

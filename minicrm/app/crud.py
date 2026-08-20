@@ -259,27 +259,25 @@ def _written(row: dict[str, Any], outcome: SyncOutcome) -> dict[str, Any]:
     return record
 
 
-# --- Phase C: bắt giữ ý định v2 (KHÔNG gửi) -----------------------------------
+# --- Ý định v2 và trạng thái relay --------------------------------------------
 #
-# `sync_client.deliver()` chỉ biết "units"/"deals" (v1, đường HTTP thật). Bốn hàm
-# `_capture_v2`/`_hierarchy_context_for_area`/`_hierarchy_context_for_unit` dưới
-# đây LÀ Phase C: dựng phong bì v2 từ dòng VỪA GHI, kiểm bằng `contract_v2`, rồi
-# ghi MỘT dòng `crm_outbox` mới (entity ∈ `sync_client.V2_CAPTURE_ENTITIES`) TRONG
-# CÙNG transaction với thay đổi nghiệp vụ — cùng kỷ luật "ghi outbox và ghi nghiệp
-# vụ cùng sống hoặc cùng chết" mà `sync_client.py` áp cho v1.
-#
-# Khác v1 ở ĐÚNG một chỗ, có chủ đích: KHÔNG có bước gửi nào theo sau. Phía nhận
-# giữ `SUPPORTED_SCHEMA_VERSIONS = {1}` và không có `POST /sync/projects`/
-# `POST /sync/areas` nào tồn tại (`REQUIRED IN PHASE D`) — gửi một phong bì mà
-# không có đường nhận, hoặc mà phía nhận chắc chắn từ chối vì phiên bản lạ, không
-# phải là "đẩy", chỉ là rác trong log. Dòng outbox này là Ý ĐỊNH ĐÃ KÝ: `http_status`
-# giữ NULL vô thời hạn cho tới khi Phase D nối đường gửi thật — không phải "đang
-# chờ phản hồi" như một lô v1 timeout, mà là "chưa từng được phép rời khỏi máy".
+# `_capture_v2` dựng phong bì từ dòng VỪA GHI, kiểm bằng `contract_v2`, rồi ghi
+# MỘT dòng `crm_outbox` trong CÙNG transaction với thay đổi nghiệp vụ. Unit/Deal
+# hierarchical dùng duy nhất dòng này; RelayLoop là nơi duy nhất gửi nó.
 
 
 async def _capture_v2(session: AsyncSession, *, entity: str, batch_id: str, envelope: dict[str, Any]) -> None:
     contract_v2.assert_valid(envelope)
     await sync_client.SyncClient().enqueue(session, batch_id=batch_id, entity=entity, payload=envelope)
+
+
+def _queued_sync(batch_id: str) -> SyncOutcome:
+    """Report a committed v2 outbox row; RelayLoop owns delivery."""
+    return SyncOutcome(
+        status="sync_pending",
+        external_batch_id=batch_id,
+        detail={"delivery": "relay"},
+    )
 
 
 def _reject_v2_delivery(row: dict[str, Any]) -> None:
@@ -934,8 +932,6 @@ async def create_unit(data: dict[str, Any], *, client=None) -> tuple[dict[str, A
     vậy nữa.
     """
     now = datetime.now(UTC)
-    batch_id = sync_client.new_batch_id("units")
-
     async with get_session_factory()() as session:
         async with session.begin():
             area = await _resolve_area_reference(
@@ -991,14 +987,6 @@ async def create_unit(data: dict[str, Any], *, client=None) -> tuple[dict[str, A
                     ) from exc
                 raise
             written = dict(row)
-            envelope = sync_client.build_unit_envelope([_unit_record(written)], batch_id=batch_id)
-            contract.assert_valid(envelope, entity="units")
-            outbox_id = await sync_client.SyncClient().enqueue(
-                session, batch_id=batch_id, entity="units", payload=envelope
-            )
-
-            # Phase C: THÊM một ý định v2 (KHÔNG gửi) — `area` đã tra được ở trên
-            # nên context có sẵn, không cần truy vấn lại.
             external_project_id = await _project_external_id_for(session, area["project_id"])
             v2_batch_id = sync_client.new_hierarchy_batch_id("units_v2")
             v2_envelope = sync_client.build_unit_envelope_v2(
@@ -1008,7 +996,7 @@ async def create_unit(data: dict[str, Any], *, client=None) -> tuple[dict[str, A
             )
             await _capture_v2(session, entity="units_v2", batch_id=v2_batch_id, envelope=v2_envelope)
 
-    outcome = await deliver(outbox_id, envelope, entity="units", table=crm_units, client=client)
+    outcome = _queued_sync(v2_batch_id)
     return _written(written, outcome), outcome
 
 
@@ -1028,8 +1016,6 @@ async def update_unit(external_id: str, patch: dict[str, Any], *, client=None) -
         raise CrudError("EMPTY_PATCH", "Body rỗng — không có gì để sửa")
 
     now = datetime.now(UTC)
-    batch_id = sync_client.new_batch_id("units")
-
     # Ba khoá "tham chiếu phân khu" không phải cột của `crm_units` — tách chúng
     # ra TRƯỚC khi patch còn lại được splat thẳng vào `.values(**patch)`.
     external_area_id = patch.pop("external_area_id", None)
@@ -1059,6 +1045,12 @@ async def update_unit(external_id: str, patch: dict[str, Any], *, client=None) -
                     f"Căn '{external_id}' đã xoá. `external_id` không bao giờ được dùng lại — "
                     f"tạo một căn mới thay vì hồi sinh id này.",
                     http_status=409,
+                )
+
+            if current["area_id"] is None and not area_move_requested:
+                raise CrudError(
+                    "UNIT_AREA_REQUIRED",
+                    f"Căn '{external_id}' không có phân khu — gắn một phân khu trước khi sửa theo contract v2.",
                 )
 
             if area_move_requested:
@@ -1106,27 +1098,22 @@ async def update_unit(external_id: str, patch: dict[str, Any], *, client=None) -
                 .one()
             )
             written = dict(row)
-            envelope = sync_client.build_unit_envelope([_unit_record(written)], batch_id=batch_id)
-            contract.assert_valid(envelope, entity="units")
-            outbox_id = await sync_client.SyncClient().enqueue(
-                session, batch_id=batch_id, entity="units", payload=envelope
-            )
-
-            # Phase C: THÊM một ý định v2 (KHÔNG gửi). `None` khi căn không (hoặc
-            # chưa từng) có phân khu cục bộ — di sản trước Phase B, xem
-            # `_hierarchy_context_for_area`.
             context = await _hierarchy_context_for_area(session, written["area_id"])
-            if context is not None:
-                external_project_id, external_area_id = context
-                v2_batch_id = sync_client.new_hierarchy_batch_id("units_v2")
-                v2_envelope = sync_client.build_unit_envelope_v2(
-                    [{**_unit_record(written), "external_area_id": external_area_id}],
-                    batch_id=v2_batch_id,
-                    external_project_id=external_project_id,
+            if context is None:
+                raise CrudError(
+                    "UNIT_AREA_REQUIRED",
+                    f"Căn '{external_id}' phải thuộc một phân khu còn tồn tại để dùng contract v2.",
                 )
-                await _capture_v2(session, entity="units_v2", batch_id=v2_batch_id, envelope=v2_envelope)
+            external_project_id, external_area_id = context
+            v2_batch_id = sync_client.new_hierarchy_batch_id("units_v2")
+            v2_envelope = sync_client.build_unit_envelope_v2(
+                [{**_unit_record(written), "external_area_id": external_area_id}],
+                batch_id=v2_batch_id,
+                external_project_id=external_project_id,
+            )
+            await _capture_v2(session, entity="units_v2", batch_id=v2_batch_id, envelope=v2_envelope)
 
-    outcome = await deliver(outbox_id, envelope, entity="units", table=crm_units, client=client)
+    outcome = _queued_sync(v2_batch_id)
     return _written(written, outcome), outcome
 
 
@@ -1144,8 +1131,6 @@ async def delete_unit(external_id: str, *, client=None) -> tuple[dict[str, Any],
     vẫn sống và có thể ghi đè lại.
     """
     now = datetime.now(UTC)
-    batch_id = sync_client.new_batch_id("units")
-
     async with get_session_factory()() as session:
         async with session.begin():
             current = (
@@ -1161,6 +1146,11 @@ async def delete_unit(external_id: str, *, client=None) -> tuple[dict[str, Any],
                 raise RecordNotFoundError("căn", external_id)
             if current["deleted_at"] is not None:
                 raise CrudError("ALREADY_TOMBSTONED", f"Căn '{external_id}' đã xoá rồi", http_status=409)
+            if current["area_id"] is None:
+                raise CrudError(
+                    "UNIT_AREA_REQUIRED",
+                    f"Căn '{external_id}' không có phân khu nên không thể phát hành lệnh v2.",
+                )
 
             live_deals = (
                 (
@@ -1201,28 +1191,20 @@ async def delete_unit(external_id: str, *, client=None) -> tuple[dict[str, Any],
                 .mappings()
                 .one()
             )
-            envelope = sync_client.build_delete_envelope(
-                "units", [{"external_id": external_id, "source_revision": revision}], batch_id=batch_id
-            )
-            contract.assert_valid(envelope, entity="units")
-            outbox_id = await sync_client.SyncClient().enqueue(
-                session, batch_id=batch_id, entity="units", payload=envelope
-            )
-
-            # Phase C: THÊM một ý định v2 xoá (KHÔNG gửi).
             context = await _hierarchy_context_for_area(session, written["area_id"])
-            if context is not None:
-                external_project_id, _external_area_id = context
-                v2_batch_id = sync_client.new_hierarchy_batch_id("units_v2")
-                v2_envelope = sync_client.build_unit_envelope_v2(
-                    [{"external_id": external_id, "source_revision": revision}],
-                    batch_id=v2_batch_id,
-                    external_project_id=external_project_id,
-                    operation="delete",
-                )
-                await _capture_v2(session, entity="units_v2", batch_id=v2_batch_id, envelope=v2_envelope)
+            if context is None:
+                raise CrudError("UNIT_AREA_REQUIRED", f"Căn '{external_id}' không còn phân khu hợp lệ.")
+            external_project_id, _external_area_id = context
+            v2_batch_id = sync_client.new_hierarchy_batch_id("units_v2")
+            v2_envelope = sync_client.build_unit_envelope_v2(
+                [{"external_id": external_id, "source_revision": revision}],
+                batch_id=v2_batch_id,
+                external_project_id=external_project_id,
+                operation="delete",
+            )
+            await _capture_v2(session, entity="units_v2", batch_id=v2_batch_id, envelope=v2_envelope)
 
-    outcome = await deliver(outbox_id, envelope, entity="units", table=crm_units, client=client)
+    outcome = _queued_sync(v2_batch_id)
     return _written(written, outcome), outcome
 
 
@@ -1266,13 +1248,18 @@ def _check_deal_state(state: dict[str, Any]) -> None:
 
 
 async def _require_mirrored_unit(session: AsyncSession, external_unit_id: str) -> None:
-    """Căn phải TỒN TẠI cục bộ và ĐÃ lên tới backend. Xem docstring module."""
+    """Căn phải tồn tại, có Area hợp lệ và đã lên tới backend."""
     row = (
         (
             await session.execute(
-                sa.select(crm_units.c.deleted_at, crm_units.c.mirrored_revision).where(
-                    crm_units.c.external_id == external_unit_id
+                sa.select(
+                    crm_units.c.deleted_at,
+                    crm_units.c.mirrored_revision,
+                    crm_units.c.area_id,
+                    crm_areas.c.status.label("area_status"),
                 )
+                .select_from(crm_units.outerjoin(crm_areas, crm_areas.c.id == crm_units.c.area_id))
+                .where(crm_units.c.external_id == external_unit_id)
             )
         )
         .mappings()
@@ -1287,6 +1274,22 @@ async def _require_mirrored_unit(session: AsyncSession, external_unit_id: str) -
         raise CrudError(
             "UNIT_TOMBSTONED",
             f"Căn '{external_unit_id}' đã xoá — không gắn giao dịch mới vào một căn đã chết.",
+            http_status=409,
+        )
+    if row["area_id"] is None:
+        raise CrudError(
+            "UNIT_AREA_REQUIRED",
+            f"Căn '{external_unit_id}' không thuộc phân khu nào — giao dịch v2 phải có Unit→Area→Project.",
+        )
+    if row["area_status"] is None:
+        raise CrudError(
+            "UNKNOWN_AREA",
+            f"Phân khu của căn '{external_unit_id}' không còn tồn tại.",
+        )
+    if row["area_status"] == "archived":
+        raise CrudError(
+            "PARENT_ARCHIVED",
+            f"Phân khu của căn '{external_unit_id}' đã lưu trữ — không tạo giao dịch mới.",
             http_status=409,
         )
     if row["mirrored_revision"] is None:
@@ -1347,7 +1350,6 @@ async def get_deal(external_id: str) -> dict[str, Any]:
 
 async def create_deal(data: dict[str, Any], *, client=None) -> tuple[dict[str, Any], SyncOutcome]:
     now = datetime.now(UTC)
-    batch_id = sync_client.new_batch_id("deals")
     _check_deal_state(data)
 
     async with get_session_factory()() as session:
@@ -1380,24 +1382,20 @@ async def create_deal(data: dict[str, Any], *, client=None) -> tuple[dict[str, A
                 .one()
             )
             written = dict(row)
-            envelope = sync_client.build_deal_envelope([_deal_record(written)], batch_id=batch_id)
-            contract.assert_valid(envelope, entity="deals")
-            outbox_id = await sync_client.SyncClient().enqueue(
-                session, batch_id=batch_id, entity="deals", payload=envelope
-            )
-
-            # Phase C: THÊM một ý định v2 (KHÔNG gửi). Bối cảnh suy qua căn
-            # (§A3.5) — `None` khi căn là di sản không phân khu.
             context = await _hierarchy_context_for_unit(session, written["external_unit_id"])
-            if context is not None:
-                external_project_id, _external_area_id = context
-                v2_batch_id = sync_client.new_hierarchy_batch_id("deals_v2")
-                v2_envelope = sync_client.build_deal_envelope_v2(
-                    [_deal_record(written)], batch_id=v2_batch_id, external_project_id=external_project_id
+            if context is None:
+                raise CrudError(
+                    "DEAL_PROJECT_MISMATCH",
+                    f"Không thể suy ra Project hợp lệ từ Unit '{written['external_unit_id']}'.",
                 )
-                await _capture_v2(session, entity="deals_v2", batch_id=v2_batch_id, envelope=v2_envelope)
+            external_project_id, _external_area_id = context
+            v2_batch_id = sync_client.new_hierarchy_batch_id("deals_v2")
+            v2_envelope = sync_client.build_deal_envelope_v2(
+                [_deal_record(written)], batch_id=v2_batch_id, external_project_id=external_project_id
+            )
+            await _capture_v2(session, entity="deals_v2", batch_id=v2_batch_id, envelope=v2_envelope)
 
-    outcome = await deliver(outbox_id, envelope, entity="deals", table=crm_deals, client=client)
+    outcome = _queued_sync(v2_batch_id)
     return _written(written, outcome), outcome
 
 
@@ -1414,8 +1412,6 @@ async def update_deal(external_id: str, patch: dict[str, Any], *, client=None) -
         raise CrudError("EMPTY_PATCH", "Body rỗng — không có gì để sửa")
 
     now = datetime.now(UTC)
-    batch_id = sync_client.new_batch_id("deals")
-
     async with get_session_factory()() as session:
         async with session.begin():
             current = (
@@ -1432,10 +1428,26 @@ async def update_deal(external_id: str, patch: dict[str, Any], *, client=None) -
             if current["deleted_at"] is not None:
                 raise CrudError("RECORD_TOMBSTONED", f"Giao dịch '{external_id}' đã xoá", http_status=409)
 
+            effective_unit_id = patch.get("external_unit_id", current["external_unit_id"])
+            await _require_mirrored_unit(session, effective_unit_id)
+            current_context = await _hierarchy_context_for_unit(session, current["external_unit_id"])
+            target_context = await _hierarchy_context_for_unit(session, effective_unit_id)
+            if current_context is None or target_context is None:
+                raise CrudError(
+                    "DEAL_PROJECT_MISMATCH",
+                    f"Giao dịch '{external_id}' không có chuỗi Unit→Area→Project hợp lệ.",
+                )
+            if current_context[0] != target_context[0]:
+                raise CrudError(
+                    "DEAL_PROJECT_MISMATCH",
+                    f"Giao dịch '{external_id}' không thể chuyển giữa hai Project khác nhau.",
+                    http_status=409,
+                )
+
             merged = {**dict(current), **patch}
             _check_deal_state(merged)
             await _reject_second_holding_deal(
-                session, current["external_unit_id"], merged["deal_status"], exclude=external_id
+                session, effective_unit_id, merged["deal_status"], exclude=external_id
             )
 
             row = (
@@ -1451,29 +1463,19 @@ async def update_deal(external_id: str, patch: dict[str, Any], *, client=None) -
                 .one()
             )
             written = dict(row)
-            envelope = sync_client.build_deal_envelope([_deal_record(written)], batch_id=batch_id)
-            contract.assert_valid(envelope, entity="deals")
-            outbox_id = await sync_client.SyncClient().enqueue(
-                session, batch_id=batch_id, entity="deals", payload=envelope
+            external_project_id, _external_area_id = target_context
+            v2_batch_id = sync_client.new_hierarchy_batch_id("deals_v2")
+            v2_envelope = sync_client.build_deal_envelope_v2(
+                [_deal_record(written)], batch_id=v2_batch_id, external_project_id=external_project_id
             )
+            await _capture_v2(session, entity="deals_v2", batch_id=v2_batch_id, envelope=v2_envelope)
 
-            context = await _hierarchy_context_for_unit(session, written["external_unit_id"])
-            if context is not None:
-                external_project_id, _external_area_id = context
-                v2_batch_id = sync_client.new_hierarchy_batch_id("deals_v2")
-                v2_envelope = sync_client.build_deal_envelope_v2(
-                    [_deal_record(written)], batch_id=v2_batch_id, external_project_id=external_project_id
-                )
-                await _capture_v2(session, entity="deals_v2", batch_id=v2_batch_id, envelope=v2_envelope)
-
-    outcome = await deliver(outbox_id, envelope, entity="deals", table=crm_deals, client=client)
+    outcome = _queued_sync(v2_batch_id)
     return _written(written, outcome), outcome
 
 
 async def delete_deal(external_id: str, *, client=None) -> tuple[dict[str, Any], SyncOutcome]:
     now = datetime.now(UTC)
-    batch_id = sync_client.new_batch_id("deals")
-
     async with get_session_factory()() as session:
         async with session.begin():
             current = (
@@ -1490,6 +1492,14 @@ async def delete_deal(external_id: str, *, client=None) -> tuple[dict[str, Any],
             if current["deleted_at"] is not None:
                 raise CrudError("ALREADY_TOMBSTONED", f"Giao dịch '{external_id}' đã xoá rồi", http_status=409)
 
+            await _require_mirrored_unit(session, current["external_unit_id"])
+            context = await _hierarchy_context_for_unit(session, current["external_unit_id"])
+            if context is None:
+                raise CrudError(
+                    "DEAL_PROJECT_MISMATCH",
+                    f"Giao dịch '{external_id}' không có chuỗi Unit→Area→Project hợp lệ.",
+                )
+
             revision = current["source_revision"] + 1
             written = dict(
                 (
@@ -1503,27 +1513,17 @@ async def delete_deal(external_id: str, *, client=None) -> tuple[dict[str, Any],
                 .mappings()
                 .one()
             )
-            envelope = sync_client.build_delete_envelope(
-                "deals", [{"external_id": external_id, "source_revision": revision}], batch_id=batch_id
+            external_project_id, _external_area_id = context
+            v2_batch_id = sync_client.new_hierarchy_batch_id("deals_v2")
+            v2_envelope = sync_client.build_deal_envelope_v2(
+                [{"external_id": external_id, "source_revision": revision}],
+                batch_id=v2_batch_id,
+                external_project_id=external_project_id,
+                operation="delete",
             )
-            contract.assert_valid(envelope, entity="deals")
-            outbox_id = await sync_client.SyncClient().enqueue(
-                session, batch_id=batch_id, entity="deals", payload=envelope
-            )
+            await _capture_v2(session, entity="deals_v2", batch_id=v2_batch_id, envelope=v2_envelope)
 
-            context = await _hierarchy_context_for_unit(session, written["external_unit_id"])
-            if context is not None:
-                external_project_id, _external_area_id = context
-                v2_batch_id = sync_client.new_hierarchy_batch_id("deals_v2")
-                v2_envelope = sync_client.build_deal_envelope_v2(
-                    [{"external_id": external_id, "source_revision": revision}],
-                    batch_id=v2_batch_id,
-                    external_project_id=external_project_id,
-                    operation="delete",
-                )
-                await _capture_v2(session, entity="deals_v2", batch_id=v2_batch_id, envelope=v2_envelope)
-
-    outcome = await deliver(outbox_id, envelope, entity="deals", table=crm_deals, client=client)
+    outcome = _queued_sync(v2_batch_id)
     return _written(written, outcome), outcome
 
 

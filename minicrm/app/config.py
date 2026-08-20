@@ -73,6 +73,47 @@ class Settings(BaseSettings):
     # mặt trong map này = phạm vi RỖNG, kể cả khi bản thân token đó hợp lệ.
     auth_project_scope: SecretStr = SecretStr("")
 
+    # --- Microsoft Entra ID (CP4) -------------------------------------------
+    # KHÔNG hard-code bất cứ giá trị nào dưới đây. Rỗng = đường Entra CHƯA bật
+    # (`app/entra.py::entra_configured()`), không phải "mở".
+    entra_tenant_id: str = ""
+    entra_client_id: str = ""
+    entra_client_secret: SecretStr = SecretStr("")
+    entra_redirect_uri: str = ""
+    entra_post_logout_redirect_uri: str = ""
+    entra_authority_host: str = "https://login.microsoftonline.com"
+    # Chỉ đặt khi tenant phát `iss`/`aud` khác mặc định (B2C/CIAM, hoặc IdP giả
+    # lập trong test). Rỗng ⇒ suy ra từ tenant/client id.
+    entra_issuer: str = ""
+    entra_audience: str = ""
+    entra_scopes: str = "openid profile email offline_access"
+    entra_allowed_algorithms: str = "RS256"
+    entra_clock_skew_seconds: int = Field(default=60, ge=0, le=300)
+    # JSON {"<app-role|group-id>": "admin|pipeline_operator|business_viewer"}.
+    # Không khớp claim nào = KHÔNG có vai trò (403), xem app/session.py.
+    entra_role_map: SecretStr = SecretStr("")
+    # JSON {"<app-role|group-id>": ["P-0001"] | "ALL"}. Vắng mặt = phạm vi RỖNG.
+    entra_project_scope: SecretStr = SecretStr("")
+
+    # --- Phiên đăng nhập (cookie HttpOnly do Mini CRM tự ký) ------------------
+    session_secret: SecretStr = SecretStr("")
+    session_ttl_seconds: int = Field(default=3600, ge=60)
+    session_cookie_secure: bool = True
+    session_cookie_samesite: str = "lax"
+
+    # --- Tương thích ngược cho token TĨNH (D-14) -----------------------------
+    # MẶC ĐỊNH TẮT. Bật chỉ cho dev/CI hoặc đường máy-với-máy; production dùng
+    # Entra. Đây là cờ opt-in TƯỜNG MINH, không phải fallback âm thầm.
+    legacy_token_auth_enabled: bool = False
+
+    # --- Liên kết sang Product/AbsorbIQ (CP6) --------------------------------
+    # URL gốc của Product Frontend để dựng deep-link "View in AbsorbIQ".
+    product_frontend_base_url: str = ""
+
+    # CORS: origin của CRM frontend (cookie phiên cần credentials nên KHÔNG
+    # dùng "*" — trình duyệt từ chối wildcard khi allow_credentials=True).
+    cors_origins: str = "http://localhost:5174"
+
     @property
     def database_dsn(self) -> str:
         """DSN dạng chuỗi. KHÔNG log giá trị này — trong đó có mật khẩu."""

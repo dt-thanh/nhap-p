@@ -6,8 +6,9 @@
 // File này cũng là tầng chuyển đổi: backend trả {items: [...]} / {errors: [...]}
 // và dùng khóa `file_id`, còn các trang đang dùng mảng phẳng và `id`.
 // ---------------------------------------------------------------------------
-import { api, minicrm } from "./client";
+import { api } from "./client";
 import { classifyFreshness } from "../utils/freshness";
+import { areaLabel } from "../utils/areaLabel";
 
 // Backend gắn router dưới /api/v1; client.js đã gắn sẵn tiền tố /api.
 const V1 = "/v1";
@@ -35,6 +36,39 @@ export const listInventoryScoped = (externalProjectId, params = {}) =>
 
 export const listDealsScoped = (externalProjectId, params = {}) =>
   api.get(`${V1}/deals?${new URLSearchParams({ external_project_id: externalProjectId, ...params })}`);
+
+// ---------- Xếp hạng căn ----------
+
+/** Kết quả xếp hạng ĐANG LƯU. Không tính lại — xem `runRanking`.
+ *  -> { computed_at, config_version, units_ranked, units_skipped, band_counts,
+ *       items: [{ unit_code, score, score_percent, band, rank_in_project,
+ *                 rank_in_area, contributions: [...] }], total, disclaimer } */
+export const getRanking = (externalProjectId, params = {}) =>
+  api.get(`${V1}/ranking?${new URLSearchParams({ external_project_id: externalProjectId, ...params })}`);
+
+/** Tính lại xếp hạng rồi trả về CÙNG hình dạng với `getRanking`, nên nơi gọi
+ *  không phải gọi tiếp một lượt đọc nữa. Cần vai trò pipeline_operator trở lên. */
+export const runRanking = (externalProjectId, params = {}) =>
+  api.post(`${V1}/ranking/run?${new URLSearchParams({ external_project_id: externalProjectId, ...params })}`);
+
+// ---------- Quản trị bộ trọng số xếp hạng ----------
+//
+// `ranking_configs` là TOÀN CỤC: một bộ trọng số áp cho mọi dự án. Vì thế không
+// endpoint nào ở đây nhận `external_project_id`.
+
+/** Toàn bộ lịch sử config, mới nhất trước. */
+export const listRankingConfigs = () => api.get(`${V1}/ranking/configs`);
+
+/** Soạn bản nháp. Chưa ảnh hưởng lần chạy nào cho tới khi publish. */
+export const createRankingConfigDraft = (body) => api.post(`${V1}/ranking/configs`, body);
+
+/** Phát hành + xếp hàng tính lại MỌI dự án. -> { config, reranked } */
+export const publishRankingConfig = (version, publishedBy) =>
+  api.post(`${V1}/ranking/configs/${version}/publish`, { published_by: publishedBy });
+
+/** Quay lại trọng số cũ bằng cách CHÉP sang version mới (không sửa lịch sử). */
+export const rollbackRankingConfig = (version, publishedBy) =>
+  api.post(`${V1}/ranking/configs/${version}/rollback`, { published_by: publishedBy });
 
 // ---------- Dự án ----------
 
@@ -112,7 +146,7 @@ function toFiniteNumberOrNull(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** KPI toàn dự án cho `KpiCards`.
+/** KPI cho `KpiCards` trong đúng project/area scope đang chọn.
  *
  * `total_units` KHÔNG đọc được an toàn từ `/absorption/summary` — dưới bộ
  * tính `legacy_aggregate`, `units_sold` đọc từ `sales_records` còn
@@ -122,29 +156,75 @@ function toFiniteNumberOrNull(value) {
  * truyền `areas` (đã có sẵn, từ `useProjectScope`) để không gọi `/areas` lần
  * hai chỉ để cộng một con số.
  *
- * -> { total_units, units_sold, remaining_units, absorption_rate, avg_velocity,
- *      units_reserved, updated_at, calculator,
+ * -> { total_units, units_sold, remaining_units, available_remaining_units,
+ *      reserved_units, units_reserved, absorption_rate, avg_velocity, updated_at, calculator,
  *      last_successful_sync, last_attempted_sync, last_sync_status }
  */
-export async function getDashboardSummary({ projectId, areas = [], calculator = "legacy_aggregate" }) {
+export async function getDashboardSummary({ projectId, areaId = null, areas = [], calculator = "domain_units_deals" }) {
+  const query = new URLSearchParams({
+    project_id: projectId,
+    calculator,
+  });
+  if (areaId) query.set("area_id", areaId);
   const summary = await api.get(
-    `${V1}/absorption/summary?project_id=${encodeURIComponent(projectId)}&calculator=${encodeURIComponent(calculator)}`,
+    `${V1}/absorption/summary?${query}`,
   );
-  const total_units = areas.reduce((sum, a) => sum + (a.total_units || 0), 0);
-  const absorption_rate = total_units > 0 ? (summary.units_sold / total_units) * 100 : null;
+  const fallbackAreas = areaId ? areas.filter((area) => area.area_id === areaId) : areas;
+  const areaTotal = fallbackAreas.reduce((sum, a) => sum + (toNonNegativeNumberOrNull(a.total_units) ?? 0), 0);
+  const total_units = toNonNegativeNumberOrNull(summary.total_units) ?? areaTotal;
+  const units_sold = toNonNegativeNumberOrNull(summary.units_sold);
+  const remaining_units = toNonNegativeNumberOrNull(summary.units_remaining);
+  const available_remaining_units = toNonNegativeNumberOrNull(summary.available_remaining_units);
+  const reserved_units = toNonNegativeNumberOrNull(summary.reserved_units ?? summary.units_reserved);
+  const sell_through = toFiniteNumberOrNull(summary.sell_through)
+    ?? (total_units > 0 && units_sold !== null ? (units_sold / total_units) * 100 : null);
+  const domainSource = summary.data_source === "domain_units_deals" || summary.velocity_unit === "units_per_week";
+  const velocity7d = toFiniteNumberOrNull(summary.velocity_7d);
+  const velocity30d = toFiniteNumberOrNull(summary.velocity_30d ?? summary.avg_velocity_30d);
+  const velocity7dWeekly = domainSource ? velocity7d : toWeeklyVelocity(velocity7d);
+  const velocity30dWeekly = domainSource ? velocity30d : toWeeklyVelocity(velocity30d);
+  const estimatedWeeks = toFiniteNumberOrNull(summary.estimated_weeks_to_sell_out)
+    ?? calculateEstimatedWeeks(remaining_units, velocity30dWeekly);
   return {
     total_units,
-    units_sold: summary.units_sold,
-    remaining_units: summary.units_remaining,
-    absorption_rate,
-    avg_velocity: toFiniteNumberOrNull(summary.avg_velocity_30d),
+    units_sold,
+    remaining_units,
+    available_remaining_units,
+    reserved_units,
+    sell_through,
+    absorption_rate: sell_through,
+    // Domain analytics returns KPI velocities in units/week. Legacy responses
+    // remain converted here for compatibility with non-dashboard consumers.
+    velocity_7d: velocity7dWeekly,
+    velocity_30d: velocity30dWeekly,
+    estimated_weeks_to_sell_out: estimatedWeeks,
+    // Kept for existing non-dashboard consumers; new UI uses velocity_30d.
+    avg_velocity: velocity30d,
     units_reserved: summary.units_reserved,
     updated_at: summary.updated_at,
     calculator: summary.calculator,
     last_successful_sync: summary.last_successful_sync,
     last_attempted_sync: summary.last_attempted_sync,
     last_sync_status: summary.last_sync_status,
+    data_source: summary.data_source ?? summary.calculator ?? calculator,
+    data_status: summary.data_status ?? (units_sold === null ? "insufficient_data" : "ready"),
+    message: summary.message ?? null,
+    earliest_sale_date: summary.earliest_sale_date ?? null,
+    latest_sale_date: summary.latest_sale_date ?? null,
+    available_years: Array.isArray(summary.available_years) ? summary.available_years : [],
+    velocity_unit: domainSource ? "units_per_week" : "units_per_day",
   };
+}
+
+function toWeeklyVelocity(value) {
+  return value === null || value < 0 ? null : value * 7;
+}
+
+function calculateEstimatedWeeks(remainingUnits, velocity30dWeekly) {
+  if (remainingUnits === null) return null;
+  if (remainingUnits <= 0) return 0;
+  if (velocity30dWeekly === null || velocity30dWeekly <= 0) return null;
+  return remainingUnits / velocity30dWeekly;
 }
 
 /** Chuỗi hấp thụ THEO NGÀY của một phân khu, cho `AbsorptionTrendChart` +
@@ -157,38 +237,87 @@ export async function getDashboardSummary({ projectId, areas = [], calculator = 
  * (không phải 0) khi không có `areaTotalUnits` — không có mẫu số thì không có
  * tỷ lệ, hiện "N/A" thay vì một con số bịa.
  *
- * -> { points: [{date, units_sold, cumulative_sold, absorption_rate,
- *                velocity_7d, velocity_30d, is_observed, data_quality_status}],
+ * -> { points: [{date, units_sold, moving_average_7d, moving_average_30d,
+ *                cumulative_sold, sell_through, absorption_rate,
+ *                is_observed, data_quality_status}],
  *      latestVelocity7d, latestVelocity30d }
  */
-export async function getDashboardTrend({ areaId, areaTotalUnits = null, from, to, granularity = "day" }) {
-  const empty = { points: [], latestVelocity7d: null, latestVelocity30d: null };
-  if (!areaId) return empty;
+export async function getDashboardTrend({
+  projectId = null,
+  areaId = null,
+  areaTotalUnits = null,
+  totalSold = null,
+  from,
+  to,
+  year,
+  granularity,
+  calculator = "domain_units_deals",
+}) {
+  const empty = {
+    points: [], latestVelocity7d: null, latestVelocity30d: null,
+    dataSource: calculator, dataStatus: "no_data", message: null, availableYears: [],
+  };
+  if (!areaId && !projectId) {
+    return { points: [], latestVelocity7d: null, latestVelocity30d: null };
+  }
 
-  const rawPoints = await getAbsorption({ areaId, from, to, granularity });
+  const query = new URLSearchParams({ calculator });
+  if (projectId) query.set("project_id", projectId);
+  if (areaId) query.set("area_id", areaId);
+  if (from) query.set("from", from);
+  if (to) query.set("to", to);
+  if (year) query.set("year", year);
+  if (granularity) query.set("granularity", granularity);
+  const body = await api.get(`${V1}/absorption?${query}`);
+  const rawPoints = body.points ?? [];
   const sorted = [...rawPoints].sort((a, b) => (a.stat_date < b.stat_date ? -1 : a.stat_date > b.stat_date ? 1 : 0));
+  const totalUnits = toFiniteNumberOrNull(areaTotalUnits);
 
-  let cumulative = 0;
+  const selectedUnits = sorted.reduce((sum, point) => sum + (toNonNegativeNumberOrNull(point.units_sold) ?? 0), 0);
+  const allTimeSold = toNonNegativeNumberOrNull(totalSold);
+  let cumulative = allTimeSold === null ? 0 : Math.max(allTimeSold - selectedUnits, 0);
   const points = sorted.map((point) => {
-    cumulative += point.units_sold || 0;
+    const unitsSold = toNonNegativeNumberOrNull(point.units_sold);
+    cumulative = point.cumulative_sold == null
+      ? cumulative + (unitsSold ?? 0)
+      : toNonNegativeNumberOrNull(point.cumulative_sold);
+    const sellThrough = point.sell_through == null
+      ? (totalUnits !== null && totalUnits > 0 ? (cumulative / totalUnits) * 100 : null)
+      : toFiniteNumberOrNull(point.sell_through);
     return {
-      date: point.stat_date,
-      units_sold: point.units_sold,
+      date: point.period_start ?? point.stat_date,
+      units_sold: unitsSold,
+      moving_average_7d: toFiniteNumberOrNull(point.velocity_7d),
+      moving_average_30d: toFiniteNumberOrNull(point.velocity_30d),
       cumulative_sold: cumulative,
-      absorption_rate: areaTotalUnits ? (cumulative / areaTotalUnits) * 100 : null,
-      velocity_7d: toFiniteNumberOrNull(point.velocity_7d),
-      velocity_30d: toFiniteNumberOrNull(point.velocity_30d),
+      sell_through: sellThrough,
+      // Compatibility alias for the previous chart adapter contract.
+      absorption_rate: sellThrough,
       is_observed: point.is_observed,
       data_quality_status: point.data_quality_status,
+      period_end: point.period_end ?? point.stat_date,
+      granularity: point.period_granularity ?? body.granularity ?? granularity ?? "day",
     };
   });
 
   const latest = points[points.length - 1] || null;
   return {
     points,
-    latestVelocity7d: latest?.velocity_7d ?? null,
-    latestVelocity30d: latest?.velocity_30d ?? null,
+    latestVelocity7d: latest?.moving_average_7d ?? null,
+    latestVelocity30d: latest?.moving_average_30d ?? null,
+    dataSource: body.data_source ?? calculator,
+    dataStatus: body.data_status ?? (points.length ? "ready" : "no_data"),
+    message: body.message ?? null,
+    earliestSaleDate: body.earliest_sale_date ?? null,
+    latestSaleDate: body.latest_sale_date ?? null,
+    availableYears: Array.isArray(body.available_years) ? body.available_years : [],
+    granularity: body.granularity ?? granularity ?? "day",
   };
+}
+
+function toNonNegativeNumberOrNull(value) {
+  const number = toFiniteNumberOrNull(value);
+  return number === null || number < 0 ? null : number;
 }
 
 /** Bảng xếp hạng/chi tiết phân khu cho `AreaComparison` + `AreaDetailTable`.
@@ -202,7 +331,8 @@ export async function getDashboardTrend({ areaId, areaTotalUnits = null, from, t
  * quyết định còn treo) — gán bừa một ngưỡng tự chọn sẽ là đúng thứ việc "đừng
  * bịa quy tắc nghiệp vụ" mà việc này cấm.
  *
- * -> [{ id, name, total_units, sold, remaining, absorption_rate, velocity,
+ * -> [{ id, name, total_units, sold, remaining, available_remaining_units,
+ *       reserved_units, absorption_rate, velocity,
  *       latest_data, status }]
  */
 export async function getDashboardAreas({ externalProjectId }) {
@@ -210,10 +340,14 @@ export async function getDashboardAreas({ externalProjectId }) {
   const inventory = await listInventoryScoped(externalProjectId);
   return (inventory.areas || []).map((row) => ({
     id: row.area_id,
-    name: `${row.area_name} · ${row.unit_type}`,
+    name: areaLabel(row),
     total_units: row.total_units,
     sold: row.units_sold,
     remaining: row.units_remaining,
+    available_remaining_units: toNonNegativeNumberOrNull(
+      row.available_remaining_units ?? row.units_remaining,
+    ),
+    reserved_units: toNonNegativeNumberOrNull(row.reserved_units ?? row.units_reserved),
     absorption_rate: row.total_units > 0 ? (row.units_sold / row.total_units) * 100 : null,
     velocity: null,
     latest_data: null,
@@ -228,7 +362,7 @@ const DASHBOARD_ANOMALY_LABEL = {
 
 const DASHBOARD_CALCULATOR_LABEL = {
   legacy_aggregate: "Dữ liệu tổng hợp (đường sản xuất hiện tại)",
-  domain_units_deals: "Chiếu từ bản sao CRM (đối chiếu)",
+  domain_units_deals: "Nguồn dữ liệu: Căn hộ/Giao dịch",
 };
 
 /** Độ tươi + chất lượng dữ liệu cho `DataQualityPanel`.
@@ -244,9 +378,9 @@ const DASHBOARD_CALCULATOR_LABEL = {
  * -> { status: "ok"|"ok_with_warnings"|"error", latest_data, source,
  *      date_range: {from, to} | null, error_records, warnings: string[] }
  */
-export async function getDataQuality({ projectId, externalProjectId, from, to }) {
+export async function getDataQuality({ projectId, externalProjectId, from, to, calculator = "domain_units_deals" }) {
   const [summary, inventory] = await Promise.all([
-    api.get(`${V1}/absorption/summary?project_id=${encodeURIComponent(projectId)}&calculator=legacy_aggregate`),
+    api.get(`${V1}/absorption/summary?project_id=${encodeURIComponent(projectId)}&calculator=${encodeURIComponent(calculator)}`),
     externalProjectId ? listInventoryScoped(externalProjectId) : Promise.resolve(null),
   ]);
 
@@ -382,40 +516,12 @@ export async function listProjectZones(projectId) {
   }));
 }
 
-// ---------- Tạo / sửa dự án / phân khu — QUA MINI CRM (Phase D/F) -----------
-// Backend KHÔNG còn POST /projects, POST /areas từ Phase D (§D7) — Mini CRM là
-// nguồn sự thật cho MỌI trường CANONICAL (name/launch_date/area_name/unit_type/
-// bedrooms/area_sqm/total_units). Backend chỉ còn PATCH headline/introduce —
-// nội dung hiển thị backend TỰ SỞ HỮU (§A2.3), xem khối "Sửa nội dung hiển thị"
-// bên dưới. Viết SAI cổng (gọi thẳng backend cho trường canonical) sẽ ăn 422
-// NO_CHANGES im lặng — xem lịch sử phát hiện ở test_catalog.py Phase D.
-//
-// Ghi xong CHƯA chiếu ngay: Mini CRM chỉ LƯU + relay tự động (Phase C.5) mới
-// gửi sang backend sau đó — nơi gọi phải tự hỏi lại backend để biết đã chiếu
-// hay chưa (`getProjectByExternalId`/`getAreaByExternalId`), không giả định
-// "ghi xong là đọc lại thấy ngay".
+// ---------- Ảnh bìa trong Cài đặt (admin) ---------------------------------
+// Backend nhận multipart nên gửi FormData, không gửi JSON. POST đặt ảnh hiện
+// tại nên cùng một action dùng được cho tải mới và thay ảnh.
 
-/** Mini CRM POST /projects — đòi vai trò admin (tạo dự án MỚI mở rộng phạm vi).
- *  -> { record: { external_id, name, launch_date, source_revision, ... } } */
-export const createProjectInMiniCrm = (payload) => minicrm.post("/projects", payload);
-
-/** Mini CRM POST /areas — đòi vai trò pipeline_operator trở lên, VÀ phạm vi
- *  chứa `external_project_id`. -> { record: { external_id, ... } } */
-export const createAreaInMiniCrm = (payload) => minicrm.post("/areas", payload);
-
-/** Mini CRM PATCH /projects/{external_id} — sửa trường CANONICAL (name/launch_date). */
-export const updateProjectInMiniCrm = (externalId, changes) =>
-  minicrm.patch(`/projects/${encodeURIComponent(externalId)}`, changes);
-
-/** Mini CRM PATCH /areas/{external_id} — sửa trường CANONICAL. */
-export const updateAreaInMiniCrm = (externalId, changes) =>
-  minicrm.patch(`/areas/${encodeURIComponent(externalId)}`, changes);
-
-// ---------- Ảnh bìa dự án / phân khu ----------
-// Mỗi dự án / phân khu có TỐI ĐA một ảnh. POST tạo mới (409 nếu đã có), PUT thay
-// thế, DELETE xoá. Backend nhận multipart nên gửi FormData, không gửi JSON.
-
-const imageBase = (kind, id) => `${V1}/${kind === "project" ? "projects" : "areas"}/${id}/image`;
+const settingsImageBase = (kind, id) =>
+  `${V1}/settings/${kind === "project" ? "projects" : "areas"}/${id}/cover-image`;
 
 const imageForm = (file) => {
   const fd = new FormData();
@@ -423,29 +529,17 @@ const imageForm = (file) => {
   return fd;
 };
 
-/** Xem ảnh hiện tại -> { owner_id, url, public_id }; 404 nếu chưa có ảnh. */
-export const getImage = (kind, id) => api.get(imageBase(kind, id));
+/** Tải hoặc thay ảnh bìa dự án. */
+export const uploadProjectCoverImage = (projectId, file) =>
+  api.post(settingsImageBase("project", projectId), imageForm(file));
 
-/** Tải ảnh lần đầu. Đã có ảnh -> 409 IMAGE_ALREADY_EXISTS. */
-export const createImage = (kind, id, file) => api.post(imageBase(kind, id), imageForm(file));
+/** Tải hoặc thay ảnh bìa phân khu. */
+export const uploadAreaCoverImage = (areaId, file) =>
+  api.post(settingsImageBase("area", areaId), imageForm(file));
 
-/** Thay ảnh (đặt thành) — chấp nhận cả khi chưa có ảnh nào. */
-export const replaceImage = (kind, id, file) => api.put(imageBase(kind, id), imageForm(file));
+/** Xoá ảnh bìa khỏi Cloudinary và bỏ tham chiếu trong DB. */
+export const removeProjectCoverImage = (projectId) =>
+  api.del(settingsImageBase("project", projectId));
 
-/** Xoá ảnh khỏi Cloudinary và bỏ tham chiếu trong DB. */
-export const deleteImage = (kind, id) => api.del(imageBase(kind, id));
-
-// ---------- Sửa NỘI DUNG HIỂN THỊ dự án / phân khu — backend TỰ SỞ HỮU ------
-// Từ Phase D (§D7/§A2.3): backend chỉ còn nhận `headline`/`introduce` — hai
-// trường này KHÔNG phải dữ liệu nghiệp vụ Mini CRM sở hữu, chúng là nội dung
-// hiển thị RIÊNG của backend. Gửi bất kỳ trường nào khác (name, launch_date,
-// area_name, ...) sẽ bị lặng lẽ bỏ qua (pydantic `extra="ignore"`) rồi backend
-// trả 422 NO_CHANGES nếu đó là TOÀN BỘ nội dung gửi lên — trường canonical đi
-// qua `updateProjectInMiniCrm`/`updateAreaInMiniCrm` ở trên.
-
-/** PATCH dự án — CHỈ headline/introduce. UUID nội bộ (không phải external_id). */
-export const updateProject = (projectId, changes) =>
-  api.patch(`${V1}/projects/${projectId}`, changes);
-
-/** PATCH phân khu — CHỈ headline/introduce. */
-export const updateArea = (areaId, changes) => api.patch(`${V1}/areas/${areaId}`, changes);
+export const removeAreaCoverImage = (areaId) =>
+  api.del(settingsImageBase("area", areaId));

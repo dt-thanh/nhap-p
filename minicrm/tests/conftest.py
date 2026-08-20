@@ -42,6 +42,8 @@ TEST_UNIT_TYPE = "Căn hộ"
 # "A-0001".
 TEST_PROJECT_EXTERNAL_ID = "BOOTSTRAP-PROJECT"
 TEST_AREA_EXTERNAL_ID = "BOOTSTRAP-AREA"
+TARGET_TEST_DATABASE = "minicrm_checkpoint1_test"
+TARGET_ONLY_ENV = "MINICRM_TARGET_DATABASE_ONLY"
 
 # Token D-14 dùng chung cho test. `crm_app` cấu hình đúng ba token này ở MỌI
 # database rỗng dùng một lần — sequence `external_id` khởi động lại mỗi test
@@ -63,6 +65,51 @@ def db_url() -> str | None:
     return os.getenv("MINICRM_TEST_DATABASE_URL") or os.getenv("MINICRM_DATABASE_URL")
 
 
+def target_only_mode() -> bool:
+    return os.getenv(TARGET_ONLY_ENV) == "1"
+
+
+def _assert_target_database(url: str) -> None:
+    if urlsplit(url).path.lstrip("/") != TARGET_TEST_DATABASE:
+        raise pytest.UsageError(f"Target-only tests require database '{TARGET_TEST_DATABASE}'")
+    engine = sa.create_engine(sync_url(url))
+    try:
+        with engine.connect() as connection:
+            current = connection.execute(sa.text("SELECT current_database()")).scalar_one()
+            if current != TARGET_TEST_DATABASE:
+                raise pytest.UsageError(f"Connected database is not '{TARGET_TEST_DATABASE}'")
+    finally:
+        engine.dispose()
+
+
+def _reset_target_tables(url: str) -> None:
+    """Reset only Mini CRM tables inside the explicitly approved test database."""
+    tables = (
+        "crm_password_reset_tokens",
+        "crm_auth_invites",
+        "crm_auth_sessions",
+        "crm_deals",
+        "crm_units",
+        "crm_areas",
+        "crm_projects",
+        "crm_outbox",
+        "crm_users",
+    )
+    engine = sa.create_engine(sync_url(url))
+    try:
+        with engine.begin() as connection:
+            connection.execute(sa.text(f"TRUNCATE TABLE {', '.join(tables)} RESTART IDENTITY CASCADE"))
+            for sequence in (
+                "crm_unit_external_seq",
+                "crm_deal_external_seq",
+                "crm_project_external_seq",
+                "crm_area_external_seq",
+            ):
+                connection.execute(sa.text(f"ALTER SEQUENCE {sequence} RESTART WITH 1"))
+    finally:
+        engine.dispose()
+
+
 def db_skip_reason() -> str:
     url = db_url()
     if not url:
@@ -76,9 +123,13 @@ def db_skip_reason() -> str:
 def pytest_sessionstart(session):
     """Chặn cả lượt chạy nếu database đích không phải database test."""
     url = db_url()
+    if target_only_mode() and not url:
+        raise pytest.UsageError(f"{TARGET_ONLY_ENV}=1 requires MINICRM_TEST_DATABASE_URL")
     if not url:
         return
     name = urlsplit(url).path.lstrip("/")
+    if target_only_mode() and name != TARGET_TEST_DATABASE:
+        raise pytest.UsageError(f"Target-only tests require database '{TARGET_TEST_DATABASE}'")
     if name and not name.endswith("_test"):
         raise pytest.UsageError(
             f"TỪ CHỐI CHẠY: database đích là '{name}', không kết thúc bằng '_test'."
@@ -103,7 +154,8 @@ def run_alembic(url: str, *args: str) -> None:
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 0, f"alembic {' '.join(args)} thất bại:\n{result.stdout}\n{result.stderr}"
+    if result.returncode != 0:
+        raise AssertionError(f"alembic {' '.join(args)} failed for database '{TARGET_TEST_DATABASE}'")
 
 
 @pytest.fixture
@@ -112,6 +164,11 @@ def scratch_db_url():
     base = db_url()
     if not base:
         pytest.skip(db_skip_reason())
+
+    if target_only_mode():
+        _assert_target_database(base)
+        yield base
+        return
 
     import sqlalchemy as sa
 
@@ -195,6 +252,9 @@ def crm_app(scratch_db_url, monkeypatch):
     một database vừa bị DROP, và lỗi hiện ra ở một file test hoàn toàn khác.
     """
     run_alembic(scratch_db_url, "upgrade", "head")
+    if target_only_mode():
+        _assert_target_database(scratch_db_url)
+        _reset_target_tables(scratch_db_url)
     _seed_bootstrap_hierarchy(scratch_db_url)
 
     from app.config import get_settings
@@ -215,6 +275,8 @@ def crm_app(scratch_db_url, monkeypatch):
     # `.env` của máy không được lọt vào: nó có thể mang một project id khác và
     # test sẽ khẳng định về một giá trị không ai kiểm soát.
     monkeypatch.setenv("MINICRM_RUN_MIGRATIONS", "false")
+    monkeypatch.setenv("MINICRM_APP_ENV", "development")
+    monkeypatch.setenv("MINICRM_AUTHORIZATION_MODE", "global_visibility")
     # D-14: ba token vai trò + phạm vi. Xem hằng số ADMIN_TOKEN/OPERATOR_TOKEN ở
     # trên cho lý do các giá trị phạm vi cụ thể.
     monkeypatch.setenv("MINICRM_AUTH_ADMIN_TOKEN", ADMIN_TOKEN)

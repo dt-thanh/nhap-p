@@ -73,6 +73,77 @@ describe("getDashboardSummary", () => {
     expect(url).toContain("project_id=abc-123");
     expect(url).toContain("calculator=domain_units_deals");
   });
+
+  it("normalizes scoped summary metrics and converts daily velocity to weekly KPI units", async () => {
+    const { getDashboardSummary } = await import("./endpoints");
+    fetch.mockResolvedValue(jsonResponse({
+      total_units: 100,
+      units_remaining: 20,
+      available_remaining_units: 12,
+      units_reserved: 8,
+      units_sold: 80,
+      sell_through: "80.0",
+      velocity_7d: "1.5",
+      velocity_30d: "2.0",
+      estimated_weeks_to_sell_out: "1.4286",
+      avg_velocity_30d: "2.0",
+      calculator: "legacy_aggregate",
+    }));
+
+    const result = await getDashboardSummary({ projectId: "project-1", areaId: "area-1", areas: [{ area_id: "area-1", total_units: 100 }] });
+
+    expect(result).toMatchObject({
+      total_units: 100,
+      units_sold: 80,
+      remaining_units: 20,
+      sell_through: 80,
+      velocity_7d: 10.5,
+      velocity_30d: 14,
+      estimated_weeks_to_sell_out: 1.4286,
+    });
+    expect(result.available_remaining_units).toBe(12);
+    expect(result.reserved_units).toBe(8);
+    expect(fetch.mock.calls[0][0]).toContain("area_id=area-1");
+  });
+
+  it("keeps sell-out forecast unavailable when velocity is zero or missing", async () => {
+    const { getDashboardSummary } = await import("./endpoints");
+    fetch.mockResolvedValue(jsonResponse({
+      total_units: 100,
+      units_remaining: 20,
+      units_sold: 80,
+      velocity_30d: "0",
+      estimated_weeks_to_sell_out: null,
+      calculator: "legacy_aggregate",
+    }));
+
+    const result = await getDashboardSummary({ projectId: "project-1", areaId: "area-1" });
+    expect(result.estimated_weeks_to_sell_out).toBeNull();
+    expect(Number.isFinite(result.estimated_weeks_to_sell_out)).toBe(false);
+  });
+
+  it("preserves domain weekly velocity and historical metadata without legacy conversion", async () => {
+    const { getDashboardSummary } = await import("./endpoints");
+    fetch.mockResolvedValue(jsonResponse({
+      total_units: 10,
+      units_remaining: 4,
+      units_sold: 6,
+      velocity_7d: "2",
+      velocity_30d: "1.4",
+      estimated_weeks_to_sell_out: "2.8571",
+      calculator: "domain_units_deals",
+      data_source: "domain_units_deals",
+      velocity_unit: "units_per_week",
+      available_years: [2024, 2025],
+    }));
+
+    const result = await getDashboardSummary({ projectId: "project-1" });
+
+    expect(result.velocity_7d).toBe(2);
+    expect(result.velocity_30d).toBe(1.4);
+    expect(result.available_years).toEqual([2024, 2025]);
+    expect(result.data_source).toBe("domain_units_deals");
+  });
 });
 
 describe("getDashboardTrend", () => {
@@ -114,6 +185,22 @@ describe("getDashboardTrend", () => {
     expect(result.latestVelocity30d).toBeCloseTo(0.5);
   });
 
+  it("uses the scoped all-time sold total as the baseline for filtered trend ranges", async () => {
+    const { getDashboardTrend } = await import("./endpoints");
+    fetch.mockResolvedValue(jsonResponse({
+      area_id: "area-1",
+      granularity: "day",
+      points: [
+        { stat_date: "2026-01-01", units_sold: 2, velocity_7d: "1", velocity_30d: "1", is_observed: true, data_quality_status: "ok" },
+        { stat_date: "2026-01-02", units_sold: 3, velocity_7d: "1", velocity_30d: "1", is_observed: true, data_quality_status: "ok" },
+      ],
+    }));
+
+    const result = await getDashboardTrend({ areaId: "area-1", areaTotalUnits: 20, totalSold: 10 });
+    expect(result.points.map((point) => point.cumulative_sold)).toEqual([7, 10]);
+    expect(result.points.at(-1).sell_through).toBeCloseTo(50);
+  });
+
   it("absorption_rate is null per point (not 0) when areaTotalUnits is not known", async () => {
     const { getDashboardTrend } = await import("./endpoints");
     fetch.mockResolvedValue(
@@ -127,6 +214,28 @@ describe("getDashboardTrend", () => {
     const result = await getDashboardTrend({ areaId: "area-1", areaTotalUnits: null, from: "2026-01-01", to: "2026-01-31" });
 
     expect(result.points[0].absorption_rate).toBeNull();
+  });
+
+  it("keeps zero-unit days numeric and returns null absorption for zero or invalid totals", async () => {
+    const { getDashboardTrend } = await import("./endpoints");
+    const responseBody = {
+        area_id: "area-1",
+        granularity: "day",
+        points: [
+          { stat_date: "2026-01-01", units_sold: 0, velocity_7d: "0", velocity_30d: "0", is_observed: false, data_quality_status: "warning" },
+          { stat_date: "2026-01-02", units_sold: "2", velocity_7d: "1", velocity_30d: "1", is_observed: true, data_quality_status: "warning" },
+        ],
+      };
+    fetch.mockImplementation(() => Promise.resolve(jsonResponse(responseBody)));
+
+    const zeroTotal = await getDashboardTrend({ areaId: "area-1", areaTotalUnits: 0 });
+    expect(zeroTotal.points.map((point) => point.units_sold)).toEqual([0, 2]);
+    expect(zeroTotal.points.map((point) => point.cumulative_sold)).toEqual([0, 2]);
+    expect(zeroTotal.points.every((point) => point.absorption_rate === null)).toBe(true);
+
+    const missingTotal = await getDashboardTrend({ areaId: "area-1" });
+    expect(missingTotal.points.every((point) => point.absorption_rate === null)).toBe(true);
+    expect(missingTotal.points.some((point) => Number.isNaN(point.absorption_rate))).toBe(false);
   });
 
   it("empty points array -> latestVelocity7d/30d are null, not an error", async () => {
@@ -171,6 +280,8 @@ describe("getDashboardAreas", () => {
         total_units: 10,
         sold: 4,
         remaining: 5,
+        available_remaining_units: 5,
+        reserved_units: 1,
         absorption_rate: 40,
         velocity: null,
         latest_data: null,

@@ -64,6 +64,23 @@ export interface Area {
 
 // ---------- Unit (Sản phẩm / Căn) ----------
 export type UnitStatus = "available" | "reserved" | "sold";
+/** Trạng thái mirror của một thực thể sang Product/AbsorbIQ (mục 9).
+ *
+ *  Đây KHÔNG phải một dashboard giám sát mới — chỉ là ba trường mà backend VỐN
+ *  ĐÃ trả về trong mọi phản hồi CRUD (`mirrored_at`, `mirrored_revision`,
+ *  `last_sync_batch_id`), trước đây bị adapter bỏ rơi. Mục đích hẹp: cho người
+ *  dùng biết vì sao nút "Tạo giao dịch" đang bị khoá — Unit chưa được Product
+ *  ACK, tức `UNIT_NOT_MIRRORED` sẽ trả 409 nếu thử. */
+export type SyncStatus = "synced" | "pending" | "failed";
+
+export interface SyncState {
+  status: SyncStatus;
+  sourceRevision: number;
+  mirroredRevision: number | null;
+  mirroredAt: string | null;
+  lastSyncBatchId: string | null;
+}
+
 export interface Unit {
   id: string;
   code: string; // "P2-1805"
@@ -78,6 +95,7 @@ export interface Unit {
   status: UnitStatus;
   imageUrl?: string;
   notes?: string;
+  sync?: SyncState;
 }
 
 // ---------- Deal (Giao dịch) ----------

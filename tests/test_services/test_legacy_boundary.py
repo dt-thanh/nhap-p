@@ -116,7 +116,7 @@ def _ingestion_sources():
     return [(path.name, (root / path).read_text(encoding="utf-8")) for path in INGESTION_MODULES]
 
 
-@pytest.mark.parametrize("module_name, source", _ingestion_sources(), ids=lambda v: v if isinstance(v, str) else "")
+@pytest.mark.parametrize("module_name, source", _ingestion_sources(), ids=lambda v: v if isinstance(v, str) and len(v) < 100 else "")
 def test_ingestion_module_never_imports_a_crm_owned_table(module_name, source):
     """Tầng nạp file không được import bảng `units`/`deals` từ models.
 
@@ -135,7 +135,7 @@ def test_ingestion_module_never_imports_a_crm_owned_table(module_name, source):
     assert not offending, f"{module_name} import bảng của CRM: {sorted(offending)}"
 
 
-@pytest.mark.parametrize("module_name, source", _ingestion_sources(), ids=lambda v: v if isinstance(v, str) else "")
+@pytest.mark.parametrize("module_name, source", _ingestion_sources(), ids=lambda v: v if isinstance(v, str) and len(v) < 100 else "")
 def test_ingestion_module_has_no_raw_sql_against_a_crm_owned_table(module_name, source):
     """Không có câu SQL thô nào trong tầng nạp file chạm tới bảng của CRM.
 

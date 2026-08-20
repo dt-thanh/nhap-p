@@ -25,8 +25,8 @@ JSONB = postgresql.JSONB
 metadata = sa.MetaData()
 
 # API kiểm tra project_id có thật trước khi nhận file, và liệt kê dự án cho
-# frontend chọn. `ProjectService.create_project` / `update_project` GHI vào bảng
-# này (POST/PATCH `/api/v1/projects`).
+# frontend chọn. Project/Area được ghi bởi ingestion; dashboard chỉ đọc ảnh và
+# dữ liệu đã chiếu.
 projects = sa.Table(
     "projects",
     metadata,
@@ -51,8 +51,8 @@ projects = sa.Table(
     # 'legacy_aggregate' nên Phase 6 không đổi hành vi của dự án nào.
     sa.Column("absorption_calculator", sa.Text(), nullable=False),
     # --- Phase D (0017): danh tính nguồn — Mini CRM là TÁC GIẢ từ đây, backend
-    # chỉ SOI GƯƠNG. NULL ở cả năm cột dưới = dự án di sản, tạo TRƯỚC Phase D bởi
-    # `ProjectService` (bị thu hẹp cùng đợt) — không bịa danh tính cho chúng.
+    # chỉ SOI GƯƠNG. NULL ở cả năm cột dưới = dự án di sản, tạo TRƯỚC Phase D —
+    # không bịa danh tính nguồn cho chúng.
     sa.Column("external_id", sa.Text(), nullable=True),
     sa.Column("source_system", sa.Text(), nullable=True),
     sa.Column("source_instance_id", sa.Text(), nullable=True),

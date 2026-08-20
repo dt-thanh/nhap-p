@@ -261,30 +261,56 @@ class AbsorptionPointOut(BaseModel):
 
     stat_date: date = Field(..., description="Ngày (hoặc ngày cuối tuần khi granularity=week)")
     units_sold: int = Field(..., description="Số căn bán")
-    velocity_7d: Decimal = Field(..., description="Trung bình trượt 7 ngày")
-    velocity_30d: Decimal = Field(..., description="Trung bình trượt 30 ngày")
+    velocity_7d: Decimal | None = Field(default=None, description="Trung bình trượt 7 ngày")
+    velocity_30d: Decimal | None = Field(default=None, description="Trung bình trượt 30 ngày")
     is_observed: bool = Field(..., description="False = ngày điền bù, không có giao dịch")
     data_quality_status: str = Field(..., description="ok | warning")
+    period_start: date | None = Field(default=None, description="Ngày bắt đầu kỳ")
+    period_end: date | None = Field(default=None, description="Ngày kết thúc kỳ")
+    period_granularity: Literal["day", "week", "month"] | None = Field(default=None, description="Mức gộp của kỳ")
+    cumulative_sold: int | None = Field(default=None, description="Số căn bán cộng dồn từ đầu lịch sử scope")
+    sell_through: Decimal | None = Field(default=None, description="Đã bán cộng dồn / tổng quỹ căn * 100")
 
 
 class AbsorptionSeries(BaseModel):
-    area_id: str = Field(..., description="UUID phân khu")
-    granularity: Literal["day", "week"] = Field(..., description="Mức gộp")
+    area_id: str | None = Field(default=None, description="UUID phân khu; NULL khi theo toàn dự án")
+    granularity: Literal["day", "week", "month"] = Field(..., description="Mức gộp")
     points: list[AbsorptionPointOut] = Field(default_factory=list)
+    data_source: str = Field(default="legacy_aggregate", description="Nguồn dữ liệu của chuỗi")
+    data_status: Literal["ready", "no_data", "no_units", "insufficient_data"] = Field(default="ready")
+    message: str | None = Field(default=None, description="Thông điệp khi không có dữ liệu")
+    earliest_sale_date: date | None = Field(default=None)
+    latest_sale_date: date | None = Field(default=None)
+    available_years: list[int] = Field(default_factory=list)
 
 
 class AbsorptionSummaryOut(BaseModel):
-    """Thẻ số liệu tổng hợp toàn dự án (SRS §5.2 — GET /api/absorption/summary)."""
+    """Thẻ số liệu tổng hợp theo đúng project/area scope của dashboard."""
 
-    units_remaining: int = Field(..., description="Tồn kho còn lại")
+    units_remaining: int | None = Field(
+        default=None,
+        description="Tổng số căn chưa bán, bao gồm cả căn đang giữ chỗ; NULL khi bộ tính không tính được",
+    )
     units_sold: int = Field(..., description="Đã bán")
-    avg_velocity_30d: Decimal = Field(..., description="Tốc độ trung bình 30 ngày")
+    avg_velocity_30d: Decimal | None = Field(default=None, description="Tương thích ngược: vận tốc 30 ngày mới nhất")
+    total_units: int | None = Field(default=None, description="Tổng quỹ căn trong scope")
+    sell_through: Decimal | None = Field(default=None, description="Đã bán / tổng quỹ căn * 100")
+    velocity_7d: Decimal | None = Field(default=None, description="Trung bình trượt 7 ngày, đơn vị căn/ngày")
+    velocity_30d: Decimal | None = Field(default=None, description="Trung bình trượt 30 ngày, đơn vị căn/ngày")
+    estimated_weeks_to_sell_out: Decimal | None = Field(
+        default=None,
+        description="Tồn kho còn lại / (vận tốc 30 ngày * 7), NULL nếu không thể dự báo",
+    )
     updated_at: datetime | None = Field(default=None, description="Lần tính gần nhất")
     # 0007 — trường THÊM, không thay trường nào. `units_reserved` là NULL với bộ
     # tính cũ: dữ liệu tổng hợp không dựng lại được số căn đang giữ chỗ, và trả 0
     # sẽ bị đọc nhầm thành "không có căn nào đang giữ".
     units_reserved: int | None = Field(
         default=None, description="Số căn đang giữ chỗ; NULL khi bộ tính không tính được"
+    )
+    available_remaining_units: int | None = Field(
+        default=None,
+        description="Số căn có thể bán ngay, không gồm căn đã bán hoặc đang giữ chỗ; NULL khi bộ tính không tính được",
     )
     calculator: str = Field(
         default="legacy_aggregate",
@@ -309,14 +335,18 @@ class AbsorptionSummaryOut(BaseModel):
         description="Trạng thái của lần đồng bộ CRM gần nhất (pending|processing|completed|completed_with_conflicts|"
         "partially_completed|failed); None nếu dự án CHƯA TỪNG đồng bộ",
     )
+    data_source: str = Field(default="legacy_aggregate", description="Nguồn dữ liệu của các KPI")
+    data_status: Literal["ready", "no_data", "no_units", "insufficient_data"] = Field(default="ready")
+    message: str | None = Field(default=None, description="Thông điệp chất lượng dữ liệu")
+    earliest_sale_date: date | None = Field(default=None)
+    latest_sale_date: date | None = Field(default=None)
+    available_years: list[int] = Field(default_factory=list)
+    velocity_unit: Literal["units_per_day", "units_per_week"] = Field(default="units_per_day")
 
 
-# --- Sửa nội dung hiển thị: dự án và phân khu -------------------------------
-# Phase D (§D7): KHÔNG còn `ProjectCreate`/`AreaCreate` — Project/Area CHỈ được
-# TẠO qua ingestion (`src/services/domain_projection.py`). `ProjectDetail`/
-# `AreaDetail` vẫn là response của PATCH — đọc đầy đủ dòng sau khi sửa nội dung
-# hiển thị (KHÔNG phải sau khi tạo, dù tên field/response giữ nguyên để không
-# phá phía đọc đang tồn tại).
+# --- Chi tiết chỉ đọc: dự án và phân khu ------------------------------------
+# Project/Area được tạo và cập nhật bởi ingestion. Các model dưới đây chỉ mô tả
+# response đọc chi tiết, không phải request ghi.
 
 # Chuỗi bắt buộc có nội dung: strip trước rồi mới đo độ dài, nên "   " bị loại
 # đúng như "" — CHECK `<> ''` dưới DB cũng hiểu theo nghĩa đó.
@@ -355,35 +385,6 @@ class AreaDetail(BaseModel):
     created_at: datetime = Field(..., description="Thời điểm tạo (UTC)")
     external_id: str | None = Field(default=None, description="external_id ở Mini CRM — None nếu là phân khu di sản")
     source_revision: int | None = Field(default=None, description="Phiên bản nguồn gần nhất đã soi gương")
-
-
-# --- Cập nhật nội dung hiển thị ----------------------------------------------
-# PATCH: mọi trường đều tuỳ chọn, chỉ ghi trường CÓ MẶT trong body. Phân biệt
-# "không gửi" với "gửi null" bằng `model_fields_set`, nên gửi thiếu trường không
-# vô tình xoá dữ liệu đang có.
-#
-# Phase D (§D7): CHỈ còn `headline`/`introduce` — nội dung hiển thị mà backend
-# SỞ HỮU RIÊNG (`phase_a_domain_freeze.md` §A2.3). `name`/`launch_date` (Project)
-# và `area_name`/`unit_type`/`bedrooms`/`area_sqm`/`total_units` (Area) — CANONICAL,
-# do Mini CRM sở hữu — đã bị RÚT: PATCH không còn sửa được chúng, CHỈ ingestion
-# (`POST /sync/{entity}`) mới ghi được. `project_id` và `status` vẫn không có ở
-# đây — cùng lý do cũ (đổi dự án làm sai số liệu hấp thụ; đổi trạng thái là việc
-# của archive qua ingestion).
-
-
-class ProjectUpdate(BaseModel):
-    """Body của PATCH /projects/{project_id}. CHỈ nội dung hiển thị."""
-
-    # Cho phép chuỗi rỗng: đây là nội dung hiển thị, người dùng phải xoá được.
-    headline: str | None = Field(default=None, max_length=255, description="Tiêu đề hiển thị")
-    introduce: str | None = Field(default=None, description="Mô tả dự án")
-
-
-class AreaUpdate(BaseModel):
-    """Body của PATCH /areas/{area_id}. CHỈ nội dung hiển thị."""
-
-    headline: str | None = Field(default=None, max_length=255, description="Tiêu đề hiển thị")
-    introduce: str | None = Field(default=None, description="Mô tả phân khu")
 
 
 # --- Ảnh bìa dự án / phân khu ----------------------------------------------
@@ -584,7 +585,11 @@ class InventoryAreaOut(BaseModel):
     total_units: int = Field(..., description="Số căn bán được (đã trừ căn blocked)")
     units_sold: int = Field(..., description="Số căn có giao dịch `sold` còn hiệu lực")
     units_reserved: int = Field(..., description="Số căn có giao dịch `reserved` còn hiệu lực")
-    units_remaining: int = Field(..., description="Còn lại = bán được − đã bán − đang giữ chỗ")
+    units_remaining: int = Field(..., description="Tồn kho khả bán = bán được − đã bán − đang giữ chỗ")
+    available_remaining_units: int | None = Field(
+        default=None,
+        description="Số căn có thể bán ngay; tương thích tường minh với units_remaining",
+    )
     units_blocked: int = Field(..., description="Số căn nằm ngoài quỹ hàng")
 
 
@@ -813,4 +818,164 @@ class ComparisonVerdictList(BaseModel):
         "Phán quyết này áp bộ quy tắc phân loại hiện hành lên lịch sử so sánh sinh ra từ "
         "fixture TỔNG HỢP. `is_cutover_evidence=true` KHÔNG có nghĩa là đã sẵn sàng cắt sang: "
         "điều kiện cắt sang cần dữ liệu THẬT và toàn bộ danh sách ở docs/crm/activation_prerequisites.md."
+    )
+
+
+# --- Xếp hạng căn (Phase 6, đường ĐỌC) --------------------------------------
+#
+# Đường GHI vào bốn bảng xếp hạng vẫn CHỈ có `src/ranking/service.py`
+# (`tests/test_ranking_boundary.py`). Những schema dưới đây chỉ mô tả hình dạng
+# ĐỌC RA, không mở thêm bất kỳ lối ghi nào.
+
+
+class RankingContributionOut(BaseModel):
+    """Đóng góp của MỘT đặc trưng vào điểm cuối — nguyên liệu để giải thích
+    'vì sao căn này đứng ở đây', lấy nguyên từ `ranking_scores.contributions`."""
+
+    feature_key: str = Field(..., description="Khoá đặc trưng, ví dụ `unit_demand_norm`")
+    value: str | None = Field(default=None, description="Giá trị đã chuẩn hoá [0,1]; NULL khi thiếu dữ liệu")
+    weight: str = Field(..., description="Trọng số theo config đang phát hành")
+    direction: str = Field(..., description="positive | negative")
+    contribution: str = Field(..., description="weight × oriented(value) — phần điểm đặc trưng này đóng góp")
+    source: str = Field(..., description="resolved | missing_defaulted | missing_skipped")
+
+
+class RankedUnitOut(BaseModel):
+    """Một căn đã được xếp hạng."""
+
+    unit_id: str = Field(..., description="UUID căn")
+    unit_code: str = Field(..., description="Mã căn")
+    unit_type: str = Field(..., description="Loại căn")
+    unit_status: str = Field(..., description="available | reserved | sold | blocked")
+    area_id: str = Field(..., description="UUID phân khu")
+    area_name: str = Field(..., description="Tên phân khu")
+    score: str = Field(..., description="Điểm trong [0,1], 4 chữ số thập phân — chuỗi để không mất độ chính xác")
+    score_percent: float | None = Field(default=None, description="Cùng điểm đó trên thang 0–100, làm tròn 1 chữ số")
+    band: str | None = Field(default=None, description="high | medium | low — NULL khi không đủ coverage")
+    rank_in_project: int = Field(..., description="Hạng trong toàn dự án")
+    rank_in_area: int = Field(..., description="Hạng trong phân khu")
+    weight_coverage: str = Field(..., description="Tổng trọng số đã dùng để tính điểm")
+    contributions: list[RankingContributionOut] = Field(default_factory=list)
+
+
+class RankingOut(BaseModel):
+    """`GET /ranking` — kết quả xếp hạng ĐANG LƯU, không tính lại.
+
+    `computed_at = NULL` nghĩa là dự án chưa từng được xếp hạng lần nào — khác
+    hẳn "đã xếp hạng nhưng không căn nào đạt ngưỡng". Giao diện phải phân biệt
+    được hai trạng thái đó, nên chúng là hai trường khác nhau chứ không phải một
+    danh sách rỗng dùng chung.
+    """
+
+    project_id: str = Field(..., description="UUID dự án")
+    external_project_id: str | None = Field(default=None, description="external_id dự án ở Mini CRM")
+    computed_at: datetime | None = Field(default=None, description="Mốc tính điểm; NULL nếu chưa từng chạy")
+    config_version: int | None = Field(default=None, description="Phiên bản `ranking_configs` đã dùng")
+    units_ranked: int = Field(default=0, description="Số căn có điểm trong lần chạy gần nhất")
+    units_skipped: int = Field(default=0, description="Số căn bị bỏ qua vì coverage dưới ngưỡng")
+    band_counts: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Số căn theo mức, tính trên toàn bộ tập khớp bộ lọc phân khu/trạng thái — KHÔNG phải "
+            "trang hiện tại, và KHÔNG bị thu hẹp bởi chính bộ lọc `band` (nếu không, chọn một mức "
+            "sẽ làm số trên các chip mức khác tụt về 0)"
+        ),
+    )
+    items: list[RankedUnitOut] = Field(default_factory=list)
+    total: int = Field(default=0, description="Tổng số căn khớp bộ lọc")
+    limit: int = Field(..., description="Số bản ghi tối đa mỗi trang")
+    offset: int = Field(..., description="Vị trí bắt đầu")
+    disclaimer: str = Field(..., description="Văn bản CỐ ĐỊNH, không do LLM sinh — `src/ranking/bands.py`")
+
+
+class RankingRunOut(BaseModel):
+    """Một lần chạy xếp hạng — `ranking_runs` là LỊCH SỬ, khác với
+    `ranking_scores` là trạng thái hiện tại."""
+
+    run_id: str = Field(..., description="UUID lần chạy")
+    project_id: str = Field(..., description="UUID dự án")
+    status: str = Field(..., description="queued | running | completed | partially_completed | failed | skipped_stale")
+    trigger: str = Field(..., description="sync | config_change | survey_snapshot | manual | audit_repair")
+    attempt: int = Field(..., description="Số lần đã thử chiếm run này")
+    scope_ids: dict = Field(default_factory=dict, description="Phạm vi đã gộp từ các lần kích hoạt")
+    units_processed: int = Field(default=0)
+    units_ranked: int = Field(default=0)
+    units_skipped: int = Field(default=0)
+    enqueued_at: datetime = Field(..., description="Lúc được xếp hàng")
+    started_at: datetime | None = Field(default=None, description="Lúc worker chiếm được run")
+    finished_at: datetime | None = Field(default=None, description="Chỉ có ở trạng thái kết thúc")
+    error_summary: dict = Field(default_factory=dict)
+    coalesced: bool = Field(
+        default=False,
+        description=(
+            "True = lời gọi này KHÔNG tạo run mới mà gộp vào một run đang chờ. Không phải lỗi: "
+            "đó là mục đích của partial unique index chống dồn (§8.3)"
+        ),
+    )
+
+
+# --- Đặc trưng khảo sát (đường NHẬP) ----------------------------------------
+
+
+class SurveyFeatureIn(BaseModel):
+    """Một giá trị khảo sát đã CHUẨN HOÁ về [0,1] bởi bộ tổng hợp bên ngoài."""
+
+    feature_key: str = Field(..., description="view_quality | natural_light | privacy | noise_level")
+    scope: str = Field(..., description="unit | area | unit_type")
+    scope_id: str = Field(..., description="UUID căn/phân khu, hoặc chuỗi unit_type nguyên văn")
+    value: float = Field(..., ge=0, le=1, description="Giá trị đã chuẩn hoá — bộ tổng hợp chuẩn hoá, KHÔNG phải backend")
+    confidence: float = Field(..., ge=0, le=1, description="BẮT BUỘC: config đặt min_confidence cho nhóm này")
+    sample_count: int | None = Field(default=None, ge=0, description="Cỡ mẫu, nếu bộ tổng hợp có")
+
+
+class SurveyFeatureBatchIn(BaseModel):
+    external_project_id: str = Field(..., description="external_id dự án ở Mini CRM")
+    items: list[SurveyFeatureIn] = Field(..., min_length=1)
+
+
+class SurveyFeatureBatchOut(BaseModel):
+    project_id: str
+    received: int = Field(..., description="Số dòng trong lô")
+    written: int = Field(..., description="Số dòng thực sự ghi xuống")
+    skipped_stale: int = Field(
+        ..., description="Số dòng bị bỏ vì đã có ảnh chụp MỚI HƠN — không phải lỗi, là chống ghi lùi"
+    )
+    ranking_run_id: str | None = Field(default=None, description="Lần tính lại được xếp hàng sau khi nạp")
+
+
+# --- Quản trị ranking_configs -----------------------------------------------
+
+
+class RankingConfigOut(BaseModel):
+    id: str
+    version: int
+    status: str = Field(..., description="draft | published | archived")
+    weights: dict
+    min_weight_coverage: str
+    note: str = ""
+    copied_from_version: int | None = None
+    created_by: str
+    created_at: datetime
+    published_by: str | None = None
+    published_at: datetime | None = None
+    archived_at: datetime | None = None
+
+
+class RankingConfigDraftIn(BaseModel):
+    weights: dict = Field(..., description="{feature_key: {weight, direction, missing_value_policy, min_confidence}}")
+    min_weight_coverage: float = Field(default=0.5, gt=0, le=1)
+    note: str = Field(default="")
+    created_by: str = Field(..., min_length=1)
+    copied_from_version: int | None = None
+
+
+class RankingConfigPublishIn(BaseModel):
+    published_by: str = Field(..., min_length=1)
+
+
+class RankingConfigPublishOut(BaseModel):
+    config: RankingConfigOut
+    reranked: dict = Field(
+        default_factory=dict,
+        description="Kết quả xếp hàng tính lại cho MỌI dự án (§8.2 — publish là thay đổi toàn cục)",
     )
