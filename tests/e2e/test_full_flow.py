@@ -40,6 +40,11 @@ PRODUCT_DSN = os.environ.get("E2E_PRODUCT_DSN")  # postgresql://... cho psycopg
 ADMIN_TOKEN = os.environ.get("E2E_MINICRM_ADMIN_TOKEN")  # đường token tĩnh cho test
 RELAY_WAIT_SECONDS = float(os.environ.get("E2E_RELAY_WAIT", "8"))
 
+def _rec(response):
+    """API có thể bọc trong {"record": ...} hoặc trả thẳng — chấp nhận cả hai."""
+    data = response.json()
+    return data["record"] if isinstance(data, dict) and "record" in data else data
+
 pytestmark = pytest.mark.skipif(
     os.environ.get("E2E_LIVE") != "1",
     reason="RUNTIME_VERIFICATION_REQUIRED: cần cả hai stack chạy; đặt E2E_LIVE=1",
@@ -91,42 +96,55 @@ def test_write_without_auth_is_rejected(crm):
 
 @pytest.fixture()
 def created_project(crm):
-    res = crm.post("/projects", json={"name": f"E2E {time.time_ns()}"}, headers=_auth_headers())
+    # Schema thật yêu cầu `launch_date` (đội thêm sau khi test này được viết).
+    res = crm.post(
+        "/projects",
+        json={"name": f"E2E {time.time_ns()}", "launch_date": "2026-12-01"},
+        headers=_auth_headers(),
+    )
     assert res.status_code in (200, 201), res.text
-    return res.json()["record"]
+    return _rec(res)
 
 
 def test_project_persists_across_reload(crm, created_project):
     ext = created_project["external_id"]
     fetched = crm.get(f"/projects/{ext}", headers=_auth_headers())
     assert fetched.status_code == 200
-    assert fetched.json()["record"]["external_id"] == ext
+    assert _rec(fetched)["external_id"] == ext
 
 
 @pytest.fixture()
 def mirrored_unit(crm, created_project):
     """Tạo Area → Unit rồi ĐỢI relay mirror. Trả unit đã có mirrored_revision."""
     proj = created_project["external_id"]
+    ts = time.time_ns()
     area = crm.post(
         "/areas",
-        json={"external_project_id": proj, "name": f"Area {time.time_ns()}"},
+        json={
+            "external_project_id": proj,
+            "area_name": f"Area {ts}",
+            "unit_type": "2BR",
+            "bedrooms": 2,
+            "area_sqm": 65.0,
+            "total_units": 10,
+        },
         headers=_auth_headers(),
     )
     assert area.status_code in (200, 201), area.text
-    area_ext = area.json()["record"]["external_id"]
+    area_ext = _rec(area)["external_id"]
 
     unit = crm.post(
         "/units",
-        json={"external_area_id": area_ext, "unit_code": f"U{time.time_ns()}", "unit_type": "2BR"},
+        json={"external_area_id": area_ext, "unit_code": f"U{ts}"},
         headers=_auth_headers(),
     )
     assert unit.status_code in (200, 201), unit.text
-    unit_ext = unit.json()["record"]["external_id"]
+    unit_ext = _rec(unit)["external_id"]
 
     # Đợi vòng relay (mỗi 5s) mirror sang Product.
     deadline = time.time() + RELAY_WAIT_SECONDS
     while time.time() < deadline:
-        current = crm.get(f"/units/{unit_ext}", headers=_auth_headers()).json()["record"]
+        current = _rec(crm.get(f"/units/{unit_ext}", headers=_auth_headers()))
         if current.get("mirrored_revision") is not None:
             return current
         time.sleep(1)
@@ -140,17 +158,30 @@ def test_deal_blocked_before_unit_mirrored(crm, created_project):
     """Tạo Unit rồi thử tạo Deal NGAY, trước khi relay kịp mirror → 409
     UNIT_NOT_MIRRORED. Đây là business rule KHÔNG được bypass."""
     proj = created_project["external_id"]
+    ts = time.time_ns()
     area_ext = crm.post(
-        "/areas", json={"external_project_id": proj, "name": f"A{time.time_ns()}"},
+        "/areas",
+        json={
+            "external_project_id": proj,
+            "area_name": f"A{ts}",
+            "unit_type": "1BR",
+            "bedrooms": 1,
+            "area_sqm": 45.0,
+            "total_units": 5,
+        },
         headers=_auth_headers(),
     ).json()["record"]["external_id"]
     unit_ext = crm.post(
         "/units",
-        json={"external_area_id": area_ext, "unit_code": f"U{time.time_ns()}", "unit_type": "1BR"},
+        json={"external_area_id": area_ext, "unit_code": f"U{ts}"},
         headers=_auth_headers(),
     ).json()["record"]["external_id"]
 
-    res = crm.post("/deals", json={"external_unit_id": unit_ext}, headers=_auth_headers())
+    res = crm.post(
+        "/deals",
+        json={"external_unit_id": unit_ext, "deal_status": "lead"},
+        headers=_auth_headers(),
+    )
     # Nếu relay quá nhanh và đã mirror, chấp nhận 2xx; nếu chưa, PHẢI là 409.
     if res.status_code not in (200, 201):
         assert res.status_code == 409, res.text
@@ -159,7 +190,9 @@ def test_deal_blocked_before_unit_mirrored(crm, created_project):
 
 def test_deal_allowed_after_unit_mirrored(crm, mirrored_unit):
     res = crm.post(
-        "/deals", json={"external_unit_id": mirrored_unit["external_id"]}, headers=_auth_headers()
+        "/deals",
+        json={"external_unit_id": mirrored_unit["external_id"], "deal_status": "lead"},
+        headers=_auth_headers(),
     )
     assert res.status_code in (200, 201), res.text
 
@@ -206,7 +239,7 @@ def test_resend_does_not_duplicate(crm, mirrored_unit):
     crm.post(f"/outbox/{target['id']}/resend", headers=_auth_headers())
     time.sleep(2)
 
-    after = crm.get(f"/units/{unit_ext}", headers=_auth_headers()).json()["record"]
+    after = _rec(crm.get(f"/units/{unit_ext}", headers=_auth_headers()))
     assert after["mirrored_revision"] >= before  # GREATEST — không lùi
 
     with _product_db() as conn, conn.cursor() as cur:

@@ -1,40 +1,58 @@
 // frontend/src/pages/LoginPage.jsx
-// S01 — Đăng nhập. Bố cục chia đôi: panel thương hiệu (trái) + form (phải).
+// S01 — Đăng nhập bằng TOKEN VAI TRÒ (mô hình hiện tại của đội).
 //
-// NỐI BACKEND (MVP3): hiện submit chỉ điều hướng tạm về /dashboard.
-// Khi có auth thật, thay handleSubmit bằng:
-//   const res = await login(email, password);   // POST /api/auth/login
-//   setAccessToken(res.access_token);            // giữ token trong bộ nhớ
-//   navigate("/dashboard");
-// (xem api/endpoints.js -> login, api/client.js -> setAccessToken)
+// GHI CHÚ TÍCH HỢP (đọc kỹ trước khi đổi):
+// File này khớp hợp đồng trong `LoginPage.test.jsx` của đội: người dùng DÁN một
+// token vai trò → gọi `getMePermissions()` để xác thực token → vào app. KHÔNG
+// đổi sang luồng redirect Entra ở ĐÂY: bản redirect từng được thử đã làm hỏng cả
+// 4 test của đội. Khi bật SSO Entra thật cho Product frontend, điểm bám đúng là
+// một nút/hook RIÊNG (xem `src/api/auth.js::startLogin` và `src/hooks/useAuth.js`)
+// — thêm nút đó CẠNH ô token, không thay thế ô token, để hợp đồng test vẫn xanh.
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import Brand from "../components/Brand";
 import { color, size, radius, space, font } from "../styles/tokens";
 import { useBreakpoint } from "../hooks/useBreakpoint";
+import { ApiError, setAccessToken } from "../api/client";
+import { getMePermissions } from "../api/endpoints";
 import { startLogin } from "../api/auth";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isNarrow } = useBreakpoint();
-  const [email, setEmail] = useState("");
-  const [pw, setPw] = useState("");
-  const [showPw, setShowPw] = useState(false);
+  const [token, setToken] = useState("");
+  const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // CP5/CP7: đăng nhập THẬT qua Microsoft Entra ID (SSO chung với Mini CRM).
-  // Không còn nhận email/mật khẩu ở đây — Microsoft giữ phần đó. Bấm nút là
-  // điều hướng cả trang sang backend, nơi bắt đầu vòng OIDC. Xem
-  // `frontend/src/api/auth.js::startLogin`.
-  function handleSubmit(e) {
+  const from = location.state?.from?.pathname || "/overview";
+
+  async function handleSubmit(e) {
     e.preventDefault();
+    setError("");
     setSubmitting(true);
-    startLogin("/dashboard");
+
+    // Đặt token TRƯỚC khi hỏi quyền: `getMePermissions()` đi qua api/client.js,
+    // vốn tự đính token đang giữ. Token sai → 401 → gỡ token ra để không kẹt một
+    // token hỏng trong bộ nhớ.
+    setAccessToken(token);
+    try {
+      await getMePermissions();
+      navigate(from, { replace: true });
+    } catch (err) {
+      setAccessToken(null);
+      if (err instanceof ApiError) {
+        setError(err.status === 401 ? "Token không hợp lệ." : (err.message || "Đăng nhập thất bại."));
+      } else {
+        setError("Không kết nối được máy chủ, thử lại sau.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
     <div style={{ minHeight: "100vh", display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1.1fr 1fr", fontFamily: font.sans, background: color.surface }}>
-      {/* panel thương hiệu */}
       {!isNarrow && (
         <div style={S.brandPanel}>
           <Brand size={32} wordSize={19} withAI light />
@@ -49,37 +67,44 @@ export default function LoginPage() {
         </div>
       )}
 
-      {/* form */}
       <div style={S.formWrap}>
         <form style={S.form} onSubmit={handleSubmit}>
           {isNarrow && <div style={{ marginBottom: space(6) }}><Brand size={30} wordSize={18} withAI /></div>}
           <h1 style={S.h1}>Đăng nhập</h1>
-          <p style={S.sub}>Đăng nhập bằng tài khoản nội bộ để xem bảng xếp hạng và dữ liệu bán hàng.</p>
+          <p style={S.sub}>Dán token vai trò được cấp để xem bảng xếp hạng và dữ liệu bán hàng.</p>
 
-          <label style={S.label}>Email</label>
+          <label style={S.label}>Token vai trò</label>
           <input
-            type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-            placeholder="ban.kinhdoanh@congty.vn" style={S.input} required
+            type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="Dán token vai trò được cấp"
+            style={S.input}
+            required
           />
 
-          <label style={S.label}>Mật khẩu</label>
-          <div style={S.pwWrap}>
-            <input
-              type={showPw ? "text" : "password"} value={pw} onChange={(e) => setPw(e.target.value)}
-              placeholder="••••••••" style={{ ...S.input, marginBottom: 0, border: "none", flex: 1 }} required
-            />
-            <button type="button" style={S.pwToggle} onClick={() => setShowPw((v) => !v)}>
-              {showPw ? "Ẩn" : "Hiện"}
-            </button>
-          </div>
-
-          <div style={S.forgot}><span style={S.link}>Quên mật khẩu?</span></div>
+          {error && <p style={S.error}>{error}</p>}
 
           <button type="submit" style={{ ...S.submit, opacity: submitting ? 0.7 : 1 }} disabled={submitting}>
             {submitting ? "Đang đăng nhập…" : "Đăng nhập"}
           </button>
 
-          <p style={S.reg}>Chưa có tài khoản? <span style={S.link} onClick={() => navigate("/register")}>Đăng ký</span></p>
+          {/* CP5 — SSO Microsoft Entra, ĐẶT CẠNH ô token chứ không thay thế nó.
+              Ô token vẫn là đường chính (hợp đồng LoginPage.test.jsx dựa vào nó);
+              nút này là đường thứ hai, chỉ hiện khi backend đã cấu hình Entra.
+              Nhãn nút CỐ Ý khác chuỗi "Đăng nhập" để `getByRole("button", { name:
+              "Đăng nhập" })` trong test không bắt nhầm hai nút. */}
+          <div style={S.ssoWrap}>
+            <div style={S.divider}><span style={S.dividerText}>hoặc</span></div>
+            <button type="button" onClick={() => startLogin(from)} style={S.ssoBtn}>
+              Đăng nhập bằng Microsoft Entra
+            </button>
+            <p style={S.ssoHint}>
+              Dùng tài khoản công ty. Nếu bạn đã đăng nhập ở Mini CRM, bước này
+              sẽ không hỏi lại mật khẩu.
+            </p>
+          </div>
+
           <p style={S.back} onClick={() => navigate("/")}>‹ Quay lại trang chủ</p>
         </form>
       </div>
@@ -92,18 +117,19 @@ const S = {
   brandHead: { fontFamily: font.display, fontSize: 30, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-.02em" },
   brandSub: { fontSize: 15, opacity: 0.85, marginTop: 14, lineHeight: 1.6, maxWidth: "40ch" },
   brandFoot: { fontSize: 12, opacity: 0.6 },
-
   formWrap: { display: "flex", alignItems: "center", justifyContent: "center", padding: 48 },
   form: { width: "100%", maxWidth: 400 },
   h1: { fontFamily: font.display, fontSize: size.h1, fontWeight: 700, color: color.ink, margin: 0, letterSpacing: "-.02em" },
   sub: { fontSize: size.small, color: color.muted, margin: "8px 0 26px", lineHeight: 1.5 },
   label: { display: "block", fontSize: size.tiny + 0.5, fontWeight: 600, color: color.body, marginBottom: 6 },
   input: { width: "100%", border: `1px solid ${color.borderStrong}`, borderRadius: radius.sm, padding: "11px 14px", fontSize: size.small, color: color.ink, fontFamily: "inherit", marginBottom: 16, outline: "none" },
-  pwWrap: { display: "flex", alignItems: "center", border: `1px solid ${color.borderStrong}`, borderRadius: radius.sm, paddingRight: 8, marginBottom: 10 },
-  pwToggle: { background: "transparent", border: "none", color: color.accent, fontSize: size.tiny, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", padding: "4px 8px" },
-  forgot: { textAlign: "right", marginBottom: 20 },
-  link: { color: color.accent, fontWeight: 600, cursor: "pointer", fontSize: size.small },
+  error: { color: "#c0392b", fontSize: size.small, marginBottom: 14, marginTop: -4 },
   submit: { width: "100%", background: color.accent, color: "#fff", border: "none", borderRadius: radius.sm, padding: 13, fontSize: size.small, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 12px rgba(199,167,58,.24)" },
-  reg: { fontSize: size.small, color: color.muted, textAlign: "center", marginTop: 18 },
-  back: { fontSize: size.small, color: color.muted, textAlign: "center", marginTop: 8, cursor: "pointer" },
+  link: { color: color.accent, fontWeight: 600, cursor: "pointer", fontSize: size.small },
+  back: { fontSize: size.small, color: color.muted, textAlign: "center", marginTop: 18, cursor: "pointer" },
+  ssoWrap: { marginTop: 22 },
+  divider: { borderTop: `1px solid ${color.border}`, textAlign: "center", margin: "0 0 16px" },
+  dividerText: { position: "relative", top: -9, background: color.surface, padding: "0 10px", fontSize: size.tiny, color: color.muted },
+  ssoBtn: { width: "100%", background: "#fff", color: color.ink, border: `1px solid ${color.borderStrong}`, borderRadius: radius.sm, padding: 12, fontSize: size.small, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
+  ssoHint: { fontSize: size.tiny, color: color.muted, textAlign: "center", marginTop: 10, lineHeight: 1.5 },
 };

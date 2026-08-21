@@ -1,8 +1,9 @@
 import { NavLink } from "react-router-dom";
 import {
   LayoutGrid, Building2, Blocks, CircleDollarSign, Users2,
-  PieChart, LineChart, Sparkles, UserCog, ScrollText,
+  PieChart, LineChart, Sparkles, UserCog, ScrollText, ExternalLink,
 } from "lucide-react";
+import { absorbiqBaseUrl } from "../../lib/absorbiq";
 
 const SECTIONS = [
   {
@@ -70,6 +71,30 @@ export function Sidebar() {
                   {item.label}
                 </NavLink>
               ))}
+
+        {/* PHẦN 13 — lối sang hệ thống Product/AbsorbIQ.
+            Đây là link NGOÀI (khác origin), nên KHÔNG dùng <NavLink>: react-router
+            chỉ điều hướng trong chính SPA này, một `to` trỏ sang cổng 5173 sẽ
+            thành đường dẫn nội bộ hỏng. Ẩn hẳn khi chưa cấu hình
+            VITE_PRODUCT_FRONTEND_URL — một mục menu dẫn tới link chết tệ hơn là
+            không có mục nào. */}
+        {absorbiqBaseUrl() && (
+          <div>
+            <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-white/35">
+              Hệ thống liên kết
+            </p>
+            <a
+              href={absorbiqBaseUrl()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-white/60 transition-colors hover:bg-white/5 hover:text-white"
+              title="Mở AbsorbIQ — phân tích, xếp hạng và dự báo"
+            >
+              <ExternalLink className="h-[18px] w-[18px]" />
+              AbsorbIQ
+            </a>
+          </div>
+        )}
             </div>
           </div>
         ))}

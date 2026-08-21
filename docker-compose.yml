@@ -165,6 +165,7 @@ services:
       # CP6: đích của nút "Xem trong AbsorbIQ". Đây là URL người dùng mở trong
       # TRÌNH DUYỆT, nên là localhost của máy host, KHÔNG phải tên service.
       VITE_PRODUCT_FRONTEND_URL: "${PRODUCT_FRONTEND_URL:-http://localhost:5173}"
+      VITE_DEV_BEARER_TOKEN: "${MINICRM_AUTH_ADMIN_TOKEN:?MINICRM_AUTH_ADMIN_TOKEN required in .env}"
     command: sh -c "npm ci --no-audit --no-fund && npm run dev -- --host 0.0.0.0 --port 5174"
     ports:
       - "5174:5174"

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "Mini CRM (synthetic)"
+    # Môi trường chạy. "production" siết một số cấu hình chỉ-cho-dev (xem
+    # validator authorization_mode bên dưới).
+    app_env: str = "development"
     app_port: int = Field(default=8000, ge=1, le=65535)
 
     # Database RIÊNG. Không bao giờ trỏ vào database của backend.
@@ -72,6 +75,52 @@ class Settings(BaseSettings):
     # JSON: {"<token>": ["P-0001", "P-0002"]} hoặc {"<token>": "ALL"}. Token vắng
     # mặt trong map này = phạm vi RỖNG, kể cả khi bản thân token đó hợp lệ.
     auth_project_scope: SecretStr = SecretStr("")
+
+    # --- Human auth (Checkpoint 1) — HỆ CHÍNH THỨC CỦA ĐỘI -------------------
+    # Các field này thuộc về `app/human_auth.py` + `app/auth_contract.py` (JWT
+    # nội bộ HS256, lifecycle mời/đăng nhập/đặt lại mật khẩu). Chúng bị mất khi
+    # merge/conflict đè config, nên `test_auth_contract.py` fail. Khôi phục
+    # nguyên vẹn ở đây — Entra (bên dưới) là hệ THỨ HAI sống song song, không
+    # thay thế hệ này. Ràng buộc lấy từ chính test contract của đội:
+    #   - algorithm PHẢI là HS256 (JWT ký đối xứng bằng auth_signing_secret)
+    #   - mọi TTL PHẢI > 0
+    #   - dev_auth_bypass mặc định False (không mở cửa ngầm ở production)
+    auth_issuer: str = "http://localhost:8000"
+    auth_audience: str = "absorbiq-api"
+    auth_algorithm: str = "HS256"
+    auth_signing_secret: SecretStr = SecretStr("")
+    access_token_ttl_seconds: int = Field(default=900, gt=0)
+    refresh_token_ttl_seconds: int = Field(default=2_592_000, gt=0)
+    invite_token_ttl_seconds: int = Field(default=604_800, gt=0)
+    password_reset_token_ttl_seconds: int = Field(default=3_600, gt=0)
+    login_rate_limit_attempts: int = Field(default=5, ge=1)
+    login_rate_limit_window_seconds: float = Field(default=60.0, gt=0)
+    # "global_visibility" = mọi human đã xác thực đọc được toàn bộ (Phase 4a).
+    authorization_mode: str = "global_visibility"
+    # Cửa dev CHỈ cho localhost + APP_ENV=development; mặc định TẮT.
+    dev_auth_bypass: bool = False
+
+    @field_validator("auth_algorithm")
+    @classmethod
+    def _only_hs256_for_human_auth(cls, value: str) -> str:
+        # JWT nội bộ của human_auth ký ĐỐI XỨNG bằng auth_signing_secret. Chỉ
+        # HS* hợp lệ; RS256 (bất đối xứng) là của đường Entra, không dùng ở đây.
+        # Test contract của đội canh đúng điểm này.
+        if value not in {"HS256", "HS384", "HS512"}:
+            raise ValueError(f"auth_algorithm phải là HS256/HS384/HS512, nhận '{value}'")
+        return value
+
+    @model_validator(mode="after")
+    def _global_visibility_is_dev_only(self) -> "Settings":
+        # global_visibility mở toàn bộ quyền ĐỌC cho mọi human đã đăng nhập —
+        # tiện cho demo/dev, NGUY HIỂM ở production. Chặn ngay tại tầng cấu hình
+        # để không ai vô tình bật nó khi deploy thật. Test của đội canh điểm này.
+        if self.app_env == "production" and self.authorization_mode == "global_visibility":
+            raise ValueError(
+                "authorization_mode='global_visibility' không được phép khi app_env='production'"
+            )
+        return self
+
 
     # --- Microsoft Entra ID (CP4) -------------------------------------------
     # KHÔNG hard-code bất cứ giá trị nào dưới đây. Rỗng = đường Entra CHƯA bật

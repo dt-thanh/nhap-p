@@ -20,6 +20,7 @@ from contextlib import asynccontextmanager
 from app import contract, crud
 from app.config import get_settings
 from app.relay import relay_loop
+from app import human_auth
 from app.routers import areas, auth_routes, deals, outbox, projects, units
 from app.schemas import HealthOut
 from fastapi import FastAPI, Request
@@ -83,6 +84,33 @@ async def crud_error_handler(request: Request, exc: crud.CrudError) -> JSONRespo
     return JSONResponse(
         status_code=exc.http_status,
         content={"error_code": exc.error_code, "message": exc.message, "detail": exc.detail, "sent": False},
+    )
+
+
+@app.exception_handler(human_auth.HumanAuthError)
+async def human_auth_error_handler(request: Request, exc: human_auth.HumanAuthError) -> JSONResponse:
+    """`HumanAuthError` → mã HTTP CỦA CHÍNH NÓ, không phải 500.
+
+    Lớp lỗi này (app/human_auth.py) đã mang sẵn `status_code` đúng — 401 cho
+    thông tin đăng nhập sai, 403 cho thiếu quyền — nhưng KHÔNG có handler nào
+    đăng ký, nên FastAPI để nó nổi lên thành 500. Hệ quả cụ thể trước khi có
+    handler này: `GET /projects` không kèm xác thực trả **500** thay vì **401**.
+
+    Vì sao đó là lỗi thật chứ không phải chuyện thẩm mỹ:
+      · Frontend phân nhánh theo mã: `services/api.ts` chỉ chạy refresh phiên và
+        chuyển hướng đăng nhập khi thấy 401. Gặp 500 nó coi là "server hỏng",
+        nên người dùng hết phiên sẽ thấy màn hình lỗi thay vì được đưa về trang
+        đăng nhập.
+      · 500 mặc định KHÔNG kèm `WWW-Authenticate`, nên client tuân thủ chuẩn
+        không biết phải xác thực lại bằng cách nào.
+      · 5xx là tín hiệu "lỗi phía máy chủ" cho giám sát/cảnh báo. Một người dùng
+        gõ sai token không được phép làm nhiễu biểu đồ lỗi hệ thống.
+    """
+    headers = {"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"message": exc.message, "error_code": exc.error_code},
+        headers=headers,
     )
 
 
