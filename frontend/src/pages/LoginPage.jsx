@@ -118,11 +118,11 @@ export default function LoginPage() {
           <div style={S.ssoWrap}>
             <div style={S.divider}><span style={S.dividerText}>hoặc</span></div>
             <button type="button" onClick={() => startLogin(from)} style={S.ssoBtn}>
-              Đăng nhập bằng Microsoft Entra
+              Đăng nhập SSO
             </button>
             <p style={S.ssoHint}>
-              Dùng tài khoản công ty. Nếu bạn đã đăng nhập ở Mini CRM, bước này
-              sẽ không hỏi lại mật khẩu.
+              Đăng nhập/Đăng ký qua SSO. Nếu bạn đã đăng nhập ở Mini CRM, bước
+              này sẽ không hỏi lại mật khẩu.
             </p>
           </div>
 

@@ -1,0 +1,150 @@
+{
+  "realm": "p100",
+  "enabled": true,
+  "displayName": "P100 (local dev)",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "verifyEmail": false,
+  "rememberMe": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "attributes": {
+    "frontendUrl": "http://localhost:9090"
+  },
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "Full access (AbsorbIQ + Mini CRM)."
+      },
+      {
+        "name": "pipeline_operator",
+        "description": "Operator: pipeline actions."
+      },
+      {
+        "name": "business_viewer",
+        "description": "Read-only business viewer (default for self-registered users)."
+      }
+    ]
+  },
+  "groups": [
+    {
+      "name": "new-users",
+      "path": "/new-users",
+      "realmRoles": [
+        "business_viewer"
+      ]
+    }
+  ],
+  "defaultGroups": [
+    "/new-users"
+  ],
+  "requiredCredentials": [
+    "password"
+  ],
+  "users": [
+    {
+      "username": "demo",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "demo@example.com",
+      "firstName": "Demo",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo12345",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "admin"
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "minicrm-client",
+      "name": "Mini CRM",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "local-dev-minicrm-secret",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:8100/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:5174",
+        "http://localhost:8100"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5174/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm-roles-to-all-tokens",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "absorbiq-client",
+      "name": "AbsorbIQ / Product",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "local-dev-absorbiq-secret",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:8000/api/v1/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://localhost:8000"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm-roles-to-all-tokens",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ]
+}
