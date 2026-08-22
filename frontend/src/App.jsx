@@ -19,6 +19,7 @@ import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import AppLayout from "./components/AppLayout";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 import DashboardPage from "./pages/DashboardPage";
 import InventoryPage from "./pages/InventoryPage";
@@ -44,8 +45,11 @@ export function AppRoutes() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 
-        {/* Các trang nằm trong app layout */}
-        <Route element={<AppLayout />}>
+        {/* Các trang nằm trong app layout — bọc ProtectedRoute (Entra SSO).
+            "/", "/login", "/register" CỐ Ý nằm ngoài để trang đăng nhập và
+            landing vẫn mở được khi chưa có phiên. */}
+        <Route element={<ProtectedRoute />}>
+          <Route element={<AppLayout />}>
           <Route path="/overview" element={<OverviewPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
@@ -73,6 +77,7 @@ export function AppRoutes() {
           {/* Import dữ liệu */}
           <Route path="/import" element={<ImportSelectPage />} />
           <Route path="/import/upload" element={<UploadPage />} />
+          </Route>
         </Route>
 
         {/* Route không tồn tại */}

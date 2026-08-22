@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Outlet } from "react-router-dom";
 import { AppRoutes } from "./App";
+import { setAccessToken } from "./api/client";
 
 vi.mock("./hooks/useBreakpoint", () => ({
   useBreakpoint: vi.fn(),
@@ -83,6 +84,10 @@ function resolveProject() {
 describe("project and area route composition", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    // ProtectedRoute (bọc AppLayout trong App.jsx) chặn khi không có phiên.
+    // Các test này kiểm COMPOSITION route, không kiểm auth — cấp token tĩnh để
+    // qua cửa guard (cùng cách ProtectedRoute.test.jsx dùng setAccessToken).
+    setAccessToken("route-composition-test-token");
     useBreakpoint.mockReturnValue({ bp: "laptop", isNarrow: false, isMobile: false, isTablet: false, isDesktop: false });
     resolveProject();
     getAreaByExternalId.mockImplementation((externalId) => Promise.resolve(

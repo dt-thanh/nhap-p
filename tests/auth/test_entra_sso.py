@@ -144,3 +144,71 @@ def test_authorize_url_never_leaks_secret():
     url = entra_auth.build_authorize_url(state="s", nonce="n", code_challenge=challenge)
     assert "product-test-secret" not in url
     assert "code_challenge_method=S256" in url
+
+
+@pytest.mark.asyncio
+async def test_refresh_tokens_uses_refresh_grant(monkeypatch):
+    """`refresh_tokens` phải POST tới token endpoint bằng grant_type=refresh_token,
+    kèm client_id/secret của Product — đây là mảnh khiến `/auth/refresh` gia hạn
+    được phiên thay vì đá người dùng ra /login mỗi lần access token hết hạn."""
+    captured = {}
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"id_token": "new-id", "refresh_token": "new-rt", "access_token": "new-at"}
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, data=None):
+            captured["url"] = url
+            captured["data"] = data
+            return _Resp()
+
+    monkeypatch.setattr(entra_auth.httpx, "AsyncClient", _Client)
+    tokens = await entra_auth.refresh_tokens("old-refresh-token")
+
+    assert tokens["id_token"] == "new-id"
+    assert captured["data"]["grant_type"] == "refresh_token"
+    assert captured["data"]["refresh_token"] == "old-refresh-token"
+    assert captured["data"]["client_id"] == PRODUCT_CLIENT
+
+
+@pytest.mark.asyncio
+async def test_refresh_tokens_maps_failure_to_session_expired(monkeypatch):
+    """Entra từ chối refresh (refresh token hết hạn/thu hồi) ⇒ 401 SESSION_EXPIRED,
+    KHÔNG rò thân lỗi thô của Microsoft ra client."""
+
+    class _Resp:
+        status_code = 400
+
+        def json(self):
+            return {"error": "invalid_grant"}
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, data=None):
+            return _Resp()
+
+    monkeypatch.setattr(entra_auth.httpx, "AsyncClient", _Client)
+    with pytest.raises(HTTPException) as exc:
+        await entra_auth.refresh_tokens("revoked-token")
+    assert exc.value.status_code == 401
+    assert exc.value.detail["error_code"] == "SESSION_EXPIRED"

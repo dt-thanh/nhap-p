@@ -8,14 +8,14 @@
 // 4 test của đội. Khi bật SSO Entra thật cho Product frontend, điểm bám đúng là
 // một nút/hook RIÊNG (xem `src/api/auth.js::startLogin` và `src/hooks/useAuth.js`)
 // — thêm nút đó CẠNH ô token, không thay thế ô token, để hợp đồng test vẫn xanh.
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Brand from "../components/Brand";
 import { color, size, radius, space, font } from "../styles/tokens";
 import { useBreakpoint } from "../hooks/useBreakpoint";
 import { ApiError, setAccessToken } from "../api/client";
 import { getMePermissions } from "../api/endpoints";
-import { startLogin } from "../api/auth";
+import { startLogin, fetchMe } from "../api/auth";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -26,6 +26,27 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const from = location.state?.from?.pathname || "/overview";
+
+  // SSO Entra — nếu người dùng đã có phiên (vừa đăng nhập ở Mini CRM cùng tenant,
+  // hoặc quay lại app khi cookie còn sống), KHÔNG bắt họ dừng ở trang login. Hỏi
+  // `/auth/me` một lần khi mount; có danh tính thì chuyển thẳng vào `from`. Đây
+  // là mảnh khiến deep-link "Xem trong AbsorbIQ" mở đúng project mà không hỏi
+  // lại mật khẩu: ProtectedRoute đá về /login, /login thấy cookie hợp lệ và bật
+  // ngược vào ngay. 401 = chưa đăng nhập (bình thường) → ở lại trang, không lỗi.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const me = await fetchMe();
+        if (!cancelled && me) navigate(from, { replace: true });
+      } catch {
+        /* chưa có phiên → ở lại trang login */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [from, navigate]);
 
   async function handleSubmit(e) {
     e.preventDefault();

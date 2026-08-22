@@ -159,6 +159,66 @@ async def me(
     return JSONResponse(payload)
 
 
+@router.post("/refresh")
+async def refresh(
+    absorbiq_session: str | None = Cookie(default=None, alias=entra_auth.SESSION_COOKIE),
+) -> JSONResponse:
+    """Gia hạn phiên bằng refresh_token cất trong cookie phiên.
+
+    Bản MIRROR của `/auth/refresh` bên Mini CRM (`app/routers/auth_routes.py`).
+    Đây là đầu kia của hợp đồng mà `frontend/src/api/auth.js::refreshSession()`
+    gọi — trước bản này endpoint chưa tồn tại nên FE nhận 404 im lặng và mọi phiên
+    hết hạn đều rơi thẳng ra /login thay vì được gia hạn êm. Không tạo cơ chế phiên
+    mới: đọc `rt` từ cookie hiện có, đổi lấy token mới qua Entra, phát lại cookie.
+    """
+    _require_entra()
+    if not absorbiq_session:
+        raise HTTPException(
+            status_code=401,
+            detail={"message": "Không có phiên.", "error_code": "MISSING_CREDENTIALS"},
+        )
+    # Đọc claim KHÔNG kiểm hạn: phiên hết hạn CHÍNH LÀ lúc cần refresh. `read_session`
+    # kiểm hạn nên ở đây decode trực tiếp với verify_exp=False, giống Mini CRM.
+    try:
+        claims = jwt.decode(
+            absorbiq_session,
+            get_settings().session_secret.get_secret_value(),
+            algorithms=["HS256"],
+            options={"verify_exp": False},
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail={"message": "Phiên không hợp lệ.", "error_code": "INVALID_SESSION"},
+        ) from None
+
+    refresh_token = claims.get("rt")
+    if not refresh_token:
+        raise HTTPException(
+            status_code=401,
+            detail={"message": "Phiên không có refresh token.", "error_code": "SESSION_EXPIRED"},
+        )
+
+    tokens = await entra_auth.refresh_tokens(refresh_token)
+    id_token = tokens.get("id_token")
+    if not id_token:
+        raise HTTPException(
+            status_code=401,
+            detail={"message": "Entra không trả id_token khi refresh.", "error_code": "NO_ID_TOKEN"},
+        )
+    identity = entra_auth.verify_token(id_token)
+    role = entra_auth.resolve_role(identity)
+    new_session = entra_auth.issue_session(
+        identity,
+        role=role,
+        scope=entra_auth.resolve_scope(identity),
+        refresh_token=tokens.get("refresh_token", refresh_token),
+    )
+    response = JSONResponse({"status": "refreshed", "role": role})
+    entra_auth.set_session_cookie(response, new_session)
+    return response
+
+
 @router.post("/logout")
 async def logout() -> JSONResponse:
     response = JSONResponse(

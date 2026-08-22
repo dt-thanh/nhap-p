@@ -172,6 +172,36 @@ async def exchange_code(*, code: str, code_verifier: str) -> dict[str, Any]:
     return resp.json()
 
 
+async def refresh_tokens(refresh_token: str) -> dict[str, Any]:
+    """Đổi refresh_token lấy access/id token MỚI (OIDC refresh grant).
+
+    Bản MIRROR của `app/entra.py::refresh_tokens` bên Mini CRM — cùng grant, cùng
+    xử lý lỗi. Điều kiện tiên quyết: `entra_scopes` PHẢI có `offline_access` thì
+    Entra mới phát refresh_token ở vòng `callback` ban đầu (xem `issue_session`,
+    nơi `rt` được cất vào phiên). Thiếu scope đó → callback không có refresh_token
+    để cất → `/auth/refresh` luôn trả SESSION_EXPIRED, đúng như thiết kế fail-safe.
+    """
+    s = get_settings()
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(
+            token_endpoint(),
+            data={
+                "client_id": s.entra_client_id,
+                "client_secret": s.entra_client_secret.get_secret_value(),
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "scope": s.entra_scopes,
+            },
+        )
+    if resp.status_code != 200:
+        log.warning("entra.token_refresh.failed", status=resp.status_code)
+        raise HTTPException(
+            status_code=401,
+            detail={"message": "Phiên đã hết hạn.", "error_code": "SESSION_EXPIRED"},
+        )
+    return resp.json()
+
+
 # --- Xác minh ---------------------------------------------------------------
 
 
