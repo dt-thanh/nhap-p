@@ -114,6 +114,22 @@ class Settings(BaseSettings):
     entra_role_map: SecretStr = SecretStr("")
     entra_project_scope: SecretStr = SecretStr("")
 
+    # --- Generic OIDC (Keycloak local, hoặc bất kỳ IdP OIDC nào) --------------
+    # §12: OIDC_* set ⇒ dùng OIDC provider; rỗng ⇒ rơi về ENTRA_* nếu hợp lệ.
+    # KHÔNG hard-code — rỗng nghĩa là đường OIDC generic TẮT (đóng, không mở).
+    # ISSUER là URL CÔNG KHAI/front-channel (browser mở được), INTERNAL_BASE_URL
+    # là URL back-channel qua Docker DNS (container gọi). Xem src/services/oidc.py.
+    oidc_issuer: str = ""
+    oidc_internal_base_url: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: SecretStr = SecretStr("")
+    oidc_redirect_uri: str = ""
+    oidc_post_logout_redirect_uri: str = ""
+    oidc_scopes: str = "openid profile email offline_access"
+    oidc_audience: str = ""
+    oidc_allowed_algorithms: str = "RS256"
+    oidc_clock_skew_seconds: int = 60
+
     session_secret: SecretStr = SecretStr("")
     session_ttl_seconds: int = 3600
     session_cookie_secure: bool = True

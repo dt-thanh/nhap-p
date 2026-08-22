@@ -65,7 +65,20 @@ class EntraIdentity:
     expires_at: int
 
 
+def oidc_active() -> bool:
+    """True khi đường OIDC generic (Keycloak/…) đã cấu hình và ĐƯỢC ƯU TIÊN hơn
+    Entra. Import cục bộ để tránh vòng phụ thuộc (oidc.py import từ file này)."""
+    from app import oidc
+
+    return oidc.oidc_configured()
+
+
 def entra_configured() -> bool:
+    """Có MỘT nhà cung cấp OIDC nào đã cấu hình chưa (Entra HOẶC generic OIDC như
+    Keycloak). Giữ tên hàm để auth_routes/session không phải đổi. §12: OIDC_* set ⇒
+    OIDC; nếu không, ENTRA_* hợp lệ ⇒ Entra."""
+    if oidc_active():
+        return True
     s = get_settings()
     return bool(
         s.entra_tenant_id
@@ -141,6 +154,10 @@ def new_pkce_pair() -> tuple[str, str]:
 
 
 def build_authorize_url(*, state: str, nonce: str, code_challenge: str) -> str:
+    if oidc_active():
+        from app import oidc
+
+        return oidc.build_authorize_url(state=state, nonce=nonce, code_challenge=code_challenge)
     s = get_settings()
     params = {
         "client_id": s.entra_client_id,
@@ -156,7 +173,11 @@ def build_authorize_url(*, state: str, nonce: str, code_challenge: str) -> str:
     return f"{authorize_endpoint()}?{urlencode(params)}"
 
 
-def build_logout_url() -> str:
+def build_logout_url() -> str | None:
+    if oidc_active():
+        from app import oidc
+
+        return oidc.build_logout_url()
     s = get_settings()
     params = {}
     if s.entra_post_logout_redirect_uri:
@@ -172,6 +193,10 @@ def build_logout_url() -> str:
 async def exchange_code(*, code: str, code_verifier: str) -> dict[str, Any]:
     """Authorization code → token set. Ném `HTTPException` 401/502 chứ không để
     lộ nguyên văn phản hồi của Entra ra ngoài (nó có thể chứa gợi ý cấu hình)."""
+    if oidc_active():
+        from app import oidc
+
+        return await oidc.exchange_code(code=code, code_verifier=code_verifier)
     if not entra_configured():
         raise EntraConfigError("Entra chưa được cấu hình đầy đủ.")
     s = get_settings()
@@ -202,6 +227,10 @@ async def exchange_code(*, code: str, code_verifier: str) -> dict[str, Any]:
 
 
 async def refresh_tokens(refresh_token: str) -> dict[str, Any]:
+    if oidc_active():
+        from app import oidc
+
+        return await oidc.refresh_tokens(refresh_token)
     s = get_settings()
     data = {
         "client_id": s.entra_client_id,
@@ -273,6 +302,10 @@ def verify_token(token: str, *, public_key: Any | None = None) -> EntraIdentity:
     `public_key` CHỈ để test tiêm khoá cố định (xem `tests/test_entra_auth.py`);
     production để `None` ⇒ khoá lấy từ JWKS thật của tenant.
     """
+    if oidc_active():
+        from app import oidc
+
+        return oidc.verify_token(token, public_key=public_key)
     if not get_settings().entra_tenant_id:
         raise HTTPException(
             status_code=503,

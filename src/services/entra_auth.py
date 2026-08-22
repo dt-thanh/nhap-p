@@ -66,7 +66,22 @@ class EntraIdentity:
     expires_at: int
 
 
+def oidc_active() -> bool:
+    """True khi đường OIDC generic (Keycloak/…) được cấu hình và nên ĐƯỢC ƯU TIÊN
+    hơn Entra. Import cục bộ để tránh vòng phụ thuộc (oidc.py import EntraIdentity
+    từ file này)."""
+    from src.services import oidc
+
+    return oidc.oidc_configured()
+
+
 def entra_configured() -> bool:
+    """Có MỘT nhà cung cấp danh tính OIDC nào đã cấu hình chưa (Entra HOẶC generic
+    OIDC như Keycloak). Tên hàm giữ nguyên để `src/api/auth.py` và `dashboard_auth`
+    không phải đổi; nó KHÔNG còn có nghĩa 'riêng Entra' mà là 'đường người dùng
+    OIDC đang bật'. §12: OIDC_* set ⇒ dùng OIDC; nếu không, ENTRA_* hợp lệ ⇒ Entra."""
+    if oidc_active():
+        return True
     s = get_settings()
     return bool(
         s.entra_tenant_id
@@ -123,6 +138,10 @@ def new_pkce_pair() -> tuple[str, str]:
 
 
 def build_authorize_url(*, state: str, nonce: str, code_challenge: str) -> str:
+    if oidc_active():
+        from src.services import oidc
+
+        return oidc.build_authorize_url(state=state, nonce=nonce, code_challenge=code_challenge)
     s = get_settings()
     return f"{authorize_endpoint()}?" + urlencode(
         {
@@ -139,7 +158,11 @@ def build_authorize_url(*, state: str, nonce: str, code_challenge: str) -> str:
     )
 
 
-def build_logout_url() -> str:
+def build_logout_url() -> str | None:
+    if oidc_active():
+        from src.services import oidc
+
+        return oidc.build_logout_url()
     s = get_settings()
     if s.entra_post_logout_redirect_uri:
         return f"{logout_endpoint()}?" + urlencode(
@@ -149,6 +172,10 @@ def build_logout_url() -> str:
 
 
 async def exchange_code(*, code: str, code_verifier: str) -> dict[str, Any]:
+    if oidc_active():
+        from src.services import oidc
+
+        return await oidc.exchange_code(code=code, code_verifier=code_verifier)
     s = get_settings()
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(
@@ -181,6 +208,10 @@ async def refresh_tokens(refresh_token: str) -> dict[str, Any]:
     nơi `rt` được cất vào phiên). Thiếu scope đó → callback không có refresh_token
     để cất → `/auth/refresh` luôn trả SESSION_EXPIRED, đúng như thiết kế fail-safe.
     """
+    if oidc_active():
+        from src.services import oidc
+
+        return await oidc.refresh_tokens(refresh_token)
     s = get_settings()
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(
@@ -222,6 +253,10 @@ def reset_jwks_cache() -> None:
 
 def verify_token(token: str, *, public_key: Any | None = None) -> EntraIdentity:
     """Xác minh chữ ký RS256 + `iss`/`aud`/`exp`. `public_key` chỉ dùng cho test."""
+    if oidc_active():
+        from src.services import oidc
+
+        return oidc.verify_token(token, public_key=public_key)
     s = get_settings()
     if not s.entra_tenant_id:
         raise HTTPException(
@@ -292,6 +327,13 @@ def resolve_role(identity: EntraIdentity) -> DashboardRole:
         if str(v) in _VALID_ROLES
     }
     matched = [mapping[c] for c in (*identity.roles, *identity.groups) if c in mapping]
+    # OIDC/Keycloak: realm roles có TÊN đúng bằng ba vai trò nội bộ
+    # (admin/pipeline_operator/business_viewer). Chấp nhận chúng như chính nó KỂ CẢ
+    # khi ENTRA_ROLE_MAP chưa liệt kê — nhưng CHỈ ở chế độ OIDC, để nhánh Entra giữ
+    # nguyên fail-closed (một app-role Entra tên trùng không tự lên quyền). Người tự
+    # đăng ký nhận `business_viewer` qua default role của realm ⇒ KHÔNG bao giờ admin.
+    if not matched and oidc_active():
+        matched = [c for c in (*identity.roles, *identity.groups) if c in _VALID_ROLES]
     if not matched:
         raise HTTPException(
             status_code=403,

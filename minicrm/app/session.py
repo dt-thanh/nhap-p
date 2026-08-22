@@ -85,6 +85,15 @@ def resolve_role(identity: EntraIdentity) -> MiniCrmRole:
         for claim in (*identity.roles, *identity.groups)
         if claim in mapping
     ]
+    # OIDC/Keycloak: realm roles có TÊN đúng bằng ba vai trò nội bộ. Chấp nhận như
+    # chính nó kể cả khi MINICRM_ENTRA_ROLE_MAP chưa liệt kê — nhưng CHỈ ở chế độ
+    # OIDC, để nhánh Entra giữ nguyên fail-closed. Người tự đăng ký nhận
+    # `business_viewer` qua default role của realm ⇒ KHÔNG bao giờ tự lên admin.
+    if not matched:
+        from app.entra import oidc_active
+
+        if oidc_active():
+            matched = [c for c in (*identity.roles, *identity.groups) if c in _VALID_ROLES]
     if not matched:
         raise HTTPException(
             status_code=403,

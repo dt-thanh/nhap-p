@@ -38,6 +38,11 @@ Vì vậy, dự án xây dựng một baseline Ranking Engine để xếp hạ
 
 ## 2. Hướng dẫn chạy
 
+> **SSO local qua Keycloak:** môi trường dev dùng Keycloak làm OIDC provider mặc
+> định cho cả Mini CRM và Product (Entra vẫn giữ, bật lại bằng env). Xem runbook
+> đầy đủ: [docs/keycloak-sso.md](docs/keycloak-sso.md) — gồm login `demo`,
+> Register, cấp admin, reset chỉ Keycloak, và cách chuyển về Microsoft Entra.
+
 ### Các bước
 
 ```bash

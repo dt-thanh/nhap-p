@@ -53,6 +53,42 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # ---- Keycloak: OIDC Identity Provider MẶC ĐỊNH cho dev local -------------
+  # Pin phiên bản 26.x cụ thể (KHÔNG dùng :latest). start-dev + import realm p100.
+  # Browser mở http://localhost:9090 (cổng host 9090 → 8080 trong container).
+  # Backend gọi back-channel qua Docker DNS http://keycloak:8080. Issuer được ghim
+  # về http://localhost:9090 bằng `frontendUrl` trong realm JSON — xem
+  # docker/keycloak/p100-realm.json và src/services/oidc.py.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1.4
+    command: ["start-dev", "--import-realm"]
+    environment:
+      # KC 26: bootstrap admin qua KC_BOOTSTRAP_ADMIN_*. Username có default dev;
+      # password BẮT BUỘC lấy từ .env untracked — KHÔNG hard-code password thật.
+      KC_BOOTSTRAP_ADMIN_USERNAME: "${KEYCLOAK_ADMIN_USERNAME:-admin}"
+      KC_BOOTSTRAP_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required in root .env (untracked). Do not commit a real password.}"
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+    ports:
+      - "9090:8080"
+    volumes:
+      # Volume RIÊNG — KHÔNG dùng chung với Postgres của Product/Mini CRM.
+      - keycloak_data:/opt/keycloak/data
+      # Realm import (read-only). Bind mount ghi đè thư mục import trong volume.
+      - ./docker/keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      # Keycloak image KHÔNG có curl/wget. Dùng JDK sẵn có trong image để gọi
+      # management health endpoint (cổng 9000, bật bởi KC_HEALTH_ENABLED).
+      test:
+        - "CMD-SHELL"
+        - "echo 'public class H{public static void main(String[] a)throws Exception{System.exit(((java.net.HttpURLConnection)new java.net.URL(a[0]).openConnection()).getResponseCode()==200?0:1);}}' > /tmp/H.java && java /tmp/H.java http://localhost:9000/health/ready"
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+    restart: unless-stopped
+
   api:
     <<: *backend-base
     environment:
@@ -68,6 +104,16 @@ services:
       ENTRA_POST_LOGOUT_REDIRECT_URI: "${ENTRA_POST_LOGOUT_REDIRECT_URI:-http://localhost:5173/login}"
       ENTRA_ROLE_MAP: "${ENTRA_ROLE_MAP:-}"
       ENTRA_PROJECT_SCOPE: "${ENTRA_PROJECT_SCOPE:-}"
+      # Keycloak/OIDC generic — IdP MẶC ĐỊNH cho dev local. OIDC_* set ⇒ dùng
+      # OIDC; nếu rỗng, rơi về ENTRA_* ở trên (§12). ISSUER = URL browser mở được
+      # (localhost:9090); INTERNAL_BASE_URL = Docker DNS cho server-to-server.
+      OIDC_ISSUER: "${OIDC_ISSUER:-http://localhost:9090/realms/p100}"
+      OIDC_INTERNAL_BASE_URL: "${OIDC_INTERNAL_BASE_URL:-http://keycloak:8080/realms/p100}"
+      OIDC_CLIENT_ID: "${OIDC_CLIENT_ID:-absorbiq-client}"
+      OIDC_CLIENT_SECRET: "${OIDC_CLIENT_SECRET:-local-dev-absorbiq-secret}"
+      OIDC_REDIRECT_URI: "${OIDC_REDIRECT_URI:-http://localhost:8000/api/v1/auth/callback}"
+      OIDC_POST_LOGOUT_REDIRECT_URI: "${OIDC_POST_LOGOUT_REDIRECT_URI:-http://localhost:5173}"
+      OIDC_SCOPES: "${OIDC_SCOPES:-openid profile email offline_access}"
       SESSION_SECRET: "${SESSION_SECRET:-}"
       SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-false}"
       # Local API only; dashboard_auth also requires APP_ENV=development.
@@ -77,7 +123,10 @@ services:
       # thứ PHẢI tắt ngay khi Entra đã cấu hình — nếu không, một request không
       # kèm cookie/token vẫn đi vào bằng quyền admin. Đặt "false" sau khi
       # ENTRA_* ở trên đã có giá trị thật.
-      DEV_AUTH_BYPASS: "${DEV_AUTH_BYPASS:-true}"
+      # Keycloak giờ cấp auth local THẬT nên bypass mặc định TẮT (đúng như TODO
+      # trong dashboard_auth.py: "Remove DEV_AUTH_BYPASS when real local auth
+      # exists"). Đặt true chỉ khi cố tình bỏ qua SSO cho một phiên debug.
+      DEV_AUTH_BYPASS: "${DEV_AUTH_BYPASS:-false}"
       # CHỈ dùng ở dev/test. entrypoint TỪ CHỐI chạy khi APP_ENV=production —
       # xem docs/runbooks/migrations.md (sự cố quy trình ở Phase 8D).
       RUN_MIGRATIONS: "true"
@@ -201,7 +250,7 @@ services:
       POSTGRES_DB: ${MINICRM_POSTGRES_DB:-minicrm}
     ports:
       # Cổng KHÁC backend (5432) — gõ nhầm cổng không được phép trỏ vào nhầm hệ.
-      - "5433:5432"
+      - "5434:5432"
     volumes:
       - minicrm_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -249,6 +298,18 @@ services:
       # Chỉ dev. Production migrate bằng lệnh tường minh, giống backend
       # (`minicrm/.env` giữ "false" cho chế độ uvicorn trực tiếp — migrate tay).
       MINICRM_RUN_MIGRATIONS: "true"
+      # Keycloak/OIDC generic cho Mini CRM (docker-mode). CỐ Ý ở `environment:`
+      # (không phải env_file) vì INTERNAL_BASE_URL khác giữa host-mode
+      # (localhost:9090) và docker-mode (keycloak:8080) — cùng lý do với
+      # MINICRM_DATABASE_URL ở trên. ISSUER là host CÔNG KHAI browser mở được.
+      MINICRM_OIDC_ISSUER: "${MINICRM_OIDC_ISSUER:-http://localhost:9090/realms/p100}"
+      MINICRM_OIDC_INTERNAL_BASE_URL: "${MINICRM_OIDC_INTERNAL_BASE_URL:-http://keycloak:8080/realms/p100}"
+      MINICRM_OIDC_CLIENT_ID: "${MINICRM_OIDC_CLIENT_ID:-minicrm-client}"
+      MINICRM_OIDC_CLIENT_SECRET: "${MINICRM_OIDC_CLIENT_SECRET:-local-dev-minicrm-secret}"
+      MINICRM_OIDC_REDIRECT_URI: "${MINICRM_OIDC_REDIRECT_URI:-http://localhost:8100/auth/callback}"
+      MINICRM_OIDC_POST_LOGOUT_REDIRECT_URI: "${MINICRM_OIDC_POST_LOGOUT_REDIRECT_URI:-http://localhost:5174}"
+      MINICRM_OIDC_SCOPES: "${MINICRM_OIDC_SCOPES:-openid profile email offline_access}"
+      # SESSION_SECRET cho Mini CRM đến từ minicrm/.env (MINICRM_SESSION_SECRET).
       # --- Hai bí mật BẮT BUỘC, CỐ Ý trùng nguồn với `.env` GỐC ------------
       # `environment:` LUÔN thắng `env_file:` ở CÙNG một khoá (quy tắc precedence
       # của Compose — không có cách nào lách qua bằng cú pháp) — nên MỘT trong
@@ -290,3 +351,7 @@ volumes:
   uploads:
   # Volume RIÊNG. Dùng chung volume là dùng chung database.
   minicrm_pgdata:
+  # Keycloak data — volume RIÊNG, KHÔNG dùng chung với Postgres của Product/Mini
+  # CRM. Realm p100 chỉ import khi realm CHƯA tồn tại trong volume này; muốn
+  # re-import phải xoá RIÊNG volume này (xem README — KHÔNG `down -v` cả stack).
+  keycloak_data:

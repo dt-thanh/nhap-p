@@ -144,6 +144,21 @@ class Settings(BaseSettings):
     # JSON {"<app-role|group-id>": ["P-0001"] | "ALL"}. Vắng mặt = phạm vi RỖNG.
     entra_project_scope: SecretStr = SecretStr("")
 
+    # --- Generic OIDC (Keycloak local, hoặc IdP OIDC bất kỳ) -----------------
+    # Tiền tố env MINICRM_ (env_prefix). §12: MINICRM_OIDC_* set ⇒ dùng OIDC;
+    # rỗng ⇒ rơi về MINICRM_ENTRA_*. ISSUER = URL CÔNG KHAI/front-channel;
+    # INTERNAL_BASE_URL = URL back-channel qua Docker DNS. Xem app/oidc.py.
+    oidc_issuer: str = ""
+    oidc_internal_base_url: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: SecretStr = SecretStr("")
+    oidc_redirect_uri: str = ""
+    oidc_post_logout_redirect_uri: str = ""
+    oidc_scopes: str = "openid profile email offline_access"
+    oidc_audience: str = ""
+    oidc_allowed_algorithms: str = "RS256"
+    oidc_clock_skew_seconds: int = Field(default=60, ge=0, le=300)
+
     # --- Phiên đăng nhập (cookie HttpOnly do Mini CRM tự ký) ------------------
     session_secret: SecretStr = SecretStr("")
     session_ttl_seconds: int = Field(default=3600, ge=60)
