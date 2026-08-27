@@ -13,6 +13,7 @@ alembic>=1.14.0
 pydantic>=2.9.0
 pydantic-settings>=2.6.0
 httpx>=0.27.0
+redis>=5.2.0
 
 # Human-auth foundation. Argon2id is used directly; PyJWT is constrained to
 # the supported 2.x API. `secrets` from the Python standard library supplies

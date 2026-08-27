@@ -11,9 +11,10 @@ vi.mock("../api/endpoints", () => ({
   listProjects: vi.fn(),
   listAreasScoped: vi.fn(),
   listInventoryScoped: vi.fn(),
+  bootstrapInventoryDefault: vi.fn(),
 }));
 
-import { listProjects, listAreasScoped, listInventoryScoped } from "../api/endpoints";
+import { bootstrapInventoryDefault, listProjects, listAreasScoped, listInventoryScoped } from "../api/endpoints";
 
 const PROJECTS = [
   { project_id: "u-1", external_id: "prj_op1", name: "Ocean Park 1", status: "active" },
@@ -46,12 +47,13 @@ describe("InventoryPage", () => {
     listProjects.mockResolvedValue(PROJECTS);
     listAreasScoped.mockResolvedValue(AREAS);
     listInventoryScoped.mockResolvedValue(INVENTORY);
+    bootstrapInventoryDefault.mockResolvedValue({ project: PROJECTS[0], area: AREAS[0], inventory: INVENTORY, created: false });
   });
 
-  it("does not call listInventoryScoped until a project is selected", async () => {
+  it("selects the first valid project and area, then loads inventory immediately", async () => {
     renderPage();
-    await screen.findByText("Chọn một dự án để xem tồn kho.");
-    expect(listInventoryScoped).not.toHaveBeenCalled();
+    await waitFor(() => expect(listInventoryScoped).toHaveBeenCalledWith("prj_op1", expect.objectContaining({ external_area_id: "ar_0001" })));
+    expect(await screen.findByText("ST-01")).toBeInTheDocument();
   });
 
   it("selecting a project calls GET /inventory with include_units=true and renders real units", async () => {
@@ -126,6 +128,14 @@ describe("InventoryPage", () => {
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "prj_op1" } });
 
     expect(await screen.findByText("Thử lại")).toBeInTheDocument();
+  });
+
+  it("shows a scope error instead of an endless initial skeleton when areas cannot load", async () => {
+    listAreasScoped.mockRejectedValue({ message: "area service unavailable", status: 500 });
+    renderPage();
+
+    expect(await screen.findByText("Có lỗi xảy ra")).toBeInTheDocument();
+    expect(listInventoryScoped).not.toHaveBeenCalled();
   });
 
   it("shows an explicit empty state, not a fabricated row, when a project genuinely has no units", async () => {

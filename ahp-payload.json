@@ -1,0 +1,17 @@
+{
+  "criteria": ["unit_available","unit_demand_norm","area_velocity_norm","area_conversion_norm"],
+  "judgments": [
+    {"a":"unit_available","b":"unit_demand_norm","value":2},
+    {"a":"unit_available","b":"area_velocity_norm","value":3},
+    {"a":"unit_available","b":"area_conversion_norm","value":3},
+    {"a":"unit_demand_norm","b":"area_velocity_norm","value":2},
+    {"a":"unit_demand_norm","b":"area_conversion_norm","value":2},
+    {"a":"area_velocity_norm","b":"area_conversion_norm","value":1}
+  ],
+  "feature_specs": {
+    "unit_available":       {"direction":"positive","missing_value_policy":"zero","min_confidence":0},
+    "unit_demand_norm":     {"direction":"positive","missing_value_policy":"zero","min_confidence":0},
+    "area_velocity_norm":   {"direction":"positive","missing_value_policy":"neutral","min_confidence":0},
+    "area_conversion_norm": {"direction":"positive","missing_value_policy":"neutral","min_confidence":0}
+  }
+}

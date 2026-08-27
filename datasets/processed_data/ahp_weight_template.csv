@@ -1,0 +1,11 @@
+group,group_weight,criterion,weight_within_group,global_weight,direction,provenance,status
+affordability_demand_depth,0.508246,ticket_depth_score,0.571429,0.290426,benefit,observed_or_derived,DOMAIN-EXPERT JUDGMENT — pending team human-in-the-loop review
+affordability_demand_depth,0.508246,price_per_sqm_net_score,0.285714,0.145213,cost,observed_or_derived,DOMAIN-EXPERT JUDGMENT — pending team human-in-the-loop review
+affordability_demand_depth,0.508246,loan_premium_score,0.142857,0.072607,cost,observed_or_derived,DOMAIN-EXPERT JUDGMENT — pending team human-in-the-loop review
+product_fit,0.265974,segment_depth_score,0.558425,0.148526,benefit,observed_or_derived,DOMAIN-EXPERT JUDGMENT — pending team human-in-the-loop review
+product_fit,0.265974,size_fit_score,0.319618,0.08501,cost,observed_or_derived,DOMAIN-EXPERT JUDGMENT — pending team human-in-the-loop review
+product_fit,0.265974,area_efficiency_score,0.121957,0.032437,benefit,observed_or_derived,DOMAIN-EXPERT JUDGMENT — pending team human-in-the-loop review
+position,0.132987,floor_band_score,1.0,0.132987,benefit,observed_or_derived,DOMAIN-EXPERT JUDGMENT — pending team human-in-the-loop review
+physical_attractiveness,0.092793,view_score,0.545455,0.050614,benefit,synthetic,DOMAIN-EXPERT JUDGMENT — pending team human-in-the-loop review
+physical_attractiveness,0.092793,direction_score,0.272727,0.025307,benefit,synthetic,DOMAIN-EXPERT JUDGMENT — pending team human-in-the-loop review
+physical_attractiveness,0.092793,corner_score,0.181818,0.016871,benefit,synthetic,DOMAIN-EXPERT JUDGMENT — pending team human-in-the-loop review

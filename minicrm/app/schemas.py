@@ -14,16 +14,27 @@ nhưng chưa đồng bộ" trông y hệt "đã lưu và đã đồng bộ" — 
 
 from __future__ import annotations
 
+import math
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Soi gương tập trạng thái của backend. Khai bằng `Literal` để FastAPI từ chối
 # ngay ở tầng validate, TRƯỚC khi chạm database — một trạng thái lạ không bao giờ
 # đi được xa tới chỗ ràng buộc CHECK phải nổ.
 UnitStatus = Literal["available", "reserved", "sold", "blocked"]
 DealStatus = Literal["lead", "qualified", "interested", "viewing", "reserved", "sold", "lost"]
+
+def _finite_or_none(value: float | None) -> float | None:
+    """Chặn `NaN`/`Infinity` — JSON không có ký hiệu chuẩn cho chúng, nhưng bộ mã
+    hoá của Python thì phát ra được, nên tầng validate phải tự canh (0008).
+    `Field(gt=0)` đã chặn NaN (mọi so sánh với NaN đều `False`) nhưng KHÔNG chặn
+    `Infinity` (`inf > 0` là `True`)."""
+    if value is not None and not math.isfinite(value):
+        raise ValueError("listing_price phải là một số hữu hạn (không NaN, không Infinity)")
+    return value
+
 
 SYNTHETIC_DISCLAIMER = (
     "Mini CRM TỔNG HỢP do chính dự án này viết. KHÔNG phải CRM của khách hàng, "
@@ -82,6 +93,7 @@ class SyncOut(BaseModel):
 class ProjectOut(BaseModel):
     external_id: str
     name: str
+    location: str | None = None
     launch_date: date
     status: Literal["active", "archived"]
     source_revision: int
@@ -103,14 +115,36 @@ class ProjectCreate(BaseModel):
     # `external_id` KHÔNG có ở đây — cùng lý do với Unit/Deal: do dãy của
     # database cấp, không bao giờ do người gọi tự đặt.
     name: str = Field(..., min_length=1, max_length=255)
+    location: str | None = Field(default=None, min_length=1, max_length=512)
     launch_date: date
+
+    @field_validator("location")
+    @classmethod
+    def _location_is_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("location không được để trống")
+        return value
 
 
 class ProjectPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
+    location: str | None = Field(default=None, min_length=1, max_length=512)
     launch_date: date | None = None
+
+    @field_validator("location")
+    @classmethod
+    def _location_is_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("location không được để trống")
+        return value
 
 
 class ProjectWriteOut(BaseModel):
@@ -194,6 +228,9 @@ class UnitOut(BaseModel):
     unit_type: str
     unit_code: str
     unit_status: str
+    # Giá niêm yết/chính thức (0008). `None` = chưa biết giá — KHÔNG phải giá
+    # giao dịch thực (chưa có trường đó, xem docstring migration 0008).
+    listing_price: float | None = None
     source_revision: int
     deleted_at: datetime | None = None
     created_at: datetime
@@ -227,6 +264,14 @@ class UnitCreate(BaseModel):
     unit_type: str | None = Field(default=None, min_length=1, max_length=64)
     unit_code: str = Field(..., min_length=1, max_length=64)
     unit_status: UnitStatus = "available"
+    # Tuỳ chọn — Mini CRM không bắt buộc biết giá của mọi căn ngay lúc tạo.
+    # `> 0`: giá bằng 0 không phải một giá thật (khớp CHECK ở DB, 0008).
+    listing_price: float | None = Field(default=None, gt=0)
+
+    @field_validator("listing_price")
+    @classmethod
+    def _listing_price_is_finite(cls, value: float | None) -> float | None:
+        return _finite_or_none(value)
 
     @model_validator(mode="after")
     def _exactly_one_area_reference(self) -> UnitCreate:
@@ -255,6 +300,16 @@ class UnitPatch(BaseModel):
     unit_type: str | None = Field(default=None, min_length=1, max_length=64)
     unit_code: str | None = Field(default=None, min_length=1, max_length=64)
     unit_status: UnitStatus | None = None
+    # Vắng mặt = GIỮ NGUYÊN giá đang có (loại khỏi patch bởi `exclude_unset` ở
+    # router). `null` TƯỜNG MINH = XOÁ giá đang có (patch mang khoá này với giá
+    # trị `None`, `.values(listing_price=None, ...)` ghi NULL). Một số > 0 = đặt
+    # giá mới. Xem `routers/units.py::update_unit` và migration 0008.
+    listing_price: float | None = Field(default=None, gt=0)
+
+    @field_validator("listing_price")
+    @classmethod
+    def _listing_price_is_finite(cls, value: float | None) -> float | None:
+        return _finite_or_none(value)
 
     @model_validator(mode="after")
     def _at_most_one_area_reference(self) -> UnitPatch:

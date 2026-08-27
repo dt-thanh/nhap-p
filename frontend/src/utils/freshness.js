@@ -11,6 +11,12 @@
 // docs/roadmap.md Phase 5.5.
 export const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // 24 giờ — NGƯỠNG TẠM, chưa phải quyết định nghiệp vụ
 
+// Độ lệch cho phép giữa "đã đồng bộ" và "đã tính lại" trước khi coi thẻ số
+// liệu là chưa phản ánh dữ liệu mới. Cũng là NGƯỠNG TẠM — `utils/signals.js`
+// đọc hằng số này để trích dẫn đúng ngưỡng trong bằng chứng tín hiệu thay vì
+// chép lại một con số rời.
+export const RECALC_SKEW_AFTER_MS = 5 * 60 * 1000; // 5 phút — NGƯỠNG TẠM
+
 /**
  * @param {object} summary - AbsorptionSummaryOut (có thể null khi đang tải)
  * @param {Date} [now] - chỉ để test tiêm giờ giả; mặc định giờ thật
@@ -35,7 +41,7 @@ export function classifyFreshness(summary, now = new Date()) {
   if (updated_at) {
     const syncedAt = new Date(last_successful_sync).getTime();
     const calculatedAt = new Date(updated_at).getTime();
-    if (syncedAt - calculatedAt > 5 * 60 * 1000) return "calculation_outdated";
+    if (syncedAt - calculatedAt > RECALC_SKEW_AFTER_MS) return "calculation_outdated";
   }
 
   const ageMs = now.getTime() - new Date(last_successful_sync).getTime();

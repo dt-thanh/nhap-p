@@ -1,6 +1,6 @@
 """Bảng SQLAlchemy Core cho luồng nạp dữ liệu.
 
-CHỈ khai báo những bảng mà tầng ứng dụng thực sự chạm tới (hiện là 20), không
+CHỈ khai báo những bảng mà tầng ứng dụng thực sự chạm tới (hiện là 22), không
 phải toàn bộ bảng của migration — khai thừa thì phải bảo trì thừa.
 
 Dùng Core (`sa.Table`) chứ không dùng ORM: luồng này chỉ ghi hàng loạt rồi thôi,
@@ -16,6 +16,7 @@ xếp hạng được đối chiếu với schema thật ở
 from __future__ import annotations
 
 import sqlalchemy as sa
+from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects import postgresql
 
 UUID = postgresql.UUID(as_uuid=True)
@@ -424,6 +425,121 @@ feature_snapshots = sa.Table(
     sa.Column("updated_at", TS, nullable=False),
 )
 
+# --- 0033: immutable run-bound ranking evidence -----------------------------
+# These tables are additive.  The legacy `feature_snapshots` above remains the
+# mutable compatibility cache used by the current ranking implementation.
+ranking_feature_definitions = sa.Table(
+    "ranking_feature_definitions",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("feature_key", sa.Text(), nullable=False),
+    sa.Column("feature_version", sa.Text(), nullable=False),
+    sa.Column("name", sa.Text(), nullable=False),
+    sa.Column("category", sa.Text(), nullable=False),
+    sa.Column("grain", sa.Text(), nullable=False),
+    sa.Column("value_type", sa.Text(), nullable=False),
+    sa.Column("unit", sa.Text(), nullable=True),
+    sa.Column("formula_id", sa.Text(), nullable=False),
+    sa.Column("normalization_method", sa.Text(), nullable=False),
+    sa.Column("direction", sa.Text(), nullable=False),
+    sa.Column("missing_policy", sa.Text(), nullable=False),
+    sa.Column("status", sa.Text(), nullable=False),
+    sa.Column("definition_metadata", JSONB, nullable=False),
+    sa.Column("created_by", sa.Text(), nullable=True),
+    sa.Column("created_at", TS, nullable=False),
+    sa.Column("updated_at", TS, nullable=False),
+)
+
+ranking_config_features = sa.Table(
+    "ranking_config_features",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("ranking_config_id", UUID, nullable=False),
+    sa.Column("feature_definition_id", UUID, nullable=False),
+    sa.Column("weight", sa.Numeric(12, 8), nullable=False),
+    sa.Column("required", sa.Boolean(), nullable=False),
+    sa.Column("policy_metadata", JSONB, nullable=False),
+    sa.Column("created_at", TS, nullable=False),
+)
+
+ranking_feature_snapshots = sa.Table(
+    "ranking_feature_snapshots",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("ranking_run_id", UUID, nullable=False),
+    sa.Column("project_id", UUID, nullable=False),
+    sa.Column("scope_type", sa.Text(), nullable=False),
+    sa.Column("area_id", UUID, nullable=True),
+    sa.Column("cutoff_at", TS, nullable=False),
+    sa.Column("computed_at", TS, nullable=False),
+    sa.Column("feature_set_version", sa.Text(), nullable=False),
+    sa.Column("quality_status", sa.Text(), nullable=False),
+    sa.Column("quality_summary", JSONB, nullable=False),
+    sa.Column("created_at", TS, nullable=False),
+)
+
+ranking_feature_values = sa.Table(
+    "ranking_feature_values",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("snapshot_id", UUID, nullable=False),
+    sa.Column("feature_definition_id", UUID, nullable=False),
+    sa.Column("project_id", UUID, nullable=False),
+    sa.Column("scope_type", sa.Text(), nullable=False),
+    sa.Column("area_id", UUID, nullable=True),
+    sa.Column("unit_id", UUID, nullable=True),
+    sa.Column("value_kind", sa.Text(), nullable=False),
+    sa.Column("raw_numeric", sa.Numeric(24, 10), nullable=True),
+    sa.Column("normalized_numeric", sa.Numeric(12, 8), nullable=True),
+    sa.Column("boolean_value", sa.Boolean(), nullable=True),
+    sa.Column("categorical_value", sa.Text(), nullable=True),
+    sa.Column("missing_reason", sa.Text(), nullable=True),
+    sa.Column("confidence", sa.Numeric(5, 4), nullable=True),
+    sa.Column("sample_count", sa.Integer(), nullable=True),
+    sa.Column("observed_at", TS, nullable=True),
+    sa.Column("source_updated_at", TS, nullable=True),
+    sa.Column("quality_status", sa.Text(), nullable=False),
+    sa.Column("created_at", TS, nullable=False),
+    # PR-3 (0039): provenance link back to the CEO-approved value assertion
+    # that produced this row. NULL for any future non-governance-sourced
+    # feature value (none exist yet — every row PR-3 writes sets this).
+    sa.Column("source_justification_id", UUID, nullable=True),
+)
+
+ranking_feature_lineage = sa.Table(
+    "ranking_feature_lineage",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("feature_value_id", UUID, nullable=False),
+    sa.Column("source_relation", sa.Text(), nullable=False),
+    sa.Column("source_record_id", sa.Text(), nullable=True),
+    sa.Column("source_revision", sa.BigInteger(), nullable=True),
+    sa.Column("source_event_at", TS, nullable=True),
+    sa.Column("source_locator", sa.Text(), nullable=False),
+    sa.Column("source_checksum", sa.Text(), nullable=True),
+    sa.Column("created_at", TS, nullable=False),
+)
+
+ranking_explanations = sa.Table(
+    "ranking_explanations",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("ranking_run_id", UUID, nullable=False),
+    sa.Column("unit_id", UUID, nullable=False),
+    sa.Column("feature_value_id", UUID, nullable=False),
+    sa.Column("feature_definition_id", UUID, nullable=False),
+    sa.Column("raw_value", sa.Text(), nullable=True),
+    sa.Column("normalized_value", sa.Numeric(12, 8), nullable=True),
+    sa.Column("weight", sa.Numeric(12, 8), nullable=False),
+    sa.Column("direction", sa.Text(), nullable=False),
+    sa.Column("contribution", sa.Numeric(18, 10), nullable=False),
+    sa.Column("formula_id", sa.Text(), nullable=False),
+    sa.Column("interpretation_code", sa.Text(), nullable=False),
+    sa.Column("missing_reason", sa.Text(), nullable=True),
+    sa.Column("quality_status", sa.Text(), nullable=False),
+    sa.Column("created_at", TS, nullable=False),
+)
+
 # Trọng số xếp hạng, có version. CHỈ-THÊM: `weights` của một dòng đã `published`
 # không bao giờ được UPDATE — sửa tại chỗ khiến mọi `ranking_scores` cũ trỏ tới
 # một config đã đổi nghĩa. Rollback là chép sang một version MỚI.
@@ -444,6 +560,12 @@ ranking_configs = sa.Table(
     sa.Column("published_by", sa.Text(), nullable=True),
     sa.Column("published_at", TS, nullable=True),
     sa.Column("archived_at", TS, nullable=True),
+    # D41/S10 (0037): nested per-grain hierarchical composition config, read
+    # ONLY by the additive post-run hierarchical step. NULL = hierarchical
+    # scoring not configured for this config version — `weights` above (the
+    # legacy flat feature-weight map `_active_config()`/`validate_weights()`
+    # read) is untouched and remains the exclusive legacy unit-ranking input.
+    sa.Column("hierarchical_weights", JSONB, nullable=True),
 )
 
 # Vòng đời một lần xếp hạng. CHỈ-THÊM, giữ mãi — đây là lịch sử vận hành.
@@ -492,6 +614,12 @@ ranking_scores = sa.Table(
     sa.Column("contributions", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
     sa.Column("feature_freshness_at", TS, nullable=True),
     sa.Column("computed_at", TS, nullable=False),
+    # D29/S8 + D37/S9 (0037): the hierarchical (M/P/A/U) output, additive and
+    # parallel to `score`/`contributions` above — never read or written by
+    # the legacy per-unit scoring path. NULL = not yet hierarchically scored,
+    # or HIGH_RISK legal-gated (§24.4.5) — never a zero/defaulted value.
+    sa.Column("hierarchical_score", sa.Numeric(6, 4), nullable=True),
+    sa.Column("hierarchical_contributions", JSONB, nullable=True),
 )
 
 # --- Phase 6 (0018): đề xuất tư vấn của AI Agent, chờ duyệt --------------------
@@ -567,4 +695,204 @@ agent_executions = sa.Table(
     sa.Column("error", sa.Text(), nullable=True),
     sa.Column("started_at", TS, nullable=False),
     sa.Column("finished_at", TS, nullable=True),
+)
+
+# --- 0034: expert-governed ranking configuration ----------------------------
+expert_profiles = sa.Table(
+    "expert_profiles",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("user_id", UUID, nullable=True),
+    sa.Column("identity_subject", sa.Text(), nullable=False),
+    sa.Column("organization", sa.Text(), nullable=True),
+    sa.Column("title", sa.Text(), nullable=True),
+    sa.Column("expertise_summary", sa.Text(), nullable=True),
+    sa.Column("status", sa.Text(), nullable=False),
+    sa.Column("created_at", TS, nullable=False),
+    sa.Column("updated_at", TS, nullable=False),
+)
+
+ranking_weight_proposals = sa.Table(
+    "ranking_weight_proposals",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("base_config_id", UUID, nullable=True),
+    sa.Column("proposed_config_id", UUID, nullable=True),
+    sa.Column("scope_type", sa.Text(), nullable=False),
+    sa.Column("project_id", UUID, nullable=False),
+    sa.Column("area_id", UUID, nullable=True),
+    sa.Column("status", sa.Text(), nullable=False),
+    sa.Column("created_by_expert_id", UUID, nullable=False),
+    sa.Column("submitted_at", TS, nullable=True),
+    sa.Column("approved_at", TS, nullable=True),
+    sa.Column("published_at", TS, nullable=True),
+    sa.Column("created_at", TS, nullable=False),
+    sa.Column("updated_at", TS, nullable=False),
+    # PR-2/D38 (0038): 'weight' (default, existing rows) | 'value' (new).
+    sa.Column("assertion_kind", sa.Text(), nullable=False),
+)
+
+ranking_feature_justifications = sa.Table(
+    "ranking_feature_justifications",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("proposal_id", UUID, nullable=False),
+    sa.Column("feature_definition_id", UUID, nullable=False),
+    sa.Column("previous_weight", sa.Numeric(12, 8), nullable=True),
+    sa.Column("proposed_weight", sa.Numeric(12, 8), nullable=True),
+    sa.Column("rationale", sa.Text(), nullable=False),
+    sa.Column("methodology", sa.Text(), nullable=False),
+    sa.Column("evidence_summary", sa.Text(), nullable=False),
+    sa.Column("expected_effect", sa.Text(), nullable=False),
+    sa.Column("confidence", sa.Text(), nullable=False),
+    sa.Column("limitations", sa.Text(), nullable=False),
+    sa.Column("created_by_expert_id", UUID, nullable=False),
+    sa.Column("created_at", TS, nullable=False),
+    sa.Column("updated_at", TS, nullable=False),
+    # PR-2/D38 (0038) — value-mode assertion payload, XOR with proposed_weight
+    # above (`ck_rfj_assertion_mode_xor`). NULL for every weight-mode row.
+    sa.Column("assertion_kind", sa.Text(), nullable=False),
+    sa.Column("raw_numeric", sa.Numeric(24, 10), nullable=True),
+    sa.Column("normalized_numeric", sa.Numeric(12, 8), nullable=True),
+    sa.Column("categorical_value", sa.Text(), nullable=True),
+    sa.Column("effective_at", TS, nullable=True),
+    sa.Column("expires_at", TS, nullable=True),
+    sa.Column("external_source_citation", sa.Text(), nullable=True),
+    sa.Column("author_subject", sa.Text(), nullable=True),
+)
+
+ranking_evidence_documents = sa.Table(
+    "ranking_evidence_documents",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("proposal_id", UUID, nullable=True),
+    sa.Column("uploaded_by_expert_id", UUID, nullable=False),
+    sa.Column("original_filename", sa.Text(), nullable=False),
+    sa.Column("mime_type", sa.Text(), nullable=False),
+    sa.Column("object_storage_key", sa.Text(), nullable=False),
+    sa.Column("sha256_checksum", sa.Text(), nullable=False),
+    sa.Column("file_size_bytes", sa.BigInteger(), nullable=False),
+    sa.Column("extraction_status", sa.Text(), nullable=False),
+    sa.Column("created_at", TS, nullable=False),
+)
+
+ranking_evidence_document_features = sa.Table(
+    "ranking_evidence_document_features",
+    metadata,
+    sa.Column("document_id", UUID, primary_key=True),
+    sa.Column("feature_justification_id", UUID, primary_key=True),
+)
+
+ranking_evidence_document_chunks = sa.Table(
+    "ranking_evidence_document_chunks",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("document_id", UUID, nullable=False),
+    sa.Column("chunk_index", sa.Integer(), nullable=False),
+    sa.Column("page_number", sa.Integer(), nullable=True),
+    sa.Column("content", sa.Text(), nullable=False),
+    sa.Column("token_count", sa.Integer(), nullable=False),
+    sa.Column("embedding_model", sa.Text(), nullable=False),
+    sa.Column("embedding", Vector(1536), nullable=False),
+    sa.Column("created_at", TS, nullable=False),
+)
+
+ranking_evidence_extraction_attempts = sa.Table(
+    "ranking_evidence_extraction_attempts",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("document_id", UUID, nullable=False),
+    sa.Column("status", sa.Text(), nullable=False),
+    sa.Column("error_summary", sa.Text(), nullable=True),
+    sa.Column("created_at", TS, nullable=False),
+)
+
+ranking_proposal_reviews = sa.Table(
+    "ranking_proposal_reviews",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("proposal_id", UUID, nullable=False),
+    sa.Column("reviewer_expert_id", UUID, nullable=False),
+    sa.Column("decision", sa.Text(), nullable=False),
+    sa.Column("comment", sa.Text(), nullable=False),
+    sa.Column("decided_at", TS, nullable=False),
+    # PR-2/D38 (0038) — server-derived reviewer identity, value-mode reviews
+    # only. NULL for every weight-mode review (unchanged behavior).
+    sa.Column("reviewer_subject", sa.Text(), nullable=True),
+    sa.Column("reviewer_is_ceo", sa.Boolean(), nullable=True),
+)
+
+ranking_config_audit_events = sa.Table(
+    "ranking_config_audit_events",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("ranking_config_id", UUID, nullable=True),
+    sa.Column("proposal_id", UUID, nullable=True),
+    sa.Column("actor_expert_id", UUID, nullable=True),
+    sa.Column("actor_identity_subject", sa.Text(), nullable=False),
+    sa.Column("event_type", sa.Text(), nullable=False),
+    sa.Column("before_status", sa.Text(), nullable=True),
+    sa.Column("after_status", sa.Text(), nullable=True),
+    sa.Column("before_state", JSONB, nullable=False),
+    sa.Column("after_state", JSONB, nullable=False),
+    sa.Column("created_at", TS, nullable=False),
+)
+
+
+# --- 0027: quan trắc giá niêm yết -------------------------------------------
+#
+# Đường vào THỨ HAI cho giá, tách khỏi luồng đồng bộ CRM. Hợp đồng
+# `src/contracts/crm_sync_v2.schema.json` CẤM trường giá (`additionalProperties:
+# false`, có test ở hệ nguồn cưỡng chế), nên `units` không bao giờ mang giá và
+# bảng này không bao giờ được ghi bởi `DomainProjector`.
+#
+# `official_price` là giá NIÊM YẾT, không phải giá giao dịch thực.
+# `effective_to IS NULL` = giá đang áp dụng; partial unique index
+# `ix_price_obs_unit_current` cưỡng chế đúng một dòng như thế mỗi căn.
+project_price_observations = sa.Table(
+    "project_price_observations",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("unit_id", UUID, nullable=False),
+    sa.Column("official_price", sa.Numeric(18, 2), nullable=False),
+    sa.Column("effective_from", sa.Date(), nullable=False),
+    sa.Column("effective_to", sa.Date(), nullable=True),
+    sa.Column("source", sa.String(50), nullable=False, server_default=sa.text("'manual'")),
+    sa.Column("created_at", TS, nullable=False, server_default=sa.func.now()),
+)
+
+# --- Nhật ký status append-only (0028/0029/0030) ----------------------------
+# Ghi bởi trigger DB (`units_emit_status_history`/`deals_emit_status_history`),
+# KHÔNG bởi tầng ứng dụng — khai ở đây chỉ để đọc, không phải để INSERT thủ
+# công. UPDATE/DELETE bị chặn ở DB (REVOKE + trigger bảo vệ), không lặp lại ở
+# Core vì SQLAlchemy không thực thi được ràng buộc phía server.
+
+unit_status_history = sa.Table(
+    "unit_status_history",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("unit_id", UUID, nullable=False),
+    sa.Column("deal_id", UUID, nullable=True),
+    sa.Column("old_status", sa.Text(), nullable=True),
+    sa.Column("new_status", sa.Text(), nullable=False),
+    sa.Column("changed_at", TS, nullable=False),
+    sa.Column("recorded_at", TS, nullable=False, server_default=sa.func.now()),
+    sa.Column("source", sa.Text(), nullable=False),
+    sa.Column("metadata_json", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+)
+
+deal_status_history = sa.Table(
+    "deal_status_history",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("deal_id", UUID, nullable=False),
+    sa.Column("unit_id", UUID, nullable=False),
+    sa.Column("old_status", sa.Text(), nullable=True),
+    sa.Column("new_status", sa.Text(), nullable=False),
+    sa.Column("prior_status_was_holding", sa.Boolean(), nullable=False),
+    sa.Column("new_status_is_holding", sa.Boolean(), nullable=False),
+    sa.Column("changed_at", TS, nullable=False),
+    sa.Column("recorded_at", TS, nullable=False, server_default=sa.func.now()),
+    sa.Column("source", sa.Text(), nullable=False),
+    sa.Column("metadata_json", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
 )

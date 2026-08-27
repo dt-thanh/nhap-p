@@ -1,7 +1,7 @@
 {
   "realm": "p100",
   "enabled": true,
-  "displayName": "P100 (local dev)",
+  "displayName": "AbsorptionForecast",
   "registrationAllowed": true,
   "registrationEmailAsUsername": false,
   "loginWithEmailAllowed": true,
@@ -29,6 +29,18 @@
       {
         "name": "business_viewer",
         "description": "Read-only business viewer (default for self-registered users)."
+      },
+      {
+        "name": "CRM.CEO",
+        "description": "Canonical Entra/Keycloak App Role -> internal 'admin'. See src/services/entra_auth.py::CANONICAL_APP_ROLES and minicrm/app/session.py::CANONICAL_APP_ROLES — this exact name is what those fixed maps look for, NOT a plain 'ceo' role."
+      },
+      {
+        "name": "CRM.ADVISOR",
+        "description": "Canonical Entra/Keycloak App Role -> internal 'business_viewer'."
+      },
+      {
+        "name": "CRM.SALES",
+        "description": "Canonical Entra/Keycloak App Role -> internal 'pipeline_operator'."
       }
     ]
   },
@@ -64,6 +76,60 @@
       ],
       "realmRoles": [
         "admin"
+      ]
+    },
+    {
+      "username": "e2e.ceo",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "e2e.ceo@example.test",
+      "firstName": "E2E",
+      "lastName": "CEO",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "pemxOLDH9a9oKeBNLYv4sCcZ",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CRM.CEO"
+      ]
+    },
+    {
+      "username": "e2e.advisor",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "e2e.advisor@example.test",
+      "firstName": "E2E",
+      "lastName": "Advisor",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "-QQ_IceKOoHWw7kL80B1xkbv",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CRM.ADVISOR"
+      ]
+    },
+    {
+      "username": "e2e.sales",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "e2e.sales@example.test",
+      "firstName": "E2E",
+      "lastName": "Sales",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "VM_AC3KOACar6kbw30tOlPXu",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CRM.SALES"
       ]
     }
   ],
@@ -146,5 +212,13 @@
         }
       ]
     }
-  ]
+  ],
+  "displayNameHtml": "<span>AbsorptionForecast</span>",
+  "loginTheme": "absorptionforecast",
+  "internationalizationEnabled": true,
+  "supportedLocales": [
+    "vi",
+    "en"
+  ],
+  "defaultLocale": "vi"
 }

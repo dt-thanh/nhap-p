@@ -107,6 +107,147 @@ def validate_weights(weights: dict) -> None:
         raise ConfigError("WEIGHT_SUM", f"tổng trọng số phải bằng 1.0, đang là {total}")
 
 
+# --- Hierarchical scoring config (PR-1, D41) --------------------------------
+#
+# `ranking_configs.hierarchical_weights` (0037) is a SEPARATE, additive, nullable
+# column from `weights` above — D41: "the existing `weights` column remains the
+# exclusive legacy unit-ranking configuration". This validator is deliberately
+# ISOLATED from `validate_weights()`: it never calls it, never shares its
+# KNOWN_FEATURES gate (registering market/project/area feature keys there is a
+# separate, later schema change — S7, not part of PR-1), and nothing in
+# `create_draft()`/`publish()` below calls this function or touches this column.
+HIERARCHICAL_GRAIN_KEYS = ("market", "project", "area")
+GRAIN_WEIGHT_KEYS = ("market", "project", "area", "unit")
+
+
+class HierarchicalConfigError(RuntimeError):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def validate_hierarchical_weights(hierarchical_weights: dict) -> None:
+    """Structural validation for the nested `market`/`project`/`area`/`grain_weights`
+    shape (§24.7's D41 note). Raises `HierarchicalConfigError` before any
+    hierarchical scoring is attempted; never mutates its input.
+
+    PR-1 boundary rule (mandatory compatibility requirement): a `"unit"` block is
+    FORBIDDEN. `U` is read exclusively from the already-persisted legacy
+    `ranking_scores.score` — this validator rejects any config that tries to
+    supply a second, competing unit-weight vector.
+    """
+    if not isinstance(hierarchical_weights, dict) or not hierarchical_weights:
+        raise HierarchicalConfigError("HIERARCHICAL_WEIGHTS_EMPTY", "hierarchical_weights không được rỗng")
+
+    if "unit" in hierarchical_weights:
+        raise HierarchicalConfigError(
+            "HIERARCHICAL_WEIGHTS_UNIT_BLOCK_FORBIDDEN",
+            "hierarchical_weights không được chứa khối 'unit' — U đọc riêng từ "
+            "ranking_scores.score đã có sẵn (qua ranking_configs.weights/_active_config() "
+            "không đổi), không bao giờ được tính lại ở đây (PR-1 boundary)",
+        )
+
+    missing_top = sorted(key for key in (*HIERARCHICAL_GRAIN_KEYS, "grain_weights") if key not in hierarchical_weights)
+    if missing_top:
+        raise HierarchicalConfigError(
+            "HIERARCHICAL_WEIGHTS_KEY_MISSING", f"hierarchical_weights thiếu khoá bắt buộc: {missing_top}"
+        )
+
+    for grain in HIERARCHICAL_GRAIN_KEYS:
+        _validate_hierarchical_grain_features(grain, hierarchical_weights[grain])
+
+    _validate_grain_weights(hierarchical_weights["grain_weights"])
+
+
+def _validate_hierarchical_grain_features(grain: str, spec_map: dict) -> None:
+    if not isinstance(spec_map, dict) or not spec_map:
+        raise HierarchicalConfigError(
+            "HIERARCHICAL_GRAIN_EMPTY", f"hierarchical_weights['{grain}'] không được rỗng"
+        )
+    total = 0.0
+    for key, spec in spec_map.items():
+        if not isinstance(spec, dict):
+            raise HierarchicalConfigError(
+                "HIERARCHICAL_WEIGHT_SPEC_INVALID", f"hierarchical_weights['{grain}']['{key}'] phải là object"
+            )
+        try:
+            weight = float(spec["weight"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HierarchicalConfigError(
+                "HIERARCHICAL_WEIGHT_INVALID", f"hierarchical_weights['{grain}']['{key}'].weight phải là số"
+            ) from exc
+        if weight < 0:
+            raise HierarchicalConfigError(
+                "HIERARCHICAL_WEIGHT_NEGATIVE", f"hierarchical_weights['{grain}']['{key}'].weight không được âm"
+            )
+        total += weight
+        if spec.get("direction") not in DIRECTIONS:
+            raise HierarchicalConfigError(
+                "HIERARCHICAL_DIRECTION_INVALID",
+                f"hierarchical_weights['{grain}']['{key}'].direction phải thuộc {DIRECTIONS}",
+            )
+        if spec.get("missing_value_policy") not in MISSING_POLICIES:
+            raise HierarchicalConfigError(
+                "HIERARCHICAL_MISSING_POLICY_INVALID",
+                f"hierarchical_weights['{grain}']['{key}'].missing_value_policy phải thuộc {MISSING_POLICIES}",
+            )
+    if abs(total - 1.0) > WEIGHT_SUM_TOLERANCE:
+        raise HierarchicalConfigError(
+            "HIERARCHICAL_WEIGHT_SUM",
+            f"hierarchical_weights['{grain}']: tổng trọng số phải bằng 1.0, đang là {total}",
+        )
+
+
+def _validate_grain_weights(grain_weights: dict) -> None:
+    if not isinstance(grain_weights, dict):
+        raise HierarchicalConfigError("HIERARCHICAL_GRAIN_WEIGHTS_INVALID", "grain_weights phải là object")
+    keys = set(grain_weights)
+    if keys != set(GRAIN_WEIGHT_KEYS):
+        raise HierarchicalConfigError(
+            "HIERARCHICAL_GRAIN_WEIGHTS_KEYS",
+            f"grain_weights phải có đúng bốn khoá {sorted(GRAIN_WEIGHT_KEYS)}, đang có {sorted(keys)}",
+        )
+    total = 0.0
+    for key in GRAIN_WEIGHT_KEYS:
+        spec = grain_weights[key]
+        if not isinstance(spec, dict):
+            raise HierarchicalConfigError(
+                "HIERARCHICAL_GRAIN_WEIGHT_SPEC_INVALID", f"grain_weights['{key}'] phải là object"
+            )
+        try:
+            weight = float(spec["weight"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HierarchicalConfigError(
+                "HIERARCHICAL_GRAIN_WEIGHT_INVALID", f"grain_weights['{key}'].weight phải là số"
+            ) from exc
+        if weight < 0:
+            raise HierarchicalConfigError(
+                "HIERARCHICAL_GRAIN_WEIGHT_NEGATIVE", f"grain_weights['{key}'].weight không được âm"
+            )
+        total += weight
+        policy = spec.get("missing_value_policy")
+        if policy not in MISSING_POLICIES:
+            raise HierarchicalConfigError(
+                "HIERARCHICAL_GRAIN_MISSING_POLICY_INVALID",
+                f"grain_weights['{key}'].missing_value_policy phải thuộc {MISSING_POLICIES}",
+            )
+        # D37: an excluded/missing grain must leave the composition entirely
+        # (renormalize over the remaining eligible grains), never be scored as
+        # a flat 0 — `zero` would silently penalize a unit for a parent grain
+        # nobody has published yet.
+        if policy == "zero":
+            raise HierarchicalConfigError(
+                "HIERARCHICAL_GRAIN_ZERO_POLICY_FORBIDDEN",
+                f"grain_weights['{key}'].missing_value_policy không được là 'zero' — một grain vắng mặt phải bị "
+                "loại khỏi F_unit (D37), không bao giờ được chấm điểm 0",
+            )
+    if abs(total - 1.0) > WEIGHT_SUM_TOLERANCE:
+        raise HierarchicalConfigError(
+            "HIERARCHICAL_GRAIN_WEIGHT_SUM", f"grain_weights: tổng trọng số phải bằng 1.0, đang là {total}"
+        )
+
+
 async def _survey_features_with_data(session, feature_keys: set[str]) -> set[str]:
     if not feature_keys:
         return set()

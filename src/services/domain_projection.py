@@ -20,6 +20,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 import sqlalchemy as sa
@@ -27,7 +28,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.logging_config import get_logger
-from src.models.tables import areas, deals, projects, units
+from src.models.tables import areas, deals, project_price_observations, projects, units
 from src.services.json_payload import SourceRecord, redact
 from src.services.source_identity import DecisionResult
 
@@ -417,7 +418,85 @@ class DomainProjector:
             "deleted_at": None,
             "updated_at": now,
         }
-        return await self._upsert(units, values, now, key_column="external_unit_id")
+        result = await self._upsert(units, values, now, key_column="external_unit_id")
+        assert result.row_id is not None
+        await self._apply_price_observation(result.row_id, data, source_system, now)
+        return result
+
+    # --- giá niêm yết (0008) --------------------------------------------------
+
+    async def _apply_price_observation(
+        self, unit_id: uuid.UUID, data: dict[str, Any], source: str, now: datetime
+    ) -> None:
+        """Chiếu `listing_price` (nếu bản ghi có mang) vào `project_price_observations`
+        (0008, 2026-08-23) — KHÔNG phải một cột trên `units`. `units` là bản sao
+        MỘT CHIỀU đơn giản (0007); giá đổi theo thời gian và cần lịch sử hiệu lực
+        (`effective_from`/`effective_to`), nên nó đi đường THỨ HAI, đúng mô hình
+        khảo sát mà `alembic/versions/0027_project_price_observations.py` đã dựng
+        sẵn — file này chỉ là NGƯỜI GHI ĐẦU TIÊN vào một bảng đã tồn tại.
+
+        Ba trạng thái của `listing_price` trong `data`, cùng khuôn với A4
+        (`history_guard.py`) nhưng KHÔNG dùng lại máy đó: A4 đọc lại giá trị cũ
+        từ CHÍNH bảng đang chiếu (`units`/`deals`) qua `MirrorSnapshot`, còn giá
+        sống ở một bảng khác hẳn — ghép nó vào A4 sẽ bắt `history_guard.py` biết
+        về một bảng nó không sở hữu. Tự làm lấy, nhỏ và tách bạch:
+
+            VẮNG MẶT (`"listing_price" not in data`)
+                Hệ nguồn không nói gì về giá của căn này ở bản ghi này — không
+                hành động. Một hệ nguồn không theo dõi giá phải luôn hợp lệ.
+            NULL TƯỜNG MINH (`data["listing_price"] is None`)
+                "Không còn giá niêm yết" — đóng quan trắc đang hiệu lực (nếu
+                có), không mở dòng mới. `project_price_observations.official_price`
+                NOT NULL nên không có cách nào khác diễn đạt "không giá" bằng
+                một dòng.
+            SỐ DƯƠNG
+                So với quan trắc ĐANG hiệu lực: bằng nhau → không làm gì
+                (idempotent — gửi lại một lô không tạo dòng trùng); khác nhau
+                → đóng dòng cũ (`effective_to = hôm nay`) rồi mở dòng mới.
+
+        Chỉ được gọi SAU khi bản ghi unit đã được `_upsert` chấp nhận — một bản
+        ghi `skip_stale`/`conflict`/`duplicate_noop` không bao giờ tới `_upsert`
+        (xem `project()` ở trên), nên giá THỪA HƯỞNG cổng phiên bản của chính
+        bản ghi unit và không cần một cơ chế phiên bản riêng.
+        """
+        if "listing_price" not in data:
+            return
+
+        incoming = data["listing_price"]
+        observed_on = now.date()
+
+        current = (
+            await self._session.execute(
+                sa.select(project_price_observations.c.id, project_price_observations.c.official_price).where(
+                    project_price_observations.c.unit_id == unit_id,
+                    project_price_observations.c.effective_to.is_(None),
+                )
+            )
+        ).one_or_none()
+
+        if incoming is not None:
+            incoming_price = Decimal(str(incoming))
+            if current is not None and current.official_price == incoming_price:
+                return
+
+        if current is not None:
+            await self._session.execute(
+                sa.update(project_price_observations)
+                .where(project_price_observations.c.id == current.id)
+                .values(effective_to=observed_on)
+            )
+
+        if incoming is not None:
+            await self._session.execute(
+                sa.insert(project_price_observations).values(
+                    id=uuid.uuid4(),
+                    unit_id=unit_id,
+                    official_price=incoming_price,
+                    effective_from=observed_on,
+                    effective_to=None,
+                    source=source,
+                )
+            )
 
     # --- deals --------------------------------------------------------------
 

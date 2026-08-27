@@ -1,5 +1,6 @@
 """Checkpoint 1: human-auth contracts without enabling the lifecycle."""
 
+import json
 from uuid import UUID, uuid4
 
 import pytest
@@ -79,3 +80,68 @@ def test_identity_and_role_vocabularies_are_explicit():
     assert {item.value for item in UserStatus} == {"invited", "active", "disabled"}
     assert {item.value for item in CrmRole} == {"business_viewer", "pipeline_operator", "admin"}
     assert AuthErrorCode.INVALID_CREDENTIALS.value == "INVALID_CREDENTIALS"
+
+
+# --- MINICRM_OIDC_ROLE_MAP: cannot redefine CRM.CEO/CRM.ADVISOR/CRM.SALES ----
+#
+# These are the canonical business roles shared with Product/AbsorbIQ
+# (`app/session.py::CANONICAL_APP_ROLES`) — fixed in code, so a misconfigured
+# role map can't silently change what "CEO" means.
+
+
+def test_role_map_empty_is_allowed():
+    settings = Settings(_env_file=None, oidc_role_map="")
+    assert settings.oidc_role_map.get_secret_value() == ""
+
+
+def test_role_map_with_unrelated_keys_is_allowed():
+    settings = Settings(
+        _env_file=None, oidc_role_map=json.dumps({"custom.group": "admin", "CRM.Operator": "pipeline_operator"})
+    )
+    assert settings.oidc_role_map.get_secret_value()
+
+
+@pytest.mark.parametrize(
+    ("key", "canonical_value"),
+    [
+        ("CRM.CEO", "admin"),
+        ("CRM.Admin", "admin"),
+        ("CRM.ADVISOR", "business_viewer"),
+        ("CRM.Viewer", "business_viewer"),
+        ("CRM.SALES", "pipeline_operator"),
+        ("CRM.Operator", "pipeline_operator"),
+    ],
+)
+def test_role_map_matching_the_canonical_value_is_allowed(key, canonical_value):
+    settings = Settings(_env_file=None, oidc_role_map=json.dumps({key: canonical_value}))
+    assert settings.oidc_role_map.get_secret_value()
+
+
+@pytest.mark.parametrize(
+    ("key", "wrong_value"),
+    [
+        ("CRM.CEO", "business_viewer"),
+        ("CRM.Admin", "business_viewer"),
+        ("CRM.ADVISOR", "admin"),
+        ("CRM.Viewer", "admin"),
+        ("CRM.SALES", "admin"),
+        ("CRM.Operator", "admin"),
+    ],
+)
+def test_role_map_redefining_a_canonical_key_is_rejected_at_startup(key, wrong_value):
+    with pytest.raises(ValidationError, match=key):
+        Settings(_env_file=None, oidc_role_map=json.dumps({key: wrong_value}))
+
+
+# --- MINICRM_AUTH_PROVIDER: only "keycloak" is accepted ----------------------
+
+
+def test_auth_provider_defaults_to_keycloak():
+    assert Settings(_env_file=None).auth_provider == "keycloak"
+
+
+def test_auth_provider_rejects_unsupported_value():
+    """No Entra left to select — an unrecognized value (including "entra") is
+    rejected by Pydantic at startup, never silently activating another path."""
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, auth_provider="entra")

@@ -4,8 +4,8 @@
 // GHI CHÚ TÍCH HỢP (đọc kỹ trước khi đổi):
 // File này khớp hợp đồng trong `LoginPage.test.jsx` của đội: người dùng DÁN một
 // token vai trò → gọi `getMePermissions()` để xác thực token → vào app. KHÔNG
-// đổi sang luồng redirect Entra ở ĐÂY: bản redirect từng được thử đã làm hỏng cả
-// 4 test của đội. Khi bật SSO Entra thật cho Product frontend, điểm bám đúng là
+// đổi sang luồng redirect Keycloak ở ĐÂY: bản redirect từng được thử đã làm hỏng
+// cả 4 test của đội. Khi bật SSO Keycloak thật cho Product frontend, điểm bám đúng là
 // một nút/hook RIÊNG (xem `src/api/auth.js::startLogin` và `src/hooks/useAuth.js`)
 // — thêm nút đó CẠNH ô token, không thay thế ô token, để hợp đồng test vẫn xanh.
 import React, { useState, useEffect } from "react";
@@ -27,7 +27,7 @@ export default function LoginPage() {
 
   const from = location.state?.from?.pathname || "/overview";
 
-  // SSO Entra — nếu người dùng đã có phiên (vừa đăng nhập ở Mini CRM cùng tenant,
+  // SSO Keycloak — nếu người dùng đã có phiên (vừa đăng nhập ở Mini CRM cùng realm,
   // hoặc quay lại app khi cookie còn sống), KHÔNG bắt họ dừng ở trang login. Hỏi
   // `/auth/me` một lần khi mount; có danh tính thì chuyển thẳng vào `from`. Đây
   // là mảnh khiến deep-link "Xem trong AbsorbIQ" mở đúng project mà không hỏi
@@ -92,17 +92,31 @@ export default function LoginPage() {
         <form style={S.form} onSubmit={handleSubmit}>
           {isNarrow && <div style={{ marginBottom: space(6) }}><Brand size={30} wordSize={18} withAI /></div>}
           <h1 style={S.h1}>Đăng nhập</h1>
-          <p style={S.sub}>Dán token vai trò được cấp để xem bảng xếp hạng và dữ liệu bán hàng.</p>
+          <p style={S.sub}>
+            Đăng nhập bằng tài khoản AbsorptionForecast. Nếu bạn đã đăng nhập ở
+            Mini CRM, bước này sẽ không hỏi lại mật khẩu.
+          </p>
 
-          <label style={S.label}>Token vai trò</label>
-          <input
-            type="password"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder="Dán token vai trò được cấp"
-            style={S.input}
-            required
-          />
+          {/* Legacy token login — chỉ hiện khi bật cờ dev (§11). Vẫn tồn tại trong
+              DOM khi bật, để hợp đồng LoginPage.test.jsx còn dùng được. Mặc định
+              người dùng cuối chỉ thấy nút SSO. */}
+          {import.meta.env.VITE_ENABLE_LEGACY_TOKEN_LOGIN === "true" && (
+            <>
+              <label style={S.label}>Token vai trò</label>
+              <input
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="Dán token vai trò được cấp"
+                style={S.input}
+              />
+              {error && <p style={S.error}>{error}</p>}
+              <button type="submit" style={{ ...S.submit, opacity: submitting ? 0.7 : 1 }} disabled={submitting}>
+                {submitting ? "Đang đăng nhập…" : "Đăng nhập bằng token"}
+              </button>
+              <div style={S.divider}><span style={S.dividerText}>hoặc</span></div>
+            </>
+          )}
 
           {error && <p style={S.error}>{error}</p>}
 
@@ -110,14 +124,13 @@ export default function LoginPage() {
             {submitting ? "Đang đăng nhập…" : "Đăng nhập"}
           </button>
 
-          {/* CP5 — SSO Microsoft Entra, ĐẶT CẠNH ô token chứ không thay thế nó.
+          {/* CP5 — SSO Keycloak, ĐẶT CẠNH ô token chứ không thay thế nó.
               Ô token vẫn là đường chính (hợp đồng LoginPage.test.jsx dựa vào nó);
-              nút này là đường thứ hai, chỉ hiện khi backend đã cấu hình Entra.
+              nút này là đường thứ hai, chỉ hiện khi backend đã cấu hình Keycloak.
               Nhãn nút CỐ Ý khác chuỗi "Đăng nhập" để `getByRole("button", { name:
               "Đăng nhập" })` trong test không bắt nhầm hai nút. */}
           <div style={S.ssoWrap}>
-            <div style={S.divider}><span style={S.dividerText}>hoặc</span></div>
-            <button type="button" onClick={() => startLogin(from)} style={S.ssoBtn}>
+            <button type="button" onClick={() => startLogin(from)} style={S.submit}>
               Đăng nhập SSO
             </button>
             <p style={S.ssoHint}>

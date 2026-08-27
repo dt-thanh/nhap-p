@@ -27,6 +27,8 @@ from sqlalchemy.pool import NullPool
 from src.main import app
 from src.models.tables import upload_files
 
+from tests.conftest import DASHBOARD_AUTH_HEADER
+
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
 
 
@@ -74,8 +76,17 @@ async def db_env(session_factory, monkeypatch):
         async with session.begin():
             await wipe(session)
             await session.execute(
-                sa.text("INSERT INTO projects (id, name, launch_date, created_at) VALUES (:id, 'FRESH', :d, :ts)"),
-                {"id": PROJECT_ID, "d": date(2026, 1, 1), "ts": datetime.now(UTC)},
+                sa.text(
+                    "INSERT INTO projects (id, name, launch_date, created_at, external_id, source_system, "
+                    "source_instance_id) VALUES (:id, 'FRESH', :d, :ts, :ext, 'mini_crm', :inst)"
+                ),
+                {
+                    "id": PROJECT_ID,
+                    "d": date(2026, 1, 1),
+                    "ts": datetime.now(UTC),
+                    "ext": "FRESH-TEST",
+                    "inst": "crm-freshness-test",
+                },
             )
     yield
     async with session_factory() as session:
@@ -87,8 +98,10 @@ async def db_env(session_factory, monkeypatch):
 
 @pytest_asyncio.fixture
 async def client():
+    """Che fixture `client` của conftest — vẫn cần header dashboard (Phase E):
+    `GET /absorption/summary` giờ đòi tối thiểu `business_viewer`."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=DASHBOARD_AUTH_HEADER) as c:
         yield c
 
 
@@ -131,7 +144,10 @@ async def test_a_project_that_never_synced_reports_all_three_fields_as_none(clie
     assert body["last_successful_sync"] is None
     assert body["last_attempted_sync"] is None
     assert body["last_sync_status"] is None
-    assert body["calculator"] == "legacy_aggregate"
+    # Mặc định là bộ tính domain (`GET /absorption/summary` docstring,
+    # `src/api/dashboard.py`) — `legacy_aggregate` giờ chỉ còn là đường tương
+    # thích khi caller CHỈ ĐỊNH tường minh, dashboard frontend không dùng nó.
+    assert body["calculator"] == "domain_units_deals"
 
 
 async def test_a_successful_sync_populates_both_success_and_attempted(client, session_factory):

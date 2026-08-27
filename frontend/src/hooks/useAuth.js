@@ -24,6 +24,11 @@ export function useAuth() {
     }
   }, []);
 
+  const logout = useCallback(async () => {
+    await logoutFn();
+    setUser(null);
+  }, []);
+
   useEffect(() => {
     void reload();
   }, [reload]);
@@ -33,7 +38,7 @@ export function useAuth() {
     loading,
     isAuthenticated: !!user,
     login: startLogin,
-    logout: logoutFn,
+    logout,
     reload,
   };
 }

@@ -286,6 +286,12 @@ def crm_app(scratch_db_url, monkeypatch):
         "MINICRM_AUTH_PROJECT_SCOPE",
         json.dumps({ADMIN_TOKEN: "ALL", OPERATOR_TOKEN: [TEST_PROJECT_EXTERNAL_ID, "P-0001"]}),
     )
+    # `app/auth.py::authenticate()` giờ trả RỖNG cho cả ba token D-14 ở trên khi
+    # cờ này tắt (mặc định — xem app/config.py). Test CRUD hiện có dùng
+    # ADMIN_AUTH_HEADER/OPERATOR_AUTH_HEADER/VIEWER_AUTH_HEADER làm đường xác
+    # thực DUY NHẤT (chưa có Keycloak trong tiến trình test), nên phải bật ở
+    # đây — đúng tinh thần "dev/CI" mà biến này được thiết kế cho.
+    monkeypatch.setenv("MINICRM_LEGACY_TOKEN_AUTH_ENABLED", "true")
 
     try:
         yield scratch_db_url

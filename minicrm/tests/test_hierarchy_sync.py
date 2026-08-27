@@ -10,6 +10,7 @@ v2 và `crud._capture_v2`).
 from __future__ import annotations
 
 import hashlib
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -111,7 +112,18 @@ def test_build_unit_envelope_v2_uses_external_area_id_not_name():
     envelope = sync_client.build_unit_envelope_v2([UNIT], batch_id="mc-v2-units-1", external_project_id="P-0001")
     payload = envelope["records"][0]["payload"]
     assert payload["area_ref"] == {"external_area_id": "A-0001"}
-    assert set(payload) == {"area_ref", "unit_code", "unit_status"}
+    # 0008: `listing_price` LUÔN có mặt (giá trị hoặc `null`) — `UNIT` không
+    # mang giá nên `None`, cùng nguyên tắc với ba mốc lịch sử của deal.
+    assert set(payload) == {"area_ref", "unit_code", "unit_status", "listing_price"}
+    assert payload["listing_price"] is None
+
+
+def test_build_unit_envelope_v2_carries_a_listing_price_when_the_unit_has_one():
+    priced_unit = {**UNIT, "listing_price": Decimal("8600000000.00")}
+    envelope = sync_client.build_unit_envelope_v2([priced_unit], batch_id="mc-v2-units-1", external_project_id="P-0001")
+    payload = envelope["records"][0]["payload"]
+    assert payload["listing_price"] == 8_600_000_000.0
+    assert isinstance(payload["listing_price"], float)
 
 
 def test_build_deal_envelope_v2_has_no_project_or_area_ref():

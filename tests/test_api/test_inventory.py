@@ -95,8 +95,17 @@ async def db_env(session_factory, monkeypatch):
         async with session.begin():
             await wipe(session)
             await session.execute(
-                sa.text("INSERT INTO projects (id, name, launch_date, created_at) VALUES (:id, 'Inv', :d, :ts)"),
-                {"id": PROJECT_ID, "d": date(2026, 1, 1), "ts": datetime.now(UTC)},
+                sa.text(
+                    "INSERT INTO projects (id, name, launch_date, created_at, external_id, source_system, "
+                    "source_instance_id) VALUES (:id, 'Inv', :d, :ts, :ext, 'mini_crm', :inst)"
+                ),
+                {
+                    "id": PROJECT_ID,
+                    "d": date(2026, 1, 1),
+                    "ts": datetime.now(UTC),
+                    "ext": "INV-TEST",
+                    "inst": INSTANCE,
+                },
             )
             await session.execute(
                 sa.insert(areas),
@@ -340,7 +349,11 @@ async def test_summary_defaults_to_the_domain_dashboard_source(client):
     assert body["data_source"] == "domain_units_deals"
     assert body["units_sold"] == 1
     assert body["units_reserved"] == 1
-    assert body["units_remaining"] == 1
+    # `units_remaining` = quỹ bán được TRỪ đã bán, KHÔNG trừ đang giữ chỗ —
+    # `available_remaining_units` (`src/api/dashboard.py`) mới là số ĐÃ trừ cả
+    # hai, tách riêng có chủ đích (xem docstring endpoint).
+    assert body["units_remaining"] == 2
+    assert body["available_remaining_units"] == 1
 
 
 async def test_summary_can_be_asked_for_the_domain_calculator(client):
@@ -353,7 +366,8 @@ async def test_summary_can_be_asked_for_the_domain_calculator(client):
     assert body["calculator"] == "domain_units_deals"
     assert body["units_sold"] == 1
     assert body["units_reserved"] == 1
-    assert body["units_remaining"] == 1
+    assert body["units_remaining"] == 2
+    assert body["available_remaining_units"] == 1
 
 
 async def test_domain_trend_exposes_historical_metadata_and_scope(client):

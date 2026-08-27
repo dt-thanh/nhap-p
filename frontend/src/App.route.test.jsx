@@ -22,10 +22,17 @@ vi.mock("./components/dashboard/AbsorptionTrendChart", () => ({
   },
 }));
 
+// `AbsorptionDashboard` giờ chỉ còn là thân của dashboard MỘT dự án. Nếu
+// /overview lại render nó, marker dưới đây sẽ lộ ra ở đúng route đó — đây là
+// bài kiểm chống lại chính lỗi "hai trang trông y hệt nhau".
 vi.mock("./components/dashboard/AbsorptionDashboard", () => ({
-  default: function TestProjectDashboard({ standalone }) {
-    return <div data-testid={standalone ? "overview-dashboard" : "project-dashboard"}>Project dashboard</div>;
+  default: function TestProjectDashboard() {
+    return <div data-testid="project-dashboard">Project dashboard</div>;
   },
+}));
+
+vi.mock("./pages/PreviewOverviewPage", () => ({
+  default: () => <div data-testid="overview-preview-route">Overview preview route</div>,
 }));
 
 vi.mock("./api/endpoints", () => ({
@@ -35,15 +42,21 @@ vi.mock("./api/endpoints", () => ({
   getDashboardTrend: vi.fn(),
   listInventoryScoped: vi.fn(),
   listDealsScoped: vi.fn(),
+  listProjects: vi.fn(),
+  getPortfolioSummary: vi.fn(),
+  getRanking: vi.fn(),
+  getAbsorptionSummary: vi.fn(),
 }));
 
 import {
   getAreaByExternalId,
   getDashboardTrend,
+  getPortfolioSummary,
   getProjectByExternalId,
   listAreasScoped,
   listDealsScoped,
   listInventoryScoped,
+  listProjects,
 } from "./api/endpoints";
 import { useBreakpoint } from "./hooks/useBreakpoint";
 
@@ -96,6 +109,11 @@ describe("project and area route composition", () => {
     getDashboardTrend.mockResolvedValue({ points: [] });
     listInventoryScoped.mockResolvedValue({ totals: { total_units: 2 }, units: [] });
     listDealsScoped.mockResolvedValue({ items: [] });
+    listProjects.mockResolvedValue([]);
+    getPortfolioSummary.mockResolvedValue({
+      project_count: 0, area_count: 0, unit_count: 0,
+      deal_count: 0, booking_count: 0, selling_project_count: 0,
+    });
   });
 
   it("renders the project detail area list without an inline dashboard", async () => {
@@ -109,6 +127,13 @@ describe("project and area route composition", () => {
     expect(listAreasScoped).toHaveBeenCalledTimes(1);
     expect(getAreaByExternalId).not.toHaveBeenCalled();
     expect(getDashboardTrend).not.toHaveBeenCalled();
+  });
+
+  it("registers the shell-free overview preview route", async () => {
+    renderAt("/preview/overview?project=project-a&area=area-a");
+
+    expect(await screen.findByTestId("overview-preview-route")).toBeInTheDocument();
+    expect(screen.queryByTestId("app-layout")).not.toBeInTheDocument();
   });
 
   it("renders the area dashboard as a separate direct route", async () => {
@@ -130,12 +155,19 @@ describe("project and area route composition", () => {
     expect(await screen.findByTestId("project-dashboard")).toBeInTheDocument();
     expect(screen.queryByTestId("area-card")).not.toBeInTheDocument();
     expect(listAreasScoped).not.toHaveBeenCalled();
+    // Dashboard dự án KHÔNG được mang nội dung cấp danh mục.
+    expect(screen.queryByRole("heading", { name: "Tổng quan danh mục" })).not.toBeInTheDocument();
+    expect(listProjects).not.toHaveBeenCalled();
   });
 
-  it("exposes the top-level Overview route through the existing app router", () => {
+  it("renders its own portfolio entry component at /overview, not the project dashboard", async () => {
     renderAt("/overview");
 
-    expect(screen.getByTestId("overview-dashboard")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Tổng quan danh mục" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Xếp hạng căn toàn hệ thống" })).toBeInTheDocument();
+    // Đúng điểm gãy cũ: /overview từng render CHÍNH thân dashboard của một dự án.
     expect(screen.queryByTestId("project-dashboard")).not.toBeInTheDocument();
+    expect(getProjectByExternalId).not.toHaveBeenCalled();
+    expect(listAreasScoped).not.toHaveBeenCalled();
   });
 });

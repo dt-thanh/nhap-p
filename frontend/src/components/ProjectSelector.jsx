@@ -25,7 +25,7 @@ export default function ProjectSelector({ projects = [], value, onChange, loadin
   }
 
   return (
-    <label style={S.label}>
+    <label className="ranking-label" style={S.label}>
       Dự án
       <select
         style={S.select}

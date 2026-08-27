@@ -1,9 +1,14 @@
 .PHONY: run test lint format check clean \
         up down logs ps migrate revision \
         test-docker lint-docker build-frontend reset \
-        setup bootstrap testdb token urls e2e test-minicrm test-product test-all
+        setup bootstrap testdb token urls e2e test-minicrm test-product test-all \
+        dev-reset dev-up dev-reseed-from-minicrm
 
 # ---- Docker stack (đường chạy chính) ----
+# Cần .dev-secrets/minicrm_sync_api_key đã tồn tại trước (từ `make dev-reset`
+# — xem bên dưới): service `minicrm` khai secret Compose trỏ tới file đó,
+# thiếu file này thì `up`/`run` cho `minicrm` báo lỗi rõ ràng ngay lúc tạo
+# container, không âm thầm chạy thiếu khoá.
 up:
 	docker compose up -d --build
 
@@ -42,7 +47,9 @@ migrate:
 revision:
 	docker compose run --rm api alembic revision -m "$(m)"
 
-# ⚠️ PHÁ HUỶ: xoá container + volume (mất toàn bộ dữ liệu DB và file đã upload)
+# ⚠️ PHÁ HUỶ: xoá container + volume (mất toàn bộ dữ liệu DB và file đã upload),
+# KHÔNG tự bootstrap lại — sau lệnh này stack đứng im, không service nào chạy.
+# Muốn reset RỒI bootstrap lại tự động (khuyến nghị), dùng `make dev-reset`.
 reset:
 	docker compose down -v
 
@@ -79,12 +86,31 @@ clean:
 # lưu) — migration lúc khởi động do entrypoint xử lý qua RUN_MIGRATIONS.
 # ============================================================================
 
-# LẦN ĐẦU chỉ cần một lệnh này.
-setup: bootstrap up testdb urls
+# LẦN ĐẦU chỉ cần một lệnh này: reset data-only, migration, credential handoff
+# nếu thiếu, rồi seed fixture qua API — xem scripts/dev-reset.sh.
+setup: bootstrap
+	./scripts/dev-reset.sh --yes --seed
+	$(MAKE) testdb urls
 
 # Sinh các file .env còn thiếu. KHÔNG ghi đè file đã có.
 bootstrap:
 	bash scripts/bootstrap_env.sh
+
+# Hard reset rows của cả hai database dev — giữ schema, volumes, Keycloak,
+# migration history và sync credential; mặc định không seed lại dữ liệu.
+dev-reset:
+	./scripts/dev-reset.sh --yes
+
+# Khởi động bình thường, AN TOÀN — không xoá volume, không xoay credential.
+# Đòi .dev-secrets/minicrm_sync_api_key đã có (từ một lần `make dev-reset`).
+dev-up:
+	./scripts/dev-up.sh
+
+# Clear ONLY AbsorpIQ business data and rebuild it from existing MiniCRM
+# records through HTTP CRUD -> transactional outbox -> relay.  Does not reset
+# either database, Keycloak, users, settings, or the sync credential.
+dev-reseed-from-minicrm:
+	./scripts/dev-reseed-from-minicrm.sh --yes
 
 # In địa chỉ các giao diện/API.
 urls:
@@ -93,24 +119,29 @@ urls:
 	@echo "  AbsorbIQ UI     http://localhost:5173"
 	@echo "  Mini CRM API    http://localhost:8100/docs"
 	@echo "  AbsorbIQ API    http://localhost:8000/docs"
-	@echo "  Mini CRM DB     localhost:5433    Product DB  localhost:5432"
+	@echo "  Mini CRM DB     localhost:5434    Product DB  localhost:5432"
 	@echo ""
 
-# Database riêng cho bộ test Mini CRM. Chạy một lần, sau đó vô hại.
+# Database riêng cho bộ test Mini CRM. Chạy một lần, sau đó vô hại — idempotent
+# cả bước tạo DB lẫn bước migrate. Thiếu bước migrate khiến các test đi thẳng
+# vào `minicrm_checkpoint1_test` (không qua fixture `crm_app`/scratch-DB, vd.
+# `tests/test_sync_client.py`) lỗi "relation ... does not exist" — bảng RỖNG,
+# không phải bug ở test hay ở code. Đi qua script riêng (không gọi
+# `alembic upgrade` thẳng trong Makefile) để không phạm luật
+# `test_only_the_migration_script_and_the_dev_entrypoint_run_alembic_upgrade` —
+# luật đó canh schema PRODUCTION, database này CHỈ là test (hậu tố `_test`).
 testdb:
-	@docker compose exec -T minicrm_db psql -U minicrm -tc \
-		"SELECT 1 FROM pg_database WHERE datname='minicrm_checkpoint1_test'" \
-		| grep -q 1 || docker compose exec -T minicrm_db psql -U minicrm -c \
-		"CREATE DATABASE minicrm_checkpoint1_test;"
+	@bash scripts/migrate_minicrm_testdb.sh
+	@echo "Database test Mini CRM đã sẵn sàng."
 	@echo "Database test Mini CRM đã sẵn sàng."
 
 # Token admin để gọi API bằng curl hoặc chạy E2E.
 token:
 	@grep -E '^MINICRM_AUTH_ADMIN_TOKEN=' .env | grep -v '=$$' | tail -1 | cut -d= -f2-
 
-# Test Mini CRM. Cần stack đang chạy (dùng Postgres ở cổng 5433).
+# Test Mini CRM. Cần stack đang chạy (dùng Postgres ở cổng 5434).
 test-minicrm:
-	cd minicrm && MINICRM_TEST_DATABASE_URL="postgresql+asyncpg://minicrm:minicrm@localhost:5433/minicrm_checkpoint1_test" PYTHONPATH=. pytest tests/ -q
+	cd minicrm && MINICRM_TEST_DATABASE_URL="postgresql+asyncpg://minicrm:minicrm@localhost:5434/minicrm_checkpoint1_test" PYTHONPATH=. pytest tests/ -q
 
 # Test xác thực/SSO phía Product (chạy offline, không cần stack).
 test-product:

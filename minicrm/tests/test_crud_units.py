@@ -204,6 +204,115 @@ def test_every_envelope_carries_the_synthetic_label(crm_app, backend):
     assert "SYNTHETIC" in payload["_comment"]
 
 
+# --- 1b. Giá niêm yết (0008) --------------------------------------------------
+
+
+def test_create_with_a_listing_price_stores_and_pushes_it(crm_app, backend):
+    with _client() as client:
+        response = client.post("/units", json={**UNIT, "listing_price": 8_600_000_000})
+    _relay()
+
+    body = response.json()
+    assert body["record"]["listing_price"] == 8_600_000_000.0
+
+    rows = _rows(crm_app, "crm_units")
+    assert rows[0]["listing_price"] == 8_600_000_000
+
+    payload = backend.envelopes[0]["records"][0]["payload"]
+    assert payload["listing_price"] == 8_600_000_000.0
+
+
+def test_create_without_a_listing_price_pushes_an_explicit_null(crm_app, backend):
+    """`listing_price` LUÔN có mặt trong phong bì — giá trị hoặc `null`, không
+    bao giờ bị bỏ khỏi payload (cùng nguyên tắc với ba mốc lịch sử của deal)."""
+    with _client() as client:
+        client.post("/units", json=UNIT)
+    _relay()
+
+    payload = backend.envelopes[0]["records"][0]["payload"]
+    assert "listing_price" in payload
+    assert payload["listing_price"] is None
+
+
+def test_a_negative_listing_price_is_rejected_by_the_schema(crm_app, backend):
+    with _client() as client:
+        response = client.post("/units", json={**UNIT, "listing_price": -1})
+    assert response.status_code == 422
+    assert _rows(crm_app, "crm_units") == []
+
+
+def test_a_zero_listing_price_is_rejected_by_the_schema(crm_app, backend):
+    with _client() as client:
+        response = client.post("/units", json={**UNIT, "listing_price": 0})
+    assert response.status_code == 422
+
+
+def test_an_infinite_listing_price_is_rejected_and_never_stored(crm_app, backend):
+    """`json=` không gửi được ở đây: bộ mã hoá JSON chuẩn của Python từ chối
+    `Infinity` NGAY TỪ PHÍA GỬI (`ValueError`), trước khi request rời đi — nên
+    phải tự dựng thân request để thứ bị từ chối là do MÁY CHỦ, không phải do
+    client Python. `json.loads` phía server LẠI chấp nhận token `Infinity`
+    (phần mở rộng không chuẩn của module `json`).
+
+    Không khẳng định mã trạng thái CHÍNH XÁC: Pydantic ĐÃ từ chối giá trị này
+    đúng như `_finite_or_none` định làm (xác nhận trực tiếp bằng
+    `UnitCreate(...)` trong test khác), nhưng `starlette.responses.JSONResponse`
+    tự nó dùng `allow_nan=False` khi RENDER lỗi 422 — lỗi đó lại ECHO NGUYÊN
+    `input_value=inf` vào thân phản hồi, nên chính việc BÁO lỗi từ chối cũng
+    ném `ValueError` (giới hạn của framework, không phải của 0008). Thứ đáng
+    tin ở đây là CÓ bị chặn và KHÔNG có dòng nào được ghi — không phải con số
+    HTTP chính xác của một lỗi mà chính khung phải vật lộn để hiển thị.
+    """
+    body = (
+        f'{{"area_name": "{TEST_AREA_NAME}", "unit_type": "{TEST_UNIT_TYPE}", "unit_code": "B1-01-01", '
+        f'"unit_status": "available", "listing_price": Infinity}}'
+    )
+    with TestClient(app, headers=ADMIN_AUTH_HEADER, raise_server_exceptions=False) as client:
+        response = client.post("/units", content=body, headers={"Content-Type": "application/json"})
+    assert response.status_code >= 400
+    assert _rows(crm_app, "crm_units") == []
+
+
+def test_patching_a_listing_price_updates_the_local_row_and_pushes_it(crm_app, backend):
+    with _client() as client:
+        client.post("/units", json=UNIT)
+        response = client.patch("/units/U-0001", json={"listing_price": 9_000_000_000})
+    _relay()
+
+    assert response.status_code == 200
+    assert response.json()["record"]["listing_price"] == 9_000_000_000.0
+    payload = backend.envelopes[1]["records"][0]["payload"]
+    assert payload["listing_price"] == 9_000_000_000.0
+    # Trường KHÔNG gửi trong PATCH vẫn còn nguyên (xem test tương tự cho unit_code).
+    assert payload["unit_code"] == "B1-01-01"
+
+
+def test_patching_a_null_listing_price_clears_it(crm_app, backend):
+    with _client() as client:
+        client.post("/units", json={**UNIT, "listing_price": 8_600_000_000})
+        response = client.patch("/units/U-0001", json={"listing_price": None})
+    _relay()
+
+    assert response.status_code == 200
+    assert response.json()["record"]["listing_price"] is None
+    rows = _rows(crm_app, "crm_units")
+    assert rows[0]["listing_price"] is None
+    payload = backend.envelopes[1]["records"][0]["payload"]
+    assert payload["listing_price"] is None
+
+
+def test_an_omitted_listing_price_in_a_patch_keeps_the_stored_value(crm_app, backend):
+    """Vắng mặt trong PATCH = GIỮ NGUYÊN — khác `null` tường minh (0008)."""
+    with _client() as client:
+        client.post("/units", json={**UNIT, "listing_price": 8_600_000_000})
+        response = client.patch("/units/U-0001", json={"unit_status": "reserved"})
+    _relay()
+
+    assert response.json()["record"]["listing_price"] == 8_600_000_000.0
+    payload = backend.envelopes[1]["records"][0]["payload"]
+    assert payload["listing_price"] == 8_600_000_000.0
+
+
 # --- 2. Sửa căn --------------------------------------------------------------
 
 

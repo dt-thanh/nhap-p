@@ -62,6 +62,28 @@ describe("AppLayout integration shell", () => {
     expect(screen.getByText("Outlet content")).toBeInTheDocument();
   });
 
+  it("keeps the tablet viewport-bound and scrolls only its main content", () => {
+    getMePermissions.mockResolvedValue({ role: "business_viewer" });
+    renderShell();
+
+    const main = screen.getByRole("main");
+    const tablet = main.parentElement;
+    const shell = tablet.parentElement;
+    const header = main.previousElementSibling;
+
+    expect(shell.style.height).toBe("100vh");
+    expect(shell).toHaveStyle({ minHeight: 0, overflow: "hidden" });
+    expect(tablet.style.height).toBe("calc(100vh - 32px)");
+    expect(tablet).toHaveStyle({
+      minHeight: 0,
+      display: "flex",
+      flexDirection: "column",
+      overflow: "hidden",
+    });
+    expect(header).toHaveStyle({ flexShrink: 0 });
+    expect(main).toHaveStyle({ flex: 1, minHeight: 0, overflowY: "auto" });
+  });
+
   it("exposes Ranking at the staging route and marks it active", () => {
     getMePermissions.mockResolvedValue({ role: "business_viewer" });
     renderShell("/ranking");

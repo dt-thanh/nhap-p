@@ -45,8 +45,19 @@ class RecordingResetDelivery:
 
 
 def _target_url() -> str:
+    """Yêu cầu database ĐÍCH cố định (không phải scratch-db-per-test như phần lớn
+    bộ test khác) vì các test ở đây khẳng định về trạng thái rate-limit/phiên
+    XUYÊN NHIỀU request tới CÙNG một schema đã biết tên.
+
+    Thiếu biến môi trường ⇒ SKIP (đây là một suite tuỳ chọn, không phải suite lúc
+    nào cũng chạy được — CI/dev không cấu hình nó không phải một lỗi). Biến CÓ
+    NHƯNG trỏ sai database ⇒ vẫn từ chối CỨNG (`UsageError`): đó là dấu hiệu cấu
+    hình nhầm, không phải "chưa cấu hình", và có thể đang trỏ vào dữ liệu thật.
+    """
     url = os.environ.get("MINICRM_TEST_DATABASE_URL")
-    if not url or urlsplit(url).path.lstrip("/") != TARGET_DATABASE:
+    if not url:
+        pytest.skip("Không có MINICRM_TEST_DATABASE_URL — bỏ qua test cần database đích cố định")
+    if urlsplit(url).path.lstrip("/") != TARGET_DATABASE:
         raise pytest.UsageError("MINICRM_TEST_DATABASE_URL must target minicrm_checkpoint1_test")
     return url
 

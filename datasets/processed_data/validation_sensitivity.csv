@@ -1,0 +1,17 @@
+perturbed_group,delta_pct,spearman_vs_base,kendall_tau_b_vs_base,top50_overlap,max_rank_shift,units_moving_gt_10_ranks
+affordability_demand_depth,-10,0.999109,0.981079,47,22,20
+affordability_demand_depth,-5,0.999783,0.991805,48,10,0
+affordability_demand_depth,5,0.999851,0.993058,50,12,1
+affordability_demand_depth,10,0.999541,0.986664,49,13,8
+product_fit,-10,0.99959,0.986795,47,14,5
+product_fit,-5,0.999876,0.993606,48,10,0
+product_fit,5,0.999868,0.993711,49,11,2
+product_fit,10,0.999636,0.987891,49,13,5
+position,-10,0.999724,0.991101,48,12,2
+position,-5,0.99992,0.995746,49,7,0
+position,5,0.999862,0.994441,47,11,1
+position,10,0.999528,0.987995,47,14,6
+physical_attractiveness,-10,0.999919,0.995302,50,8,0
+physical_attractiveness,-5,0.999973,0.997703,50,5,0
+physical_attractiveness,5,0.99997,0.997547,49,6,0
+physical_attractiveness,10,0.999919,0.995329,49,8,0

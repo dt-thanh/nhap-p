@@ -21,6 +21,7 @@ import type {
 export interface BEProject {
   external_id: string;
   name: string;
+  location?: string | null;
   launch_date: string;
   status: "active" | "archived";
   source_revision: number;
@@ -154,7 +155,7 @@ export function beProjectToFe(be: BEProject, areas?: BEArea[]): Project {
     id: be.external_id,
     name: be.name,
     tagline: `Ngày mở bán: ${be.launch_date}`,
-    location: "—",
+    location: be.location ?? "—",
     thumbnailUrl: "",
     areas: projectAreas?.length ?? 0,
     totalUnits,

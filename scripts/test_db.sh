@@ -63,6 +63,16 @@ done
 command -v docker >/dev/null 2>&1 || die "không tìm thấy docker."
 docker compose version >/dev/null 2>&1 || die "không dùng được 'docker compose' (cần Compose v2)."
 
+# ---- 1.5. Preflight: đĩa/Docker/Postgres/Redis, ĐỌC-ONLY, không xoá gì ------
+# Thêm sau sự cố release-hardening: host hết đĩa giữa một lượt test làm
+# container `db` crash. Chặn SỚM, trước khi dựng service/chạy migration, thay
+# vì để `docker compose up`/`alembic upgrade` thất bại nửa chừng với lỗi khó
+# đọc. `--quiet`: chỉ in ra khi có FAIL, giữ log của test_db.sh gọn như trước.
+if [ -x "$REPO_ROOT/scripts/preflight_test_env.sh" ]; then
+    "$REPO_ROOT/scripts/preflight_test_env.sh" --quiet \
+        || die "preflight thất bại — xem 'bash scripts/preflight_test_env.sh' để biết chi tiết. Không có test/migration nào đã chạy."
+fi
+
 # Ưu tiên python của venv để dùng đúng pytest/sqlalchemy/alembic đã cài.
 if [ -x .venv/bin/python ]; then
     PY=".venv/bin/python"

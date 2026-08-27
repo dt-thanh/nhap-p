@@ -1,0 +1,20 @@
+check,status,detail
+crm_areas.project_id -> crm_projects.id,PASS,0 orphans
+crm_units.area_id -> crm_areas.id,PASS,0 orphans
+crm_deals_sold.external_unit_id -> crm_units.external_id,PASS,0 orphans
+crm_deals_reserved.external_unit_id -> crm_units.external_id,PASS,0 orphans
+lapura_unit_attributes.unit_id -> crm_units.id,PASS,0 orphans
+unit_code unique,PASS,0 duplicates in 392 units
+unit external_id unique,PASS,0 duplicates
+deal external_id unique across deal files,PASS,0 duplicates
+status sold -> has sold deal,PASS,0 sold units without a sold deal
+status reserved -> has reserved deal,PASS,0 reserved units without a reserved deal
+status available -> no active deal,PASS,0 available units carrying a deal
+project count == 1,PASS,1 projects
+area group count == 24,PASS,24 areas
+unit count == 392,PASS,392 units
+sold deal count == 130,PASS,130 sold deals
+reserved deal count == 63,PASS,63 reserved deals
+available unit count == 199,PASS,199 available units
+master row count == units,PASS,392 master rows
+master unit_external_id -> crm_units.external_id,PASS,0 orphans

@@ -74,7 +74,7 @@ CRM_DSN = _dsn(
     ENV.get("MINICRM_POSTGRES_USER", "minicrm"),
     ENV.get("MINICRM_POSTGRES_PASSWORD", "minicrm"),
     ENV.get("MINICRM_POSTGRES_DB", "minicrm"),
-    5433,
+    5434,
 )
 SOURCE_INSTANCE = ENV.get("MINICRM_SOURCE_INSTANCE_ID", "mini-crm-dev")
 PROJECT_ID = ENV.get("MINICRM_PROJECT_ID", "")

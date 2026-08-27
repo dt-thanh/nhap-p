@@ -1,0 +1,1848 @@
+{
+  "generated_for": "La Pura — AHP absorption ranking preparation",
+  "method": "deterministic MCDM (AHP + weighted scoring). No ML/DL used.",
+  "source_files_unchanged": true,
+  "source_sha256": {
+    "crm_projects_import.csv": "14658248bc2a0d50aaab5352a62a8a0e43cd7ef6faa9ee3c38e952a7579db088",
+    "crm_areas_import.csv": "de142d1ace3a792e8019e7d928095f1fd3619100391fbe4d9ceb44a8b4aa8e6b",
+    "crm_units_import.csv": "b246604fd9db9a81aa3280dabbdc2a1c12cae5228333e14355a44d65291fc990",
+    "crm_deals_sold_import.csv": "e029e19a6783296464d2f0448b486f5f6e0751c2ed9660f8e15338f38bdd27fc",
+    "crm_deals_reserved_import.csv": "4f50ecd6bd2f8918e7755b331b00cad7ba15f10b29089a1c3b02417ea6ab3744",
+    "lapura_unit_attributes_import.csv": "e28b20b29a63a1bd88ed9cc8e5ee3eff2559e7d327104f8f9217ed17926a38a2",
+    "lapura_master_dataset_no_null.csv": "fb62f24ce903703ed25041f884ba1d03cbe9d0479321764189deafd8385d50a9"
+  },
+  "data_quality": {
+    "file_profile": [
+      {
+        "file": "crm_projects_import.csv",
+        "rows": 1,
+        "columns": 11,
+        "duplicate_rows": 0,
+        "null_cells": 0,
+        "sentinel_cells": 0,
+        "sha256": "14658248bc2a0d50aaab5352a62a8a0e43cd7ef6faa9ee3c38e952a7579db088"
+      },
+      {
+        "file": "crm_areas_import.csv",
+        "rows": 24,
+        "columns": 15,
+        "duplicate_rows": 0,
+        "null_cells": 0,
+        "sentinel_cells": 0,
+        "sha256": "de142d1ace3a792e8019e7d928095f1fd3619100391fbe4d9ceb44a8b4aa8e6b"
+      },
+      {
+        "file": "crm_units_import.csv",
+        "rows": 392,
+        "columns": 13,
+        "duplicate_rows": 0,
+        "null_cells": 0,
+        "sentinel_cells": 0,
+        "sha256": "b246604fd9db9a81aa3280dabbdc2a1c12cae5228333e14355a44d65291fc990"
+      },
+      {
+        "file": "crm_deals_sold_import.csv",
+        "rows": 130,
+        "columns": 9,
+        "duplicate_rows": 0,
+        "null_cells": 0,
+        "sentinel_cells": 0,
+        "sha256": "e029e19a6783296464d2f0448b486f5f6e0751c2ed9660f8e15338f38bdd27fc"
+      },
+      {
+        "file": "crm_deals_reserved_import.csv",
+        "rows": 63,
+        "columns": 8,
+        "duplicate_rows": 0,
+        "null_cells": 0,
+        "sentinel_cells": 0,
+        "sha256": "4f50ecd6bd2f8918e7755b331b00cad7ba15f10b29089a1c3b02417ea6ab3744"
+      },
+      {
+        "file": "lapura_unit_attributes_import.csv",
+        "rows": 392,
+        "columns": 30,
+        "duplicate_rows": 0,
+        "null_cells": 0,
+        "sentinel_cells": 0,
+        "sha256": "e28b20b29a63a1bd88ed9cc8e5ee3eff2559e7d327104f8f9217ed17926a38a2"
+      },
+      {
+        "file": "lapura_master_dataset_no_null.csv",
+        "rows": 392,
+        "columns": 70,
+        "duplicate_rows": 0,
+        "null_cells": 0,
+        "sentinel_cells": 1503,
+        "sha256": "fb62f24ce903703ed25041f884ba1d03cbe9d0479321764189deafd8385d50a9"
+      }
+    ],
+    "relationship_validation": [
+      {
+        "check": "crm_areas.project_id -> crm_projects.id",
+        "status": "PASS",
+        "detail": "0 orphans"
+      },
+      {
+        "check": "crm_units.area_id -> crm_areas.id",
+        "status": "PASS",
+        "detail": "0 orphans"
+      },
+      {
+        "check": "crm_deals_sold.external_unit_id -> crm_units.external_id",
+        "status": "PASS",
+        "detail": "0 orphans"
+      },
+      {
+        "check": "crm_deals_reserved.external_unit_id -> crm_units.external_id",
+        "status": "PASS",
+        "detail": "0 orphans"
+      },
+      {
+        "check": "lapura_unit_attributes.unit_id -> crm_units.id",
+        "status": "PASS",
+        "detail": "0 orphans"
+      },
+      {
+        "check": "unit_code unique",
+        "status": "PASS",
+        "detail": "0 duplicates in 392 units"
+      },
+      {
+        "check": "unit external_id unique",
+        "status": "PASS",
+        "detail": "0 duplicates"
+      },
+      {
+        "check": "deal external_id unique across deal files",
+        "status": "PASS",
+        "detail": "0 duplicates"
+      },
+      {
+        "check": "status sold -> has sold deal",
+        "status": "PASS",
+        "detail": "0 sold units without a sold deal"
+      },
+      {
+        "check": "status reserved -> has reserved deal",
+        "status": "PASS",
+        "detail": "0 reserved units without a reserved deal"
+      },
+      {
+        "check": "status available -> no active deal",
+        "status": "PASS",
+        "detail": "0 available units carrying a deal"
+      },
+      {
+        "check": "project count == 1",
+        "status": "PASS",
+        "detail": "1 projects"
+      },
+      {
+        "check": "area group count == 24",
+        "status": "PASS",
+        "detail": "24 areas"
+      },
+      {
+        "check": "unit count == 392",
+        "status": "PASS",
+        "detail": "392 units"
+      },
+      {
+        "check": "sold deal count == 130",
+        "status": "PASS",
+        "detail": "130 sold deals"
+      },
+      {
+        "check": "reserved deal count == 63",
+        "status": "PASS",
+        "detail": "63 reserved deals"
+      },
+      {
+        "check": "available unit count == 199",
+        "status": "PASS",
+        "detail": "199 available units"
+      },
+      {
+        "check": "master row count == units",
+        "status": "PASS",
+        "detail": "392 master rows"
+      },
+      {
+        "check": "master unit_external_id -> crm_units.external_id",
+        "status": "PASS",
+        "detail": "0 orphans"
+      }
+    ],
+    "relationship_failures": 0,
+    "column_audit": [
+      {
+        "column": "project_external_id",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 1,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "area_external_id",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 24,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "unit_external_id",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 392,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "source_system",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 1,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "source_instance_id",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 1,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "unit_code",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 392,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "subdivision",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 4,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "subdivision_raw",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 4,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "tower",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 7,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "floor",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 34,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "unit_number",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 23,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "unit_type_raw",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 11,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "gross_area_sqm",
+        "dtype": "float64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 79,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "net_area_sqm",
+        "dtype": "float64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 130,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "standard_price_vnd",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 384,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "loan_price_vnd",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 384,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "agency_name",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 12,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "unit_type_normalized",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 11,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "bedrooms",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 4,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "bathrooms",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 4,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "price_per_sqm_gross_vnd",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 384,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "price_per_sqm_net_vnd",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 384,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "area_efficiency_ratio",
+        "dtype": "float64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 118,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "loan_premium_pct",
+        "dtype": "float64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 3,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "floor_band",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 3,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "direction",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 8,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "balcony_direction",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 8,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "view",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 6,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "corner_unit_proxy",
+        "dtype": "bool",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 2,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "unit_status",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 3,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "lead_count",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 7,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "qualified_lead_count",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 7,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "booking_count",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 2,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "reservation_count",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 2,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "first_lead_at",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 60,
+        "null_sentinels": 53,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "first_booking_at",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 63,
+        "null_sentinels": 199,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "reserved_at",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 72,
+        "null_sentinels": 199,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "sold_at",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 74,
+        "null_sentinels": 262,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "days_to_first_lead",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 33,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 53
+      },
+      {
+        "column": "days_to_reserve",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 52,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 199
+      },
+      {
+        "column": "days_to_sell",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 66,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 262
+      },
+      {
+        "column": "source_revision",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 1,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "mirrored_revision",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 1,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "mirrored_at",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 1,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "data_profile",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 1,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "agency_name_origin",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 2,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "has_lead",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 2,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "has_booking",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 2,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "has_reservation",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 2,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "is_sold",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 2,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "stacking_price_million_vnd",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 356,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "project_name",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 1,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "project_status",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 1,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "project_launch_date",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 1,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "area_name",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 4,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "area_unit_type",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 11,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "area_bedrooms",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 4,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "area_sqm",
+        "dtype": "float64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 23,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "area_total_units",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 16,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "area_status",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 1,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "last_sync_batch_id",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 1,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "deal_external_id",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 194,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "deal_status",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 3,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "deal_source_revision",
+        "dtype": "int64",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 2,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "deal_created_at",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 63,
+        "null_sentinels": 0,
+        "epoch_sentinels": 199,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "deal_updated_at",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 86,
+        "null_sentinels": 0,
+        "epoch_sentinels": 199,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "lost_at",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 1,
+        "null_sentinels": 0,
+        "epoch_sentinels": 392,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "deal_lifecycle_stage",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 4,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "physical_features_origin",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 1,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      },
+      {
+        "column": "crm_signals_origin",
+        "dtype": "str",
+        "nulls": 0,
+        "blanks": 0,
+        "distinct": 1,
+        "null_sentinels": 0,
+        "epoch_sentinels": 0,
+        "negative_duration_sentinels": 0
+      }
+    ],
+    "derived_field_recalculation": {
+      "price_per_sqm_gross_vnd": {
+        "max_abs_deviation_vs_source": 6715334.865586832,
+        "median_abs_deviation_vs_source": 2283306.4950344115
+      },
+      "price_per_sqm_net_vnd": {
+        "max_abs_deviation_vs_source": 7391164.38063404,
+        "median_abs_deviation_vs_source": 2544799.0027274005
+      },
+      "area_efficiency_ratio": {
+        "max_abs_deviation_vs_source": 4.8698884758335836e-05,
+        "median_abs_deviation_vs_source": 2.4805339265743243e-05
+      },
+      "loan_premium_pct": {
+        "max_abs_deviation_vs_source": 3.041505181045068e-08,
+        "median_abs_deviation_vs_source": 8.072485901955417e-09
+      },
+      "impossible_values": {
+        "non_positive_gross_area": 0,
+        "non_positive_net_area": 0,
+        "net_area_gt_gross_area": 0,
+        "non_positive_standard_price": 0,
+        "loan_price_lt_standard_price": 0,
+        "negative_loan_premium": 0,
+        "floor_out_of_range_1_60": 0,
+        "bedrooms_out_of_range_0_6": 0,
+        "bathrooms_out_of_range_0_6": 0,
+        "area_efficiency_out_of_range_0_1": 0,
+        "sold_before_reserved": 0
+      }
+    },
+    "sentinels_converted_to_missing": [
+      "NOT_SOLD",
+      "NO_BOOKING",
+      "NO_DEAL",
+      "NO_LEAD",
+      "NO_RESERVATION",
+      "1970-01-01T00:00:00+00:00",
+      "days_to_* == -1"
+    ]
+  },
+  "eda": {
+    "numeric_summary": [
+      {
+        "feature": "floor",
+        "count": 392,
+        "min": 4.0,
+        "p25": 9.75,
+        "median": 19.0,
+        "p75": 33.0,
+        "max": 39.0,
+        "mean": 21.0943877551,
+        "std": 11.9773344828
+      },
+      {
+        "feature": "unit_number",
+        "count": 392,
+        "min": 1.0,
+        "p25": 4.0,
+        "median": 9.0,
+        "p75": 14.0,
+        "max": 23.0,
+        "mean": 9.2755102041,
+        "std": 5.9940816715
+      },
+      {
+        "feature": "gross_area_sqm",
+        "count": 392,
+        "min": 43.09,
+        "p25": 56.92,
+        "median": 66.45,
+        "p75": 76.91,
+        "max": 187.69,
+        "mean": 69.6107397959,
+        "std": 18.8918028534
+      },
+      {
+        "feature": "net_area_sqm",
+        "count": 392,
+        "min": 38.19,
+        "p25": 52.35,
+        "median": 60.15,
+        "p75": 69.16,
+        "max": 172.5,
+        "mean": 62.7362244898,
+        "std": 17.2961178037
+      },
+      {
+        "feature": "standard_price_vnd",
+        "count": 392,
+        "min": 2333798473.0,
+        "p25": 3085630860.0,
+        "median": 3531015352.0,
+        "p75": 4140983403.0,
+        "max": 14556684950.0,
+        "mean": 3914235271.5102043,
+        "std": 1422455152.0822592
+      },
+      {
+        "feature": "loan_price_vnd",
+        "count": 392,
+        "min": 2501410624.0,
+        "p25": 3314284717.75,
+        "median": 3711547424.5,
+        "p75": 4328587699.75,
+        "max": 15153509033.0,
+        "mean": 4103774933.910714,
+        "std": 1495030966.509334
+      },
+      {
+        "feature": "price_per_sqm_gross_vnd",
+        "count": 392,
+        "min": 41907680.459587954,
+        "p25": 51425206.896108195,
+        "median": 54434725.60645416,
+        "p75": 60355301.95588954,
+        "max": 77557061.91059726,
+        "mean": 55669463.21362136,
+        "std": 6137184.266784764
+      },
+      {
+        "feature": "price_per_sqm_net_vnd",
+        "count": 392,
+        "min": 46464009.807355516,
+        "p25": 56813693.16009469,
+        "median": 60436857.036059156,
+        "p75": 67526062.37827048,
+        "max": 84386579.42028986,
+        "mean": 61809930.15378504,
+        "std": 6951080.955060598
+      },
+      {
+        "feature": "area_efficiency_ratio",
+        "count": 392,
+        "min": 0.8716790168,
+        "p25": 0.8941318814,
+        "median": 0.9016327353,
+        "p75": 0.9083678015,
+        "max": 0.9272300469,
+        "mean": 0.9009205682,
+        "std": 0.0101535651
+      },
+      {
+        "feature": "loan_premium_pct",
+        "count": 392,
+        "min": 1.6999999704,
+        "p25": 1.7000000017,
+        "median": 4.0999999968,
+        "p75": 9.7999999859,
+        "max": 9.8000000277,
+        "mean": 4.8775510198,
+        "std": 3.4194727636
+      },
+      {
+        "feature": "bedrooms",
+        "count": 392,
+        "min": 1.0,
+        "p25": 2.0,
+        "median": 2.0,
+        "p75": 2.0,
+        "max": 4.0,
+        "mean": 1.9923469388,
+        "std": 0.6456168184
+      },
+      {
+        "feature": "bathrooms",
+        "count": 392,
+        "min": 1.0,
+        "p25": 2.0,
+        "median": 2.0,
+        "p75": 2.0,
+        "max": 4.0,
+        "mean": 1.8290816327,
+        "std": 0.4395663679
+      }
+    ],
+    "unit_status_distribution": {
+      "available": 199,
+      "sold": 130,
+      "reserved": 63
+    },
+    "loan_premium_is_subdivision_determined": {
+      "distinct_values": [
+        1.7,
+        4.1,
+        9.8
+      ],
+      "tier_to_subdivision": {
+        "1.7": [
+          "Zenia"
+        ],
+        "4.1": [
+          "Risa"
+        ],
+        "9.8": [
+          "Lusso Saigon",
+          "Lusso d'Arte"
+        ]
+      },
+      "warning": "loan_premium_pct is a 3-level developer policy tier mapping 1:1 onto subdivision, NOT a continuous unit-level attribute. Scoring it imposes an implicit subdivision ordering (Zenia > Risa > Lusso)."
+    },
+    "price_by_subdivision": [
+      {
+        "subdivision": "Lusso Saigon",
+        "units": 59,
+        "price_per_sqm_net_min": 46464009.807355516,
+        "price_per_sqm_net_median": 59793538.77707495,
+        "price_per_sqm_net_max": 75420044.61936596,
+        "price_per_sqm_gross_median": 54871221.07299912,
+        "gross_area_median": 66.45,
+        "standard_price_median": 3394501146.0,
+        "area_efficiency_median": 0.9013371883,
+        "loan_premium_pct_median": 9.7999999954,
+        "sold": 18,
+        "reserved": 12,
+        "available": 29,
+        "sold_pct": 30.51
+      },
+      {
+        "subdivision": "Lusso d'Arte",
+        "units": 61,
+        "price_per_sqm_net_min": 48528307.11033275,
+        "price_per_sqm_net_median": 57487642.497918405,
+        "price_per_sqm_net_max": 69757048.97755611,
+        "price_per_sqm_gross_median": 51949921.384499624,
+        "gross_area_median": 66.45,
+        "standard_price_median": 3452132932.0,
+        "area_efficiency_median": 0.8978682787,
+        "loan_premium_pct_median": 9.7999999993,
+        "sold": 18,
+        "reserved": 10,
+        "available": 33,
+        "sold_pct": 29.51
+      },
+      {
+        "subdivision": "Risa",
+        "units": 114,
+        "price_per_sqm_net_min": 51959337.10558252,
+        "price_per_sqm_net_median": 64495634.01420959,
+        "price_per_sqm_net_max": 84386579.42028986,
+        "price_per_sqm_gross_median": 58383845.80854662,
+        "gross_area_median": 63.1,
+        "standard_price_median": 3637664641.0,
+        "area_efficiency_median": 0.9014488343,
+        "loan_premium_pct_median": 4.1000000011,
+        "sold": 43,
+        "reserved": 21,
+        "available": 50,
+        "sold_pct": 37.72
+      },
+      {
+        "subdivision": "Zenia",
+        "units": 158,
+        "price_per_sqm_net_min": 51855982.90919607,
+        "price_per_sqm_net_median": 58399050.28472754,
+        "price_per_sqm_net_max": 76288659.77774093,
+        "price_per_sqm_gross_median": 53148268.03492327,
+        "gross_area_median": 66.45,
+        "standard_price_median": 3527560121.0,
+        "area_efficiency_median": 0.9036869827,
+        "loan_premium_pct_median": 1.6999999988,
+        "sold": 51,
+        "reserved": 20,
+        "available": 87,
+        "sold_pct": 32.28
+      }
+    ],
+    "price_by_unit_type": [
+      {
+        "unit_type_normalized": "1PN",
+        "units": 31,
+        "price_per_sqm_net_min": 58547904.47512497,
+        "price_per_sqm_net_median": 63969846.49200711,
+        "price_per_sqm_net_max": 67575222.85072953,
+        "price_per_sqm_gross_median": 58173486.212457165,
+        "gross_area_median": 49.61,
+        "standard_price_median": 2885986651.0,
+        "area_efficiency_median": 0.9051446945,
+        "loan_premium_pct_median": 4.0999999965,
+        "sold": 8,
+        "reserved": 6,
+        "available": 17,
+        "sold_pct": 25.81
+      },
+      {
+        "unit_type_normalized": "1PN+",
+        "units": 44,
+        "price_per_sqm_net_min": 49490826.054936305,
+        "price_per_sqm_net_median": 58770616.17945595,
+        "price_per_sqm_net_max": 63753460.78310783,
+        "price_per_sqm_gross_median": 53688622.57649709,
+        "gross_area_median": 53.94,
+        "standard_price_median": 2952149003.5,
+        "area_efficiency_median": 0.908707124,
+        "loan_premium_pct_median": 1.7000000046,
+        "sold": 11,
+        "reserved": 5,
+        "available": 28,
+        "sold_pct": 25.0
+      },
+      {
+        "unit_type_normalized": "2PN",
+        "units": 152,
+        "price_per_sqm_net_min": 46464009.807355516,
+        "price_per_sqm_net_median": 56715593.616663866,
+        "price_per_sqm_net_max": 67509675.55411746,
+        "price_per_sqm_gross_median": 51090231.948833704,
+        "gross_area_median": 66.45,
+        "standard_price_median": 3439197722.0,
+        "area_efficiency_median": 0.9033935769,
+        "loan_premium_pct_median": 1.7000000159,
+        "sold": 56,
+        "reserved": 27,
+        "available": 69,
+        "sold_pct": 36.84
+      },
+      {
+        "unit_type_normalized": "2PN+1WC",
+        "units": 1,
+        "price_per_sqm_net_min": 61419029.13756983,
+        "price_per_sqm_net_median": 61419029.13756983,
+        "price_per_sqm_net_max": 61419029.13756983,
+        "price_per_sqm_gross_median": 56100813.09201084,
+        "gross_area_median": 62.71,
+        "standard_price_median": 3518081989.0,
+        "area_efficiency_median": 0.9134109392,
+        "loan_premium_pct_median": 4.1000000128,
+        "sold": 0,
+        "reserved": 0,
+        "available": 1,
+        "sold_pct": 0.0
+      },
+      {
+        "unit_type_normalized": "2PN+2WC",
+        "units": 39,
+        "price_per_sqm_net_min": 51959337.10558252,
+        "price_per_sqm_net_median": 59665992.61631827,
+        "price_per_sqm_net_max": 71587750.08824001,
+        "price_per_sqm_gross_median": 53656887.764932565,
+        "gross_area_median": 72.66,
+        "standard_price_median": 3974640727.0,
+        "area_efficiency_median": 0.9006330856,
+        "loan_premium_pct_median": 4.0999999986,
+        "sold": 17,
+        "reserved": 6,
+        "available": 16,
+        "sold_pct": 43.59
+      },
+      {
+        "unit_type_normalized": "3PN",
+        "units": 56,
+        "price_per_sqm_net_min": 62770845.38327526,
+        "price_per_sqm_net_median": 69862669.05593172,
+        "price_per_sqm_net_max": 80144015.32846716,
+        "price_per_sqm_gross_median": 62415453.12876156,
+        "gross_area_median": 83.01,
+        "standard_price_median": 5203725527.5,
+        "area_efficiency_median": 0.8941318814,
+        "loan_premium_pct_median": 1.7000000126,
+        "sold": 14,
+        "reserved": 10,
+        "available": 32,
+        "sold_pct": 25.0
+      },
+      {
+        "unit_type_normalized": "4PN",
+        "units": 7,
+        "price_per_sqm_net_min": 55583013.28702075,
+        "price_per_sqm_net_median": 57458147.56968641,
+        "price_per_sqm_net_max": 64296743.65190094,
+        "price_per_sqm_gross_median": 52024570.87309725,
+        "gross_area_median": 126.79,
+        "standard_price_median": 6596195341.0,
+        "area_efficiency_median": 0.9044877356,
+        "loan_premium_pct_median": 9.7999999976,
+        "sold": 2,
+        "reserved": 0,
+        "available": 5,
+        "sold_pct": 28.57
+      },
+      {
+        "unit_type_normalized": "Garden",
+        "units": 8,
+        "price_per_sqm_net_min": 64699952.591049105,
+        "price_per_sqm_net_median": 72156151.02998272,
+        "price_per_sqm_net_max": 84386579.42028986,
+        "price_per_sqm_gross_median": 66502927.90646892,
+        "gross_area_median": 155.55,
+        "standard_price_median": 10361219093.0,
+        "area_efficiency_median": 0.9202432501,
+        "loan_premium_pct_median": 2.8999999999,
+        "sold": 2,
+        "reserved": 1,
+        "available": 5,
+        "sold_pct": 25.0
+      },
+      {
+        "unit_type_normalized": "Loft",
+        "units": 39,
+        "price_per_sqm_net_min": 59599067.5416873,
+        "price_per_sqm_net_median": 70747901.1294673,
+        "price_per_sqm_net_max": 80286707.64174199,
+        "price_per_sqm_gross_median": 63318731.06517803,
+        "gross_area_median": 66.21,
+        "standard_price_median": 4123858505.0,
+        "area_efficiency_median": 0.902519994,
+        "loan_premium_pct_median": 4.1000000036,
+        "sold": 12,
+        "reserved": 5,
+        "available": 22,
+        "sold_pct": 30.77
+      },
+      {
+        "unit_type_normalized": "RISA",
+        "units": 14,
+        "price_per_sqm_net_min": 61373283.827493265,
+        "price_per_sqm_net_median": 67895219.38379923,
+        "price_per_sqm_net_max": 68870511.16098756,
+        "price_per_sqm_gross_median": 60309132.73471463,
+        "gross_area_median": 55.24,
+        "standard_price_median": 3339494464.5,
+        "area_efficiency_median": 0.8872194062,
+        "loan_premium_pct_median": 4.1000000064,
+        "sold": 8,
+        "reserved": 2,
+        "available": 4,
+        "sold_pct": 57.14
+      },
+      {
+        "unit_type_normalized": "SkyVilla",
+        "units": 1,
+        "price_per_sqm_net_min": 75420044.61936596,
+        "price_per_sqm_net_median": 75420044.61936596,
+        "price_per_sqm_net_max": 75420044.61936596,
+        "price_per_sqm_gross_median": 68523822.13441317,
+        "gross_area_median": 153.11,
+        "standard_price_median": 10491682407.0,
+        "area_efficiency_median": 0.9085624714,
+        "loan_premium_pct_median": 9.8000000011,
+        "sold": 0,
+        "reserved": 1,
+        "available": 0,
+        "sold_pct": 0.0
+      }
+    ],
+    "price_by_floor_band": [
+      {
+        "floor_band": "high",
+        "units": 164,
+        "price_per_sqm_net_min": 46464009.807355516,
+        "price_per_sqm_net_median": 59251592.42825487,
+        "price_per_sqm_net_max": 84386579.42028986,
+        "price_per_sqm_gross_median": 53993917.131214805,
+        "gross_area_median": 66.45,
+        "standard_price_median": 3534586980.0,
+        "area_efficiency_median": 0.9075542842,
+        "loan_premium_pct_median": 4.0999999907,
+        "sold": 60,
+        "reserved": 24,
+        "available": 80,
+        "sold_pct": 36.59
+      },
+      {
+        "floor_band": "low",
+        "units": 116,
+        "price_per_sqm_net_min": 51581026.43965056,
+        "price_per_sqm_net_median": 59665992.61631827,
+        "price_per_sqm_net_max": 78941461.76160337,
+        "price_per_sqm_gross_median": 53505680.518986315,
+        "gross_area_median": 66.45,
+        "standard_price_median": 3384826255.0,
+        "area_efficiency_median": 0.8961653117,
+        "loan_premium_pct_median": 4.1000000007,
+        "sold": 31,
+        "reserved": 24,
+        "available": 61,
+        "sold_pct": 26.72
+      },
+      {
+        "floor_band": "mid",
+        "units": 112,
+        "price_per_sqm_net_min": 50311262.73919206,
+        "price_per_sqm_net_median": 65778548.61037351,
+        "price_per_sqm_net_max": 81364076.20765918,
+        "price_per_sqm_gross_median": 59204780.83816779,
+        "gross_area_median": 66.45,
+        "standard_price_median": 3688652571.0,
+        "area_efficiency_median": 0.9014951007,
+        "loan_premium_pct_median": 4.0999999971,
+        "sold": 39,
+        "reserved": 15,
+        "available": 58,
+        "sold_pct": 34.82
+      }
+    ]
+  },
+  "ahp": {
+    "hierarchy": {
+      "affordability_demand_depth": [
+        "ticket_depth_score",
+        "price_per_sqm_net_score",
+        "loan_premium_score"
+      ],
+      "product_fit": [
+        "segment_depth_score",
+        "size_fit_score",
+        "area_efficiency_score"
+      ],
+      "position": [
+        "floor_band_score"
+      ],
+      "physical_attractiveness": [
+        "view_score",
+        "direction_score",
+        "corner_score"
+      ]
+    },
+    "excluded_from_hierarchy": {
+      "subdivision": "no expert-validated ranking available",
+      "tower": "no expert-validated ranking available",
+      "unit_number": "positional identifier, no validated desirability ordering"
+    },
+    "matrices": [
+      {
+        "matrix": "goal:absorption_potential",
+        "n": 4,
+        "lambda_max": 4.004156942642875,
+        "consistency_index": 0.0013856475476248789,
+        "consistency_ratio": 0.0015396083862498655,
+        "threshold": 0.08,
+        "spec_threshold": 0.1,
+        "consistent": true,
+        "passes_spec_cr_lt_0_10": true,
+        "hotspots": [
+          {
+            "a": "affordability_demand_depth",
+            "b": "physical_attractiveness",
+            "judged": 5.0,
+            "implied": 5.477225575051661,
+            "deviation": 0.09116077839697731
+          },
+          {
+            "a": "affordability_demand_depth",
+            "b": "position",
+            "judged": 4.0,
+            "implied": 3.821771168817467,
+            "deviation": 0.045580389198488655
+          },
+          {
+            "a": "product_fit",
+            "b": "physical_attractiveness",
+            "judged": 3.0,
+            "implied": 2.8663283766131005,
+            "deviation": 0.045580389198488655
+          }
+        ],
+        "weights": {
+          "affordability_demand_depth": 0.5082461565674986,
+          "product_fit": 0.2659741434622629,
+          "position": 0.13298707173113145,
+          "physical_attractiveness": 0.09279262823910712
+        }
+      },
+      {
+        "matrix": "group:affordability_demand_depth",
+        "n": 3,
+        "lambda_max": 3.0,
+        "consistency_index": 0.0,
+        "consistency_ratio": 0.0,
+        "threshold": 0.05,
+        "spec_threshold": 0.1,
+        "consistent": true,
+        "passes_spec_cr_lt_0_10": true,
+        "hotspots": [
+          {
+            "a": "price_per_sqm_net_score",
+            "b": "loan_premium_score",
+            "judged": 2.0,
+            "implied": 2.0,
+            "deviation": 5e-28
+          },
+          {
+            "a": "ticket_depth_score",
+            "b": "loan_premium_score",
+            "judged": 4.0,
+            "implied": 4.0,
+            "deviation": 0.0
+          },
+          {
+            "a": "ticket_depth_score",
+            "b": "price_per_sqm_net_score",
+            "judged": 2.0,
+            "implied": 2.0,
+            "deviation": 0.0
+          }
+        ],
+        "weights": {
+          "ticket_depth_score": 0.5714285714285714,
+          "price_per_sqm_net_score": 0.2857142857142857,
+          "loan_premium_score": 0.14285714285714285
+        }
+      },
+      {
+        "matrix": "group:product_fit",
+        "n": 3,
+        "lambda_max": 3.018294707289631,
+        "consistency_index": 0.009147353644815368,
+        "consistency_ratio": 0.015771299387612705,
+        "threshold": 0.05,
+        "spec_threshold": 0.1,
+        "consistent": true,
+        "passes_spec_cr_lt_0_10": true,
+        "hotspots": [
+          {
+            "a": "segment_depth_score",
+            "b": "size_fit_score",
+            "judged": 2.0,
+            "implied": 1.7471609294725978,
+            "deviation": 0.1351550360360548
+          },
+          {
+            "a": "size_fit_score",
+            "b": "area_efficiency_score",
+            "judged": 3.0,
+            "implied": 2.6207413942088964,
+            "deviation": 0.1351550360360548
+          },
+          {
+            "a": "segment_depth_score",
+            "b": "area_efficiency_score",
+            "judged": 4.0,
+            "implied": 4.5788569702133275,
+            "deviation": 0.1351550360360548
+          }
+        ],
+        "weights": {
+          "segment_depth_score": 0.5584245430947973,
+          "size_fit_score": 0.31961826393597564,
+          "area_efficiency_score": 0.1219571929692271
+        }
+      },
+      {
+        "matrix": "group:position",
+        "n": 1,
+        "lambda_max": 1.0,
+        "consistency_index": 0.0,
+        "consistency_ratio": 0.0,
+        "threshold": 0.0,
+        "consistent": true,
+        "note": "single criterion — weight passes through, no comparison needed",
+        "weights": {
+          "floor_band_score": 1.0
+        }
+      },
+      {
+        "matrix": "group:physical_attractiveness",
+        "n": 3,
+        "lambda_max": 3.0,
+        "consistency_index": 0.0,
+        "consistency_ratio": 0.0,
+        "threshold": 0.05,
+        "spec_threshold": 0.1,
+        "consistent": true,
+        "passes_spec_cr_lt_0_10": true,
+        "hotspots": [
+          {
+            "a": "direction_score",
+            "b": "corner_score",
+            "judged": 1.5,
+            "implied": 1.5,
+            "deviation": 0.0
+          },
+          {
+            "a": "view_score",
+            "b": "corner_score",
+            "judged": 3.0,
+            "implied": 3.0,
+            "deviation": 0.0
+          },
+          {
+            "a": "view_score",
+            "b": "direction_score",
+            "judged": 2.0,
+            "implied": 2.0,
+            "deviation": 0.0
+          }
+        ],
+        "weights": {
+          "view_score": 0.5454545454545454,
+          "direction_score": 0.2727272727272727,
+          "corner_score": 0.18181818181818182
+        }
+      }
+    ],
+    "global_weights": {
+      "ticket_depth_score": 0.290426,
+      "price_per_sqm_net_score": 0.145213,
+      "loan_premium_score": 0.072607,
+      "segment_depth_score": 0.148526,
+      "size_fit_score": 0.08501,
+      "area_efficiency_score": 0.032437,
+      "floor_band_score": 0.132987,
+      "view_score": 0.050614,
+      "direction_score": 0.025307,
+      "corner_score": 0.016871
+    },
+    "all_matrices_pass_cr_threshold": true
+  },
+  "leakage_control": {
+    "excluded_from_ahp_input": [
+      "unit_status",
+      "is_sold",
+      "days_to_sell",
+      "reserved_at",
+      "sold_at",
+      "lead_count",
+      "qualified_lead_count",
+      "booking_count",
+      "reservation_count",
+      "first_lead_at",
+      "first_booking_at",
+      "days_to_first_lead",
+      "days_to_reserve",
+      "deal_lifecycle_stage",
+      "has_lead",
+      "has_booking",
+      "has_reservation",
+      "deal_external_id",
+      "deal_status",
+      "lost_at"
+    ],
+    "outcome_columns_retained_for_validation_only": "processed_data/outcome_validation_only.csv"
+  },
+  "validation": {
+    "consistency": "see ahp.matrices — CR per matrix",
+    "sensitivity": [
+      {
+        "perturbed_group": "affordability_demand_depth",
+        "delta_pct": -10,
+        "spearman_vs_base": 0.999109,
+        "kendall_tau_b_vs_base": 0.981079,
+        "top50_overlap": 47,
+        "max_rank_shift": 22,
+        "units_moving_gt_10_ranks": 20
+      },
+      {
+        "perturbed_group": "affordability_demand_depth",
+        "delta_pct": -5,
+        "spearman_vs_base": 0.999783,
+        "kendall_tau_b_vs_base": 0.991805,
+        "top50_overlap": 48,
+        "max_rank_shift": 10,
+        "units_moving_gt_10_ranks": 0
+      },
+      {
+        "perturbed_group": "affordability_demand_depth",
+        "delta_pct": 5,
+        "spearman_vs_base": 0.999851,
+        "kendall_tau_b_vs_base": 0.993058,
+        "top50_overlap": 50,
+        "max_rank_shift": 12,
+        "units_moving_gt_10_ranks": 1
+      },
+      {
+        "perturbed_group": "affordability_demand_depth",
+        "delta_pct": 10,
+        "spearman_vs_base": 0.999541,
+        "kendall_tau_b_vs_base": 0.986664,
+        "top50_overlap": 49,
+        "max_rank_shift": 13,
+        "units_moving_gt_10_ranks": 8
+      },
+      {
+        "perturbed_group": "product_fit",
+        "delta_pct": -10,
+        "spearman_vs_base": 0.99959,
+        "kendall_tau_b_vs_base": 0.986795,
+        "top50_overlap": 47,
+        "max_rank_shift": 14,
+        "units_moving_gt_10_ranks": 5
+      },
+      {
+        "perturbed_group": "product_fit",
+        "delta_pct": -5,
+        "spearman_vs_base": 0.999876,
+        "kendall_tau_b_vs_base": 0.993606,
+        "top50_overlap": 48,
+        "max_rank_shift": 10,
+        "units_moving_gt_10_ranks": 0
+      },
+      {
+        "perturbed_group": "product_fit",
+        "delta_pct": 5,
+        "spearman_vs_base": 0.999868,
+        "kendall_tau_b_vs_base": 0.993711,
+        "top50_overlap": 49,
+        "max_rank_shift": 11,
+        "units_moving_gt_10_ranks": 2
+      },
+      {
+        "perturbed_group": "product_fit",
+        "delta_pct": 10,
+        "spearman_vs_base": 0.999636,
+        "kendall_tau_b_vs_base": 0.987891,
+        "top50_overlap": 49,
+        "max_rank_shift": 13,
+        "units_moving_gt_10_ranks": 5
+      },
+      {
+        "perturbed_group": "position",
+        "delta_pct": -10,
+        "spearman_vs_base": 0.999724,
+        "kendall_tau_b_vs_base": 0.991101,
+        "top50_overlap": 48,
+        "max_rank_shift": 12,
+        "units_moving_gt_10_ranks": 2
+      },
+      {
+        "perturbed_group": "position",
+        "delta_pct": -5,
+        "spearman_vs_base": 0.99992,
+        "kendall_tau_b_vs_base": 0.995746,
+        "top50_overlap": 49,
+        "max_rank_shift": 7,
+        "units_moving_gt_10_ranks": 0
+      },
+      {
+        "perturbed_group": "position",
+        "delta_pct": 5,
+        "spearman_vs_base": 0.999862,
+        "kendall_tau_b_vs_base": 0.994441,
+        "top50_overlap": 47,
+        "max_rank_shift": 11,
+        "units_moving_gt_10_ranks": 1
+      },
+      {
+        "perturbed_group": "position",
+        "delta_pct": 10,
+        "spearman_vs_base": 0.999528,
+        "kendall_tau_b_vs_base": 0.987995,
+        "top50_overlap": 47,
+        "max_rank_shift": 14,
+        "units_moving_gt_10_ranks": 6
+      },
+      {
+        "perturbed_group": "physical_attractiveness",
+        "delta_pct": -10,
+        "spearman_vs_base": 0.999919,
+        "kendall_tau_b_vs_base": 0.995302,
+        "top50_overlap": 50,
+        "max_rank_shift": 8,
+        "units_moving_gt_10_ranks": 0
+      },
+      {
+        "perturbed_group": "physical_attractiveness",
+        "delta_pct": -5,
+        "spearman_vs_base": 0.999973,
+        "kendall_tau_b_vs_base": 0.997703,
+        "top50_overlap": 50,
+        "max_rank_shift": 5,
+        "units_moving_gt_10_ranks": 0
+      },
+      {
+        "perturbed_group": "physical_attractiveness",
+        "delta_pct": 5,
+        "spearman_vs_base": 0.99997,
+        "kendall_tau_b_vs_base": 0.997547,
+        "top50_overlap": 49,
+        "max_rank_shift": 6,
+        "units_moving_gt_10_ranks": 0
+      },
+      {
+        "perturbed_group": "physical_attractiveness",
+        "delta_pct": 10,
+        "spearman_vs_base": 0.999919,
+        "kendall_tau_b_vs_base": 0.995329,
+        "top50_overlap": 49,
+        "max_rank_shift": 8,
+        "units_moving_gt_10_ranks": 0
+      }
+    ],
+    "min_spearman_across_perturbations": 0.999109,
+    "min_top50_overlap": 47,
+    "baseline_equal_weight": {
+      "spearman_vs_ahp": 0.892983,
+      "kendall_tau_b_vs_ahp": 0.710423,
+      "top50_overlap": 33
+    },
+    "expert_ranking_comparison": "NOT RUN — no expert-labelled ranking available in the source data",
+    "descriptive_score_by_actual_status": [
+      {
+        "status": "available",
+        "count": 199,
+        "mean": 78.559,
+        "median": 81.02
+      },
+      {
+        "status": "reserved",
+        "count": 63,
+        "mean": 78.65,
+        "median": 80.694
+      },
+      {
+        "status": "sold",
+        "count": 130,
+        "mean": 80.827,
+        "median": 82.75
+      }
+    ]
+  },
+  "feature_coverage": {
+    "ticket_depth_score": {
+      "missing": 0,
+      "coverage_pct": 100.0
+    },
+    "segment_depth_score": {
+      "missing": 0,
+      "coverage_pct": 100.0
+    },
+    "price_per_sqm_net_score": {
+      "missing": 0,
+      "coverage_pct": 100.0
+    },
+    "loan_premium_score": {
+      "missing": 0,
+      "coverage_pct": 100.0
+    },
+    "area_efficiency_score": {
+      "missing": 0,
+      "coverage_pct": 100.0
+    },
+    "size_fit_score": {
+      "missing": 0,
+      "coverage_pct": 100.0
+    },
+    "floor_band_score": {
+      "missing": 0,
+      "coverage_pct": 100.0
+    },
+    "view_score": {
+      "missing": 0,
+      "coverage_pct": 100.0
+    },
+    "direction_score": {
+      "missing": 0,
+      "coverage_pct": 100.0
+    },
+    "corner_score": {
+      "missing": 0,
+      "coverage_pct": 100.0
+    }
+  },
+  "score_band_distribution": {
+    "Medium": 157,
+    "Low": 78,
+    "High": 78,
+    "Very High": 40,
+    "Very Low": 39
+  },
+  "limitations": [
+    "direction, balcony_direction, view, corner_unit_proxy are SYNTHETIC (physical_features_origin = synthetic_v1_tower_stack_floor_band) and are not verified market facts.",
+    "lead/booking/reservation counts and timestamps are SYNTHETIC (crm_signals_origin = synthetic_v1_causal_funnel); used for descriptive validation only.",
+    "agency_name is tagged synthetic via agency_name_origin.",
+    "data_profile = 'demo' for all 392 units — this is not production CRM data.",
+    "AHP weights encode the spec's 35/30/20/15 starting template as pairwise ratios; they are assumptions and must be replaced by elicited expert judgments.",
+    "Source price_per_sqm_* columns are computed from loan_price_vnd, not standard_price_vnd; recalculated per spec Step 5 and the source values retained as *_source for audit.",
+    "Score bands (90/80/70/60) are for discussion and require domain-expert review."
+  ]
+}

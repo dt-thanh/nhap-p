@@ -296,26 +296,33 @@ class SyncRunService:
 
         existing = await self._find_existing_run(envelope)
         if existing is not None:
+            return self._replayed_result(existing)
+
+        try:
+            sync_run_id = await self._create_run(
+                envelope, project_uuid, raw_payload=raw_payload, credential_id=credential_id
+            )
+        except IntegrityError as exc:
+            # TOCTOU: một request khác cho ĐÚNG (source_system,
+            # source_instance_id, external_batch_id) đã thắng cuộc đua giữa
+            # `_find_existing_run` và INSERT này — hai request gần như đồng thời
+            # đều thấy "chưa có lô" trước khi cái nào kịp commit. Ràng buộc
+            # `uq_upload_files_source_batch` là thứ THỰC SỰ chặn bản ghi trùng;
+            # tới lúc Postgres báo lỗi này thì dòng thắng cuộc đã commit và nhìn
+            # thấy được, nên tra lại là an toàn — không phải một khoảng hở mới.
+            # Mọi ràng buộc KHÁC vẫn phải nổ như cũ: đây không phải một tấm lưới
+            # nuốt hết IntegrityError, chỉ bắt đúng một cái tên ràng buộc.
+            if _constraint_name(exc) != "uq_upload_files_source_batch":
+                raise
+            existing = await self._find_existing_run(envelope)
+            if existing is None:  # pragma: no cover - phòng thủ, không nên tới được đây
+                raise
             log.info(
-                "sync.run.replayed",
+                "sync.run.replayed_after_race",
                 sync_run_id=str(existing["id"]),
                 external_batch_id=envelope.external_batch_id,
             )
-            summary = existing["error_summary"] or {}
-            return SyncRunResult(
-                sync_run_id=str(existing["id"]),
-                status=existing["status"],
-                replayed=True,
-                rows_received=existing["rows_received"],
-                rows_ok=existing["rows_ok"],
-                rows_failed=existing["rows_failed"],
-                decisions=summary.get("decisions", _empty_decisions()),
-                projections=summary.get("projections", _empty_projections()),
-            )
-
-        sync_run_id = await self._create_run(
-            envelope, project_uuid, raw_payload=raw_payload, credential_id=credential_id
-        )
+            return self._replayed_result(existing)
 
         try:
             return await self._process(envelope, sync_run_id, project_uuid)
@@ -326,6 +333,28 @@ class SyncRunService:
             # nguyên vẹn — mục đích duy nhất là không bỏ lại lô nửa chừng.
             await self._finalize_failure(sync_run_id)
             raise
+
+    def _replayed_result(self, existing: dict) -> SyncRunResult:
+        """Hình dạng trả về cho một lô ĐÃ CÓ — dùng chung cho đường replay thường
+        và đường vừa thua cuộc đua TOCTOU ở `run()`. `status` là trạng thái THẬT
+        của dòng đã có, kể cả `failed`: một lô hỏng gửi lại không được nhìn giống
+        thành công, nó chỉ được nhìn giống chính nó."""
+        log.info(
+            "sync.run.replayed",
+            sync_run_id=str(existing["id"]),
+            external_batch_id=existing["external_batch_id"],
+        )
+        summary = existing["error_summary"] or {}
+        return SyncRunResult(
+            sync_run_id=str(existing["id"]),
+            status=existing["status"],
+            replayed=True,
+            rows_received=existing["rows_received"],
+            rows_ok=existing["rows_ok"],
+            rows_failed=existing["rows_failed"],
+            decisions=summary.get("decisions", _empty_decisions()),
+            projections=summary.get("projections", _empty_projections()),
+        )
 
     async def reprocess(self, sync_run_id: uuid.UUID) -> SyncRunResult:
         """Chạy lại một lô đã hỏng, từ chính payload thô đã giữ.
@@ -573,6 +602,12 @@ class SyncRunService:
 
         async with self._session_factory() as session:
             async with session.begin():
+                # Attribution cho unit_status_history/deal_status_history (0030):
+                # trigger phát sinh sự kiện đọc biến phiên này để gắn nhãn
+                # `source='crm_sync'` thay vì mặc định `'manual'`. SET LOCAL nên
+                # chỉ sống trong transaction này — không rò sang connection khác
+                # khi pool tái sử dụng nó cho phiên khác.
+                await session.execute(sa.text("SET LOCAL app.history_source = 'crm_sync'"))
                 await session.execute(
                     sa.update(upload_files).where(upload_files.c.id == sync_run_id).values(status="processing")
                 )

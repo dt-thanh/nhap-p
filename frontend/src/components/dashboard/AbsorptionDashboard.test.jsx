@@ -9,6 +9,7 @@ vi.mock("../../api/endpoints", () => ({
   getDashboardTrend: vi.fn(),
   getDashboardAreas: vi.fn(),
   getDataQuality: vi.fn(),
+  getMarketDashboard: vi.fn(),
   listProjects: vi.fn(),
   listAreasScoped: vi.fn(),
 }));
@@ -22,6 +23,7 @@ import {
   getDashboardSummary,
   getDashboardTrend,
   getDataQuality,
+  getMarketDashboard,
   listAreasScoped,
   listProjects,
 } from "../../api/endpoints";
@@ -42,6 +44,7 @@ describe("AbsorptionDashboard trend scope and date filters", () => {
     getDashboardTrend.mockResolvedValue({ points: [], latestVelocity7d: null, latestVelocity30d: null });
     getDashboardAreas.mockResolvedValue([]);
     getDataQuality.mockResolvedValue(null);
+    getMarketDashboard.mockResolvedValue({ project: { live_units: 1 }, metrics: { active_total: 1 } });
   });
 
   it.each([
@@ -51,7 +54,7 @@ describe("AbsorptionDashboard trend scope and date filters", () => {
   ])("keeps project/area scope and requests the %s range", async (label, expectedDays) => {
     render(
       <MemoryRouter initialEntries={["/projects/project-external/dashboard?area=area-external"]}>
-        <AbsorptionDashboard projectExternalId="project-external" />
+        <AbsorptionDashboard projectExternalId="project-external" preview />
       </MemoryRouter>,
     );
 
@@ -83,7 +86,7 @@ describe("AbsorptionDashboard trend scope and date filters", () => {
 
     render(
       <MemoryRouter initialEntries={["/projects/project-external/dashboard?area=area-external"]}>
-        <AbsorptionDashboard projectExternalId="project-external" />
+        <AbsorptionDashboard projectExternalId="project-external" preview />
       </MemoryRouter>,
     );
 

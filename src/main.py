@@ -5,8 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from src.api.agent import router as agent_router
+from src.api.ahp import router as ahp_router
 from src.api.dashboard import router as dashboard_router
 from src.api.files import router as files_router
+from src.api.governance import router as governance_router
 from src.api.inventory import router as inventory_router
 from src.api.ops import router as ops_router
 from src.api.parallel_run import router as parallel_run_router
@@ -58,8 +60,10 @@ app.include_router(ops_router, prefix="/api/v1")
 app.include_router(parallel_run_router, prefix="/api/v1")
 app.include_router(agent_router, prefix="/api/v1")
 app.include_router(ranking_router, prefix="/api/v1")
+app.include_router(ahp_router, prefix="/api/v1")
+app.include_router(governance_router, prefix="/api/v1")
 
-# CP5 — SSO qua Microsoft Entra ID (cùng tenant với Mini CRM).
+# SSO qua Keycloak (realm p100, cùng chung với Mini CRM).
 from src.api.auth import router as auth_router  # noqa: E402
 
 app.include_router(auth_router, prefix="/api/v1")

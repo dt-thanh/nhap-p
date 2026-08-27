@@ -13,8 +13,8 @@ bước duyệt (khác hẳn mô hình đã bị thay thế, xem
 `external_project_id` KHÔNG có trong `AreaPatch` — phân khu không đổi dự án
 (bất biến bằng cách vắng mặt ở tầng schema, §A1.6).
 
-Xác thực GHI (D-14): mọi route ghi đòi tối thiểu `pipeline_operator`, và phạm vi
-phải chứa đúng dự án của phân khu (hoặc `ALL`) — TẠO suy dự án từ
+Xác thực GHI (D-14): mọi route ghi đòi `admin`, và phạm vi phải chứa đúng dự án
+của phân khu (hoặc `ALL`) — TẠO suy dự án từ
 `external_project_id` trong body, SỬA/LƯU TRỮ suy từ dự án CỦA phân khu đã tồn
 tại (`app/scope.py`).
 """
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/areas", tags=["areas"])
 
 @router.post("", response_model=AreaWriteOut, status_code=status.HTTP_201_CREATED, summary="Tạo phân khu dưới một dự án")
 async def create_area(
-    body: AreaCreate, principal: MiniCrmPrincipal = Depends(require_role("pipeline_operator"))
+    body: AreaCreate, principal: MiniCrmPrincipal = Depends(require_role("admin"))
 ) -> AreaWriteOut:
     require_scope(principal, body.external_project_id)
     record = await crud.create_area(body.model_dump())
@@ -67,7 +67,7 @@ async def get_area(external_id: str) -> AreaOut:
 async def update_area(
     external_id: str,
     body: AreaPatch,
-    principal: MiniCrmPrincipal = Depends(require_role("pipeline_operator")),
+    principal: MiniCrmPrincipal = Depends(require_role("admin")),
 ) -> AreaWriteOut:
     require_scope(principal, await scope.project_for_area_external_id(external_id))
     record = await crud.update_area(external_id, body.model_dump(exclude_unset=True))
@@ -76,7 +76,7 @@ async def update_area(
 
 @router.delete("/{external_id}", response_model=AreaWriteOut, summary="Lưu trữ phân khu")
 async def archive_area(
-    external_id: str, principal: MiniCrmPrincipal = Depends(require_role("pipeline_operator"))
+    external_id: str, principal: MiniCrmPrincipal = Depends(require_role("admin"))
 ) -> AreaWriteOut:
     """Lưu trữ, không xoá. Từ chối (409 `PARENT_HAS_LIVE_CHILDREN`) nếu còn căn
     đang hoạt động thuộc phân khu này — không cascade."""

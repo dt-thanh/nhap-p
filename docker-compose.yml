@@ -1,5 +1,18 @@
 name: absorptionforecast
 
+# Handoff credential đồng bộ Mini CRM -> AbsorpIQ (dev-only). File nguồn nằm
+# NGOÀI git (`.dev-secrets/`, xem `.gitignore`), do `scripts/dev-reset.sh`
+# (qua `python -m scripts.bootstrap_dev --credential-output-file ...`) ghi ra
+# — không ai copy tay khoá vào `.env` nữa. Compose mount file này READ-ONLY
+# vào `minicrm` tại `/run/secrets/minicrm_sync_api_key` — không lộ qua biến
+# môi trường container, không lộ qua `docker inspect`/`docker compose config`.
+# `MINICRM_SYNC_API_KEY` (env, dưới service `minicrm`) vẫn còn — là đường
+# TƯƠNG THÍCH NGƯỢC cho host-mode/test, `app/config.py::sync_api_key_value`
+# ưu tiên file này trước.
+secrets:
+  minicrm_sync_api_key:
+    file: .dev-secrets/minicrm_sync_api_key
+
 x-backend-base: &backend-base
   build:
     context: .
@@ -24,7 +37,11 @@ x-backend-base: &backend-base
 
 services:
   db:
-    image: postgres:15-alpine
+    # pgvector/pgvector:pg15 — same Postgres 15 as before, plus the `vector`
+    # extension needed by migration 0035 (ranking_evidence_document_chunks,
+    # docs/ranking/ranking_consultant.md §21.4/§21.10). plain postgres:15-alpine
+    # cannot run `CREATE EXTENSION IF NOT EXISTS vector`.
+    image: pgvector/pgvector:pg15
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
@@ -77,6 +94,8 @@ services:
       - keycloak_data:/opt/keycloak/data
       # Realm import (read-only). Bind mount ghi đè thư mục import trong volume.
       - ./docker/keycloak:/opt/keycloak/data/import:ro
+      # Custom login theme (branded AbsorptionForecast). Đọc lúc container start.
+      - ./docker/keycloak/themes:/opt/keycloak/themes:ro
     healthcheck:
       # Keycloak image KHÔNG có curl/wget. Dùng JDK sẵn có trong image để gọi
       # management health endpoint (cổng 9000, bật bởi KC_HEALTH_ENABLED).
@@ -94,19 +113,12 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-absorption}
       REDIS_URL: redis://redis:6379/0
-      # CP5: SSO qua Entra. Giá trị lấy từ `.env` GỐC (xem `.env.example`), rỗng
-      # nếu chưa cấu hình — khi đó `entra_configured()` sai và đường Entra tắt
-      # hẳn, KHÔNG phải mở. Không có giá trị nào hard-code ở đây.
-      ENTRA_TENANT_ID: "${ENTRA_TENANT_ID:-}"
-      ENTRA_CLIENT_ID: "${ENTRA_CLIENT_ID:-}"
-      ENTRA_CLIENT_SECRET: "${ENTRA_CLIENT_SECRET:-}"
-      ENTRA_REDIRECT_URI: "${ENTRA_REDIRECT_URI:-http://localhost:8000/api/v1/auth/callback}"
-      ENTRA_POST_LOGOUT_REDIRECT_URI: "${ENTRA_POST_LOGOUT_REDIRECT_URI:-http://localhost:5173/login}"
-      ENTRA_ROLE_MAP: "${ENTRA_ROLE_MAP:-}"
-      ENTRA_PROJECT_SCOPE: "${ENTRA_PROJECT_SCOPE:-}"
-      # Keycloak/OIDC generic — IdP MẶC ĐỊNH cho dev local. OIDC_* set ⇒ dùng
-      # OIDC; nếu rỗng, rơi về ENTRA_* ở trên (§12). ISSUER = URL browser mở được
+      # SSO qua Keycloak — nhà cung cấp danh tính DUY NHẤT ở runtime (Entra đã
+      # bị gỡ khỏi mã nguồn). Giá trị lấy từ `.env` GỐC (xem `.env.example`);
+      # rỗng ⇒ `oidc_configured()` sai và route auth trả 503 rõ ràng, KHÔNG có
+      # nhà cung cấp nào khác để rơi về. ISSUER = URL browser mở được
       # (localhost:9090); INTERNAL_BASE_URL = Docker DNS cho server-to-server.
+      AUTH_PROVIDER: "${AUTH_PROVIDER:-keycloak}"
       OIDC_ISSUER: "${OIDC_ISSUER:-http://localhost:9090/realms/p100}"
       OIDC_INTERNAL_BASE_URL: "${OIDC_INTERNAL_BASE_URL:-http://keycloak:8080/realms/p100}"
       OIDC_CLIENT_ID: "${OIDC_CLIENT_ID:-absorbiq-client}"
@@ -114,22 +126,41 @@ services:
       OIDC_REDIRECT_URI: "${OIDC_REDIRECT_URI:-http://localhost:8000/api/v1/auth/callback}"
       OIDC_POST_LOGOUT_REDIRECT_URI: "${OIDC_POST_LOGOUT_REDIRECT_URI:-http://localhost:5173}"
       OIDC_SCOPES: "${OIDC_SCOPES:-openid profile email offline_access}"
+      OIDC_ROLE_MAP: "${OIDC_ROLE_MAP:-}"
+      OIDC_PROJECT_SCOPE: "${OIDC_PROJECT_SCOPE:-}"
       SESSION_SECRET: "${SESSION_SECRET:-}"
       SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-false}"
       # Local API only; dashboard_auth also requires APP_ENV=development.
       #
       # CẢNH BÁO (CP4): cờ này trả về admin/ALL cho MỌI request không có
       # `Authorization`. Nó chỉ sống được khi APP_ENV=development, nhưng vẫn là
-      # thứ PHẢI tắt ngay khi Entra đã cấu hình — nếu không, một request không
-      # kèm cookie/token vẫn đi vào bằng quyền admin. Đặt "false" sau khi
-      # ENTRA_* ở trên đã có giá trị thật.
+      # thứ PHẢI tắt ngay khi Keycloak đã cấu hình — nếu không, một request
+      # không kèm cookie/token vẫn đi vào bằng quyền admin. Đặt "false" sau khi
+      # OIDC_* ở trên đã có giá trị thật.
       # Keycloak giờ cấp auth local THẬT nên bypass mặc định TẮT (đúng như TODO
       # trong dashboard_auth.py: "Remove DEV_AUTH_BYPASS when real local auth
       # exists"). Đặt true chỉ khi cố tình bỏ qua SSO cho một phiên debug.
       DEV_AUTH_BYPASS: "${DEV_AUTH_BYPASS:-false}"
       # CHỈ dùng ở dev/test. entrypoint TỪ CHỐI chạy khi APP_ENV=production —
-      # xem docs/runbooks/migrations.md (sự cố quy trình ở Phase 8D).
-      RUN_MIGRATIONS: "true"
+      # xem docs/runbooks/migrations.md (sự cố quy trình ở Phase 8D). MẶC ĐỊNH
+      # TẮT (giống DEV_AUTH_BYPASS ở trên): một file compose bị tái sử dụng ở
+      # môi trường khác mà không sửa dòng này trước đây sẽ tự động chạy
+      # `alembic upgrade head` mỗi lần container khởi động lại — đặt "true" ở
+      # `.env` cục bộ (KHÔNG commit) để bật lại cho dev.
+      RUN_MIGRATIONS: "${RUN_MIGRATIONS:-false}"
+    # Ghi đè (không thêm vào) danh sách `volumes:` của `x-backend-base`: YAML
+    # `<<:` không nối mảng, nên bốn dòng gốc phải liệt lại nguyên văn ở đây.
+    # Dòng cuối MỚI: bind mount READ-WRITE duy nhất cho phép `bootstrap_dev.py`
+    # (chạy TRONG container qua `docker compose run --rm api ...`) ghi khoá
+    # sync credential thô ra HOST — container không thấy `.env` (không mount),
+    # nên đây là cách DUY NHẤT nó ghi được ra ngoài. Chỉ `api` có mount này;
+    # `worker`/`scheduler` không cần và không nên có quyền ghi vào đây.
+    volumes:
+      - ./src:/app/src
+      - ./alembic:/app/alembic
+      - ./data:/app/data
+      - uploads:/app/uploads
+      - ./.dev-secrets:/app/.dev-secrets
     command:
       - uvicorn
       - src.main:app
@@ -214,13 +245,13 @@ services:
       # CP6: đích của nút "Xem trong AbsorbIQ". Đây là URL người dùng mở trong
       # TRÌNH DUYỆT, nên là localhost của máy host, KHÔNG phải tên service.
       VITE_PRODUCT_FRONTEND_URL: "${PRODUCT_FRONTEND_URL:-http://localhost:5173}"
-      # KHÔNG có VITE_DEV_BEARER_TOKEN ở đây (đã gỡ ở CP1 của hợp nhất Entra).
+      # KHÔNG có VITE_DEV_BEARER_TOKEN ở đây (đã gỡ ở CP1 của hợp nhất SSO).
       # Frontend không còn đọc biến này: token phiên nằm trong cookie HttpOnly
-      # `minicrm_session` do backend phát sau vòng OIDC Entra, trình duyệt tự
+      # `minicrm_session` do backend phát sau vòng OIDC Keycloak, trình duyệt tự
       # đính kèm qua `credentials: "include"` (xem crm-frontend/src/services/
       # api.ts). Thêm lại một dev-token ở đây sẽ (1) là biến chết vì FE bỏ qua,
       # (2) buộc MINICRM_AUTH_ADMIN_TOKEN thành bắt buộc cho service FE một cách
-      # vô nghĩa, (3) đi ngược mục tiêu Entra-only. Muốn bật lối token tĩnh cho
+      # vô nghĩa, (3) đi ngược mục tiêu Keycloak-only. Muốn bật lối token tĩnh cho
       # dev thì đặt MINICRM_LEGACY_TOKEN_AUTH_ENABLED=true ở service `minicrm`
       # (opt-in tường minh, mặc định tắt — KHÔNG dùng cho production).
     command: sh -c "npm ci --no-audit --no-fund && npm run dev -- --host 0.0.0.0 --port 5174"
@@ -295,6 +326,7 @@ services:
       # TÊN SERVICE của Compose, không phải localhost: trong container,
       # `localhost` là chính Mini CRM.
       MINICRM_SYNC_BASE_URL: http://api:8000
+      MINICRM_REDIS_URL: redis://redis:6379/0
       # Chỉ dev. Production migrate bằng lệnh tường minh, giống backend
       # (`minicrm/.env` giữ "false" cho chế độ uvicorn trực tiếp — migrate tay).
       MINICRM_RUN_MIGRATIONS: "true"
@@ -307,25 +339,25 @@ services:
       MINICRM_OIDC_CLIENT_ID: "${MINICRM_OIDC_CLIENT_ID:-minicrm-client}"
       MINICRM_OIDC_CLIENT_SECRET: "${MINICRM_OIDC_CLIENT_SECRET:-local-dev-minicrm-secret}"
       MINICRM_OIDC_REDIRECT_URI: "${MINICRM_OIDC_REDIRECT_URI:-http://localhost:8100/auth/callback}"
-      MINICRM_OIDC_POST_LOGOUT_REDIRECT_URI: "${MINICRM_OIDC_POST_LOGOUT_REDIRECT_URI:-http://localhost:5174}"
+      MINICRM_OIDC_POST_LOGOUT_REDIRECT_URI: "${MINICRM_OIDC_POST_LOGOUT_REDIRECT_URI:-http://localhost:5174/login}"
       MINICRM_OIDC_SCOPES: "${MINICRM_OIDC_SCOPES:-openid profile email offline_access}"
       # SESSION_SECRET cho Mini CRM đến từ minicrm/.env (MINICRM_SESSION_SECRET).
-      # --- Hai bí mật BẮT BUỘC, CỐ Ý trùng nguồn với `.env` GỐC ------------
-      # `environment:` LUÔN thắng `env_file:` ở CÙNG một khoá (quy tắc precedence
-      # của Compose — không có cách nào lách qua bằng cú pháp) — nên MỘT trong
-      # hai khoá dưới đây, nếu xuất hiện ở đây, sẽ luôn ghi đè giá trị từ
-      # `minicrm/.env`. Dùng đúng đặc điểm đó có chủ đích: `${VAR:?...}` chỉ đọc
-      # được biến từ ngữ cảnh nội suy CỦA COMPOSE (`.env` GỐC hoặc biến shell) —
-      # nó KHÔNG với vào được nội dung của một `env_file:` khác. Muốn Compose
-      # DỪNG NGAY tại bước `docker compose config`/`up` khi bí mật thiếu (thay vì
-      # âm thầm khởi động Mini CRM với khoá rỗng), giá trị đó BẮT BUỘC phải sống
-      # ở `.env` GỐC — đây là hai biến duy nhất cố tình trùng giữa `.env` GỐC và
-      # `minicrm/.env`, giữ CÙNG một giá trị (cùng một Mini CRM instance, cùng
-      # một khoá đã đăng ký trong `sync_credentials` của Backend) — xem
-      # `.env.example` mục Mini CRM để biết vì sao chỉ hai biến này, không phải
-      # toàn bộ.
-      MINICRM_SYNC_API_KEY: "${MINICRM_SYNC_API_KEY:?MINICRM_SYNC_API_KEY is required in root .env for Docker mode. Copy the value from minicrm/.env, or issue one with scripts/sync_simulator.py --issue-key}"
+      # --- MINICRM_SYNC_API_KEY: nay là TƯƠNG THÍCH NGƯỢC, không còn bắt buộc.
+      # Đường CHÍNH là `secrets:` bên dưới (`/run/secrets/minicrm_sync_api_key`,
+      # `app/config.py::sync_api_key_value` ưu tiên đọc nó trước) — file đó do
+      # `scripts/dev-reset.sh` ghi tự động, không ai còn phải dán khoá vào
+      # `.env` GỐC tay nữa. Biến này CHỈ còn ý nghĩa cho chế độ chạy KHÔNG qua
+      # Compose secrets (host-mode trực tiếp, một số test) — để trống ở
+      # `.env` GỐC không còn làm `docker compose config`/`up` thất bại (trước
+      # đây `${VAR:?...}` bắt buộc); `sync_api_key_value` tự báo lỗi RÕ RÀNG
+      # lúc gọi nếu CẢ hai nguồn đều thiếu, thay vì Compose chặn sớm.
+      MINICRM_SYNC_API_KEY: "${MINICRM_SYNC_API_KEY:-}"
       MINICRM_AUTH_ADMIN_TOKEN: "${MINICRM_AUTH_ADMIN_TOKEN:?MINICRM_AUTH_ADMIN_TOKEN is required in root .env for Docker mode. Copy the same value used in minicrm/.env}"
+    # Mount READ-ONLY (mặc định của Compose `secrets:`) — Mini CRM chỉ ĐỌC
+    # khoá, không bao giờ ghi. Target path cố định theo tên secret:
+    # `/run/secrets/minicrm_sync_api_key`, khớp `app/config.py::SYNC_API_KEY_SECRET_FILE`.
+    secrets:
+      - minicrm_sync_api_key
     volumes:
       - ./minicrm/app:/app/app
       - ./minicrm/alembic:/app/alembic

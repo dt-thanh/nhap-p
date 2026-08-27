@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from decimal import Decimal
 from urllib.parse import urlsplit
 
 import pytest
@@ -20,7 +21,16 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from src.models.tables import areas, crm_source_records, deals, projects, units, upload_errors, upload_files
+from src.models.tables import (
+    areas,
+    crm_source_records,
+    deals,
+    project_price_observations,
+    projects,
+    units,
+    upload_errors,
+    upload_files,
+)
 from src.services.json_payload import JsonPayloadParser
 from src.services.sync_runs import SyncRejectedError, SyncRunService
 
@@ -63,11 +73,11 @@ async def clean_db(session_factory):
         await session.execute(sa.delete(upload_files).where(upload_files.c.source_instance_id == INSTANCE))
         # units/deals/areas/projects của instance này — JOIN qua source_instance_id
         # trực tiếp trên mỗi bảng (cả bốn đều mang cột đó).
-        await session.execute(
-            sa.delete(deals).where(
-                deals.c.unit_id.in_(sa.select(units.c.id).where(units.c.source_instance_id == INSTANCE))
-            )
-        )
+        unit_ids = sa.select(units.c.id).where(units.c.source_instance_id == INSTANCE)
+        await session.execute(sa.delete(deals).where(deals.c.unit_id.in_(unit_ids)))
+        # `project_price_observations.unit_id` là FK RESTRICT (0027) — phải dọn
+        # TRƯỚC `units`, không thì DELETE units bên dưới nổ khoá ngoại (0008).
+        await session.execute(sa.delete(project_price_observations).where(project_price_observations.c.unit_id.in_(unit_ids)))
         await session.execute(sa.delete(units).where(units.c.source_instance_id == INSTANCE))
         await session.execute(sa.delete(areas).where(areas.c.source_instance_id == INSTANCE))
         await session.execute(sa.delete(projects).where(projects.c.source_instance_id == INSTANCE))
@@ -135,12 +145,24 @@ def _area(record_id="A-1", *, name="A1", unit_type="2PN", bedrooms=2, sqm=68.5, 
     }
 
 
-def _unit_v2(record_id="U-1", *, external_area_id="A-1", code="A1-01", status="available", revision=1):
+_NO_PRICE = object()
+
+
+def _unit_v2(
+    record_id="U-1", *, external_area_id="A-1", code="A1-01", status="available", revision=1, listing_price=_NO_PRICE
+):
+    data = {"external_area_id": external_area_id, "unit_code": code, "status": status}
+    # Sentinel, không `None` mặc định: `listing_price=None` (tường minh) và
+    # KHÔNG truyền tham số này chút nào là hai thứ khác nhau ở phía nhận (0008)
+    # — "vắng mặt" phải thật sự vắng mặt trong `data`, không phải một khoá
+    # mang giá trị `None`.
+    if listing_price is not _NO_PRICE:
+        data["listing_price"] = listing_price
     return {
         "source_record_id": record_id,
         "operation": "upsert",
         "source_revision": revision,
-        "data": {"external_area_id": external_area_id, "unit_code": code, "status": status},
+        "data": data,
     }
 
 
@@ -176,6 +198,32 @@ async def _area_row(session_factory, external_id="A-1") -> dict | None:
             )
         ).mappings().one_or_none()
     return dict(row) if row is not None else None
+
+
+async def _unit_row(session_factory, external_id="U-1") -> dict | None:
+    async with session_factory() as session:
+        row = (
+            await session.execute(
+                sa.select(units).where(units.c.source_instance_id == INSTANCE, units.c.external_unit_id == external_id)
+            )
+        ).mappings().one_or_none()
+    return dict(row) if row is not None else None
+
+
+async def _price_rows(session_factory, unit_external_id="U-1") -> list[dict]:
+    """Mọi dòng `project_price_observations` của một căn, cũ → mới (0008)."""
+    unit = await _unit_row(session_factory, unit_external_id)
+    if unit is None:
+        return []
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                sa.select(project_price_observations)
+                .where(project_price_observations.c.unit_id == unit["id"])
+                .order_by(project_price_observations.c.effective_from.asc())
+            )
+        ).mappings().all()
+    return [dict(r) for r in rows]
 
 
 async def _seed_project(session_factory, record_id="P-1", **kwargs):
@@ -303,6 +351,67 @@ def test_valid_v2_project_area_unit_deal_payloads_are_accepted_by_the_shape_vali
         }
         violations = ContractValidatorV2().validate(envelope)
         assert violations == [], f"{entity}: {violations}"
+
+
+def _unit_shape_envelope(payload):
+    return {
+        "schema_version": 2,
+        "source_system": "mini_crm",
+        "source_instance_id": INSTANCE,
+        "external_batch_id": "b-1",
+        "sync_mode": "incremental",
+        "project_ref": {"external_project_id": "P-1"},
+        "source_extracted_at": "2026-08-13T00:00:00Z",
+        "records": [{"entity": "unit", "operation": "upsert", "external_id": "U-1", "source_revision": 1, "payload": payload}],
+    }
+
+
+@pytest.mark.parametrize("listing_price", [8_600_000_000, 1, 0.5, None])
+def test_a_unit_payload_with_a_valid_or_null_listing_price_is_accepted_by_the_shape_validator(listing_price):
+    from src.services.contract_validation_v2 import ContractValidatorV2
+
+    payload = {"area_ref": {"external_area_id": "A-1"}, "unit_code": "A1-01", "unit_status": "available"}
+    payload["listing_price"] = listing_price
+    violations = ContractValidatorV2().validate(_unit_shape_envelope(payload))
+    assert violations == [], violations
+
+
+@pytest.mark.parametrize("listing_price", [0, -1, -8_600_000_000])
+def test_a_zero_or_negative_listing_price_is_rejected_by_the_shape_validator(listing_price):
+    from src.services.contract_validation_v2 import ContractValidatorV2
+
+    payload = {
+        "area_ref": {"external_area_id": "A-1"},
+        "unit_code": "A1-01",
+        "unit_status": "available",
+        "listing_price": listing_price,
+    }
+    violations = ContractValidatorV2().validate(_unit_shape_envelope(payload))
+    assert violations
+
+
+def test_a_unit_payload_omitting_listing_price_is_still_accepted():
+    """Trường TUỲ CHỌN — một hệ nguồn không theo dõi giá vẫn phải hợp lệ."""
+    from src.services.contract_validation_v2 import ContractValidatorV2
+
+    payload = {"area_ref": {"external_area_id": "A-1"}, "unit_code": "A1-01", "unit_status": "available"}
+    violations = ContractValidatorV2().validate(_unit_shape_envelope(payload))
+    assert violations == []
+
+
+def test_an_unrecognized_price_field_name_is_still_rejected():
+    """`additionalProperties: false` vẫn nguyên vẹn — 0008 mở đúng MỘT khoá mới,
+    không nới lỏng cổng chặn trường lạ nói chung."""
+    from src.services.contract_validation_v2 import ContractValidatorV2
+
+    payload = {
+        "area_ref": {"external_area_id": "A-1"},
+        "unit_code": "A1-01",
+        "unit_status": "available",
+        "price_vnd": 1,  # tên KHÔNG khớp `listing_price`
+    }
+    violations = ContractValidatorV2().validate(_unit_shape_envelope(payload))
+    assert violations
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -556,6 +665,148 @@ async def test_unit_v2_missing_area_rejects_only_that_record(session_factory):
 
     assert result.projections["rejected"] == 1
     assert result.status == "failed"  # lô một bản ghi, bản ghi đó hỏng
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Giá niêm yết cấp căn (0008, 2026-08-23)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+async def test_unit_with_a_listing_price_creates_one_price_observation(session_factory):
+    await _seed_project_and_area(session_factory, "P-1", "A-1")
+    result = await _sync(
+        session_factory, "units", [_unit_v2("U-1", external_area_id="A-1", listing_price=8_600_000_000)],
+        external_project_id="P-1",
+    )
+    assert result.projections["inserted"] == 1
+
+    rows = await _price_rows(session_factory, "U-1")
+    assert len(rows) == 1
+    assert rows[0]["official_price"] == Decimal("8600000000.00")
+    assert rows[0]["effective_to"] is None
+    assert rows[0]["source"] == "mini_crm"
+
+
+async def test_a_unit_created_without_listing_price_gets_no_observation(session_factory):
+    """Vắng mặt = hệ nguồn không nói gì về giá — không suy diễn, không tạo dòng."""
+    await _seed_project_and_area(session_factory, "P-1", "A-1")
+    result = await _sync(
+        session_factory, "units", [_unit_v2("U-1", external_area_id="A-1")], external_project_id="P-1"
+    )
+    assert result.projections["inserted"] == 1
+    assert await _price_rows(session_factory, "U-1") == []
+
+
+async def test_a_changed_price_closes_the_old_observation_and_opens_a_new_one(session_factory):
+    await _seed_project_and_area(session_factory, "P-1", "A-1")
+    await _sync(
+        session_factory, "units", [_unit_v2("U-1", external_area_id="A-1", listing_price=8_000_000_000, revision=1)],
+        external_project_id="P-1",
+    )
+    result = await _sync(
+        session_factory, "units", [_unit_v2("U-1", external_area_id="A-1", listing_price=8_500_000_000, revision=2)],
+        external_project_id="P-1",
+    )
+    assert result.projections["updated"] == 1
+
+    rows = await _price_rows(session_factory, "U-1")
+    assert len(rows) == 2
+    assert rows[0]["official_price"] == Decimal("8000000000.00")
+    assert rows[0]["effective_to"] is not None
+    assert rows[1]["official_price"] == Decimal("8500000000.00")
+    assert rows[1]["effective_to"] is None
+
+
+async def test_resending_the_same_price_creates_no_duplicate_observation(session_factory):
+    """Idempotent: gửi lại lô cũ (hoặc một lô mới mang cùng giá) không tạo dòng
+    trùng — đúng yêu cầu 'no duplicate price observations on replay'."""
+    await _seed_project_and_area(session_factory, "P-1", "A-1")
+    await _sync(
+        session_factory, "units", [_unit_v2("U-1", external_area_id="A-1", listing_price=8_000_000_000, revision=1)],
+        external_project_id="P-1",
+    )
+    result = await _sync(
+        session_factory,
+        "units",
+        # Trạng thái khác (status), nhưng CÙNG giá — cùng một lô update thật, không
+        # phải một lần gửi lại y hệt.
+        [_unit_v2("U-1", external_area_id="A-1", status="blocked", listing_price=8_000_000_000, revision=2)],
+        external_project_id="P-1",
+    )
+    assert result.projections["updated"] == 1
+
+    rows = await _price_rows(session_factory, "U-1")
+    assert len(rows) == 1
+    assert rows[0]["effective_to"] is None
+
+
+async def test_an_explicit_null_price_closes_the_observation_without_opening_a_new_one(session_factory):
+    await _seed_project_and_area(session_factory, "P-1", "A-1")
+    await _sync(
+        session_factory, "units", [_unit_v2("U-1", external_area_id="A-1", listing_price=8_000_000_000, revision=1)],
+        external_project_id="P-1",
+    )
+    result = await _sync(
+        session_factory,
+        "units",
+        [_unit_v2("U-1", external_area_id="A-1", listing_price=None, revision=2)],
+        external_project_id="P-1",
+    )
+    assert result.projections["updated"] == 1
+
+    rows = await _price_rows(session_factory, "U-1")
+    assert len(rows) == 1
+    assert rows[0]["effective_to"] is not None
+
+
+async def test_a_later_update_that_omits_price_does_not_touch_the_stored_observation(session_factory):
+    """`listing_price` KHÔNG nằm trong chốt A4 (`history_guard.HISTORY_FIELDS`) —
+    một cập nhật CHỈ đổi trạng thái, không nhắc tới giá, không được coi là 'đánh
+    rơi' giá đang lưu."""
+    await _seed_project_and_area(session_factory, "P-1", "A-1")
+    await _sync(
+        session_factory, "units", [_unit_v2("U-1", external_area_id="A-1", listing_price=8_000_000_000, revision=1)],
+        external_project_id="P-1",
+    )
+    result = await _sync(
+        session_factory,
+        "units",
+        [_unit_v2("U-1", external_area_id="A-1", status="reserved", revision=2)],  # không nhắc listing_price
+        external_project_id="P-1",
+    )
+    assert result.projections["updated"] == 1
+
+    rows = await _price_rows(session_factory, "U-1")
+    assert len(rows) == 1
+    assert rows[0]["official_price"] == Decimal("8000000000.00")
+    assert rows[0]["effective_to"] is None
+
+
+async def test_a_stale_revision_cannot_overwrite_a_newer_price(session_factory):
+    await _seed_project_and_area(session_factory, "P-1", "A-1")
+    await _sync(
+        session_factory, "units", [_unit_v2("U-1", external_area_id="A-1", listing_price=8_000_000_000, revision=1)],
+        external_project_id="P-1",
+    )
+    await _sync(
+        session_factory, "units", [_unit_v2("U-1", external_area_id="A-1", listing_price=9_000_000_000, revision=3)],
+        external_project_id="P-1",
+    )
+    # Bản đến mang revision=2 — CŨ hơn bản đã áp (3) — phải bị skip_stale và
+    # không được chạm vào giá đang hiệu lực.
+    result = await _sync(
+        session_factory, "units", [_unit_v2("U-1", external_area_id="A-1", listing_price=1, revision=2)],
+        external_project_id="P-1",
+    )
+    assert result.decisions.get("skip_stale") == 1
+
+    # Hai dòng đã có TRƯỚC lần gửi stale (rev=1 đóng ở rev=3): gửi rev=2 sau đó
+    # không được thêm dòng thứ ba, và dòng đang hiệu lực vẫn phải là giá của
+    # rev=3 (9 tỷ), không phải giá bịa ở rev=2 (1 đồng).
+    rows = await _price_rows(session_factory, "U-1")
+    assert len(rows) == 2
+    assert rows[-1]["official_price"] == Decimal("9000000000.00")
+    assert rows[-1]["effective_to"] is None
 
 
 async def test_deal_v2_scopes_through_unit(session_factory):

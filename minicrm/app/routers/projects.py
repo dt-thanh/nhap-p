@@ -8,11 +8,10 @@ dòng outbox nào được tạo ở đợt này — nối vào đường đẩy
 cột `deleted_at`. Từ chối nếu còn phân khu đang hoạt động
 (`PARENT_HAS_LIVE_CHILDREN`, 409).
 
-Xác thực GHI (D-14, `app/auth.py`): TẠO dự án đòi vai trò `admin` — một dự án MỚI
-không nằm trong phạm vi CÓ SẴN của bất kỳ token nào (chính nó là thứ đang được cấp
-phạm vi), nên đây là hành động MỞ RỘNG phạm vi, không phải hành động NẰM TRONG
-phạm vi — chỉ `admin` mới làm được. SỬA/LƯU TRỮ một dự án đã tồn tại đòi tối
-thiểu `pipeline_operator`, VÀ phạm vi phải chứa đúng dự án đó (hoặc `ALL`).
+Xác thực GHI (D-14, `app/auth.py`): TẠO/SỬA/LƯU TRỮ dự án đều đòi vai trò
+`admin`. Một dự án MỚI không nằm trong phạm vi CÓ SẴN của bất kỳ token nào (chính
+nó là thứ đang được cấp phạm vi), nên tạo là hành động MỞ RỘNG phạm vi; sửa/lưu
+trữ dự án đã tồn tại vẫn yêu cầu phạm vi chứa đúng dự án đó (hoặc `ALL`).
 """
 
 from __future__ import annotations
@@ -64,7 +63,7 @@ async def get_project(external_id: str) -> ProjectOut:
 async def update_project(
     external_id: str,
     body: ProjectPatch,
-    principal: MiniCrmPrincipal = Depends(require_role("pipeline_operator")),
+    principal: MiniCrmPrincipal = Depends(require_role("admin")),
 ) -> ProjectWriteOut:
     require_scope(principal, external_id)
     record = await crud.update_project(external_id, body.model_dump(exclude_unset=True))
@@ -73,7 +72,7 @@ async def update_project(
 
 @router.delete("/{external_id}", response_model=ProjectWriteOut, summary="Lưu trữ dự án")
 async def archive_project(
-    external_id: str, principal: MiniCrmPrincipal = Depends(require_role("pipeline_operator"))
+    external_id: str, principal: MiniCrmPrincipal = Depends(require_role("admin"))
 ) -> ProjectWriteOut:
     """Lưu trữ, không xoá. Từ chối (409 `PARENT_HAS_LIVE_CHILDREN`) nếu còn phân
     khu đang hoạt động thuộc dự án này — không cascade."""

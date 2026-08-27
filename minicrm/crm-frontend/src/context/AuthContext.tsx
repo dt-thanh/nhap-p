@@ -1,5 +1,5 @@
 // ============================================================================
-// CP4/CP5 — Trạng thái xác thực dựa trên Microsoft Entra ID.
+// CP4/CP5 — Trạng thái xác thực dựa trên Keycloak (OIDC).
 //
 // THAY ĐỔI CỐT LÕI so với bản trước: KHÔNG còn access token nào nằm trong
 // JavaScript. Trước đây `AuthContext` cất `{user, token}` vào localStorage và
@@ -13,7 +13,7 @@
 // lấy việc token không bao giờ chạm tới `localStorage`.
 // ============================================================================
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { apiGet, apiPost, ApiError, startLogin } from "../services/api";
+import { apiGet, ApiError, startLogin, startLogout } from "../services/api";
 
 export interface AuthUser {
   id: string;
@@ -26,14 +26,33 @@ export interface AuthUser {
 interface AuthState {
   user: AuthUser | null;
   loading: boolean;
-  /** Điều hướng sang Entra. Không nhận email/password — Mini CRM không bao giờ
-   *  nhìn thấy mật khẩu người dùng nữa; Microsoft giữ phần đó. */
+  /** Điều hướng sang Keycloak. Không nhận email/password — Mini CRM không bao
+   *  giờ nhìn thấy mật khẩu người dùng nữa; Keycloak giữ phần đó. */
   login: (returnTo?: string) => void;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   /** Quyền tối thiểu — dùng để ẩn nút. KHÔNG phải ranh giới bảo mật: backend
    *  vẫn enforce độc lập (CP11), ẩn nút chỉ là tiện dụng. */
   hasRole: (minimum: AuthUser["role"]) => boolean;
+}
+
+/** Đọc bởi `Login.tsx` sau khi trình duyệt quay lại từ chuỗi redirect đăng
+ *  xuất (có thể đi qua Keycloak). `sessionStorage` sống sót qua điều hướng
+ *  sang origin khác trong CÙNG tab — đây là lý do dùng nó thay vì state React,
+ *  vốn mất sạch ngay khi rời trang. */
+export const LOGOUT_FLAG_KEY = "minicrm_logout_flag";
+const LEGACY_AUTH_STORAGE_KEY = "crm_auth";
+
+function clearLegacyAuthStorage(): void {
+  // CP4 không còn lưu token trong Web Storage. Xoá khoá cũ khi logout để một
+  // tab đã mở từ trước khi chuyển sang BFF không thể giữ artefact đăng nhập cũ.
+  // Không xoá toàn bộ storage vì đó có thể chứa trạng thái không liên quan.
+  try {
+    localStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
+    sessionStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
+  } catch {
+    // Storage có thể bị browser chặn; backend vẫn xoá cookie HttpOnly.
+  }
 }
 
 const ROLE_LEVEL: Record<AuthUser["role"], number> = {
@@ -89,20 +108,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    try {
-      const res = await apiPost<{ entra_logout_url: string | null }>("/auth/logout", {});
-      setUser(null);
-      // Kết thúc luôn phiên SSO ở phía Microsoft. Bỏ bước này thì lần bấm
-      // "đăng nhập" kế tiếp vào thẳng lại và người dùng tưởng mình chưa thoát.
-      if (res?.entra_logout_url) {
-        window.location.href = res.entra_logout_url;
-        return;
-      }
-    } catch {
-      /* xoá trạng thái cục bộ dù backend có lỗi */
-    }
     setUser(null);
-    window.location.href = "/login";
+    clearLegacyAuthStorage();
+    try {
+      sessionStorage.setItem(LOGOUT_FLAG_KEY, "single");
+    } catch {
+      // Riêng tư/ẩn danh có thể chặn sessionStorage — bỏ qua, chỉ mất thông
+      // báo, không mất chức năng đăng xuất.
+    }
+    startLogout();
   }, []);
 
   const hasRole = useCallback(

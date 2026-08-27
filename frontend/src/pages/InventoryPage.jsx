@@ -59,7 +59,7 @@ export default function InventoryPage() {
 
   const inv = useAsync(
     () =>
-      scope.projectExternalId
+      scope.projectExternalId && scope.areaExternalId
         ? listInventoryScoped(scope.projectExternalId, params)
         : Promise.resolve(null),
     [scope.projectExternalId, params],
@@ -68,6 +68,28 @@ export default function InventoryPage() {
   const units = inv.data?.units ?? [];
   const totals = inv.data?.totals;
   const hasNextPage = units.length === PAGE_SIZE;
+
+  const scopeFailure = scope.projectsStatus === "error" || scope.projectsStatus === "unauthorized"
+    || scope.areasStatus === "error" || scope.areasStatus === "unauthorized";
+  // A missing selection is only a loading condition while the hook is actively
+  // resolving it.  Treating every missing ID as loading hid project/area or
+  // bootstrap failures behind an endless skeleton.
+  const resolvingScope = !scopeFailure && (
+    scope.loadingProjects || scope.loadingAreas || scope.bootstrapping
+    || !scope.projectExternalId || !scope.areaExternalId
+  );
+  const scopeError = scopeFailure
+    ? {
+      network: false,
+      body: {
+        detail: {
+          error_code: scope.projectsStatus === "unauthorized" || scope.areasStatus === "unauthorized"
+            ? "UNAUTHORIZED"
+            : "SCOPE_LOAD_FAILED",
+        },
+      },
+    }
+    : null;
 
   return (
     <>
@@ -91,10 +113,11 @@ export default function InventoryPage() {
             Phân khu
             <select
               style={S.select}
-              value={scope.areaExternalId ?? "all"}
-              onChange={(e) => scope.setAreaExternalId(e.target.value === "all" ? null : e.target.value)}
+              value={scope.areaExternalId ?? ""}
+              disabled={scope.loadingAreas || scope.bootstrapping}
+              onChange={(e) => scope.setAreaExternalId(e.target.value || null)}
             >
-              <option value="all">Tất cả phân khu</option>
+              <option value="" disabled>Đang chọn phân khu…</option>
               {(scope.areas || [])
                 .filter((a) => a.external_id)
                 .map((a) => (
@@ -121,8 +144,10 @@ export default function InventoryPage() {
         )}
       </div>
 
-      {!scope.projectExternalId ? (
-        <div style={S.hint}>Chọn một dự án để xem tồn kho.</div>
+      {resolvingScope ? (
+        <SectionState loading />
+      ) : scopeError ? (
+        <SectionState error={scopeError} />
       ) : (
         <>
           {totals && (

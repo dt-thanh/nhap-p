@@ -59,10 +59,19 @@ ProjectScope = frozenset[str] | Literal["ALL"]
 
 @dataclass(frozen=True, slots=True)
 class DashboardPrincipal:
-    """Danh tính đã xác thực của người gọi mặt vận hành. Không giữ token thô."""
+    """Danh tính đã xác thực của người gọi mặt vận hành. Không giữ token thô.
+
+    `subject`/`is_ceo` (PR-2, D38's auth-discovery gate): chỉ có giá trị thật ở
+    đường OIDC (JWT trực tiếp hoặc session cookie) — token tĩnh và dev-bypass
+    không mang danh tính từng người nên luôn để `subject=None, is_ceo=False`,
+    CHỦ Ý (fail-closed): việc duyệt giá trị-mode cần CEO không thể nào đi qua
+    hai đường xác thực đó, xem `authenticate_dashboard()`.
+    """
 
     role: DashboardRole
     project_scope: ProjectScope = frozenset()
+    subject: str | None = None
+    is_ceo: bool = False
 
 
 def _configured_tokens() -> list[tuple[DashboardRole, str]]:
@@ -114,22 +123,27 @@ async def authenticate_dashboard(
     """
     settings = get_settings()
 
-    # CP5: đường Entra đứng TRƯỚC token tĩnh — nó là đường của người dùng thật.
-    from src.services import entra_auth  # import cục bộ: tránh vòng import config
+    # Keycloak/OIDC đứng TRƯỚC token tĩnh — nó là đường của người dùng thật.
+    from src.services import oidc  # import cục bộ: tránh vòng import config
 
-    entra_on = entra_auth.entra_configured()
+    oidc_on = oidc.oidc_configured()
 
-    if session_cookie and entra_on:
-        claims = entra_auth.read_session(session_cookie)
+    if session_cookie and oidc_on:
+        claims = await oidc.read_session_verified(session_cookie)
         raw_scope = claims.get("scope", [])
         scope: ProjectScope = "ALL" if raw_scope == "ALL" else frozenset(raw_scope or [])
-        return DashboardPrincipal(role=claims["role"], project_scope=scope)
+        return DashboardPrincipal(
+            role=claims["role"],
+            project_scope=scope,
+            subject=claims.get("sub"),
+            is_ceo=bool(claims.get("is_ceo", False)),
+        )
 
     if settings.app_env == "development" and settings.dev_auth_bypass and authorization is None:
         # TODO: Remove DEV_AUTH_BYPASS when real local authentication is implemented.
         return DashboardPrincipal(role="admin", project_scope="ALL")
 
-    if not settings.dashboard_auth_configured and not entra_on:
+    if not settings.dashboard_auth_configured and not oidc_on:
         raise HTTPException(
             status_code=503,
             detail={
@@ -146,15 +160,17 @@ async def authenticate_dashboard(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # JWT Entra nhận diện bằng HÌNH DẠNG (ba đoạn ngăn bởi dấu chấm) — không
+    # JWT Keycloak nhận diện bằng HÌNH DẠNG (ba đoạn ngăn bởi dấu chấm) — không
     # thử-rồi-bắt-lỗi, để mỗi request máy-với-máy không tạo một lần tra JWKS vô ích.
-    if entra_on and token.count(".") == 2:
-        identity = entra_auth.verify_token(token)
-        role_from_entra = entra_auth.resolve_role(identity)
-        raw = entra_auth.resolve_scope(identity)
+    if oidc_on and token.count(".") == 2:
+        identity = oidc.verify_token(token)
+        role_from_oidc = oidc.resolve_role(identity)
+        raw = oidc.resolve_scope(identity)
         return DashboardPrincipal(
-            role=role_from_entra,
+            role=role_from_oidc,
             project_scope="ALL" if raw == "ALL" else frozenset(raw),
+            subject=identity.subject,
+            is_ceo="CRM.CEO" in identity.roles,
         )
 
     scopes = _scope_map()
@@ -194,6 +210,34 @@ def require_role(minimum: DashboardRole):
                 detail={
                     "message": f"Vai trò '{principal.role}' không đủ quyền cho thao tác này",
                     "error_code": "INSUFFICIENT_ROLE",
+                },
+            )
+        return principal
+
+    return dependency
+
+
+def require_ceo():
+    """Factory dependency mirroring `require_role()`: xác thực rồi đòi
+    `principal.is_ceo is True` (PR-2, D38). Chỉ dùng cho các đường value-mode
+    review/approve/publish-verification mới — mọi route `require_role(...)`
+    hiện có không đổi.
+
+    403 khi `is_ceo=False`, dùng CHUNG mã lỗi `CEO_APPROVAL_REQUIRED` với
+    `src/services/governance.py`'s own check (route-level gate + service-level
+    re-check là hai lớp phòng thủ độc lập, không phải một cái thay cho cái kia)."""
+
+    async def dependency(
+        authorization: str | None = Header(default=None, alias="Authorization"),
+        absorbiq_session: str | None = Cookie(default=None, alias="absorbiq_session"),
+    ) -> DashboardPrincipal:
+        principal = await authenticate_dashboard(authorization, absorbiq_session)
+        if not principal.is_ceo:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "message": "Thao tác này chỉ CEO (xác thực qua OIDC, vai trò thật CRM.CEO) mới được thực hiện.",
+                    "error_code": "CEO_APPROVAL_REQUIRED",
                 },
             )
         return principal

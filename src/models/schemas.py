@@ -621,6 +621,15 @@ class InventoryOut(BaseModel):
     )
 
 
+class InventoryBootstrapOut(BaseModel):
+    """Resolved, namespaced demo scope for an otherwise empty development DB."""
+
+    project: ProjectSummary
+    area: AreaOut
+    inventory: InventoryOut
+    created: bool
+
+
 class DealOut(BaseModel):
     """Một giao dịch trong bản sao CRM (`GET /deals`).
 
@@ -658,7 +667,9 @@ class ParallelRunOut(BaseModel):
     matches: bool = Field(..., description="True khi hai bộ tính cho cùng kết quả và không có bất thường")
     legacy_units_sold: int = Field(..., description="Đã bán theo bộ tính cũ")
     domain_units_sold: int = Field(..., description="Đã bán theo bộ tính mới")
-    legacy_units_remaining: int = Field(..., description="Còn lại theo bộ tính cũ")
+    legacy_units_remaining: int | None = Field(
+        ..., description="Còn lại theo bộ tính cũ — None khi phân khu chưa có bản chốt tồn kho (Excel) nào"
+    )
     domain_units_remaining: int = Field(..., description="Còn lại theo bộ tính mới")
     domain_units_reserved: int = Field(..., description="Đang giữ chỗ — chỉ bộ tính mới có")
     differences: list[dict] = Field(default_factory=list, description="Chênh lệch theo từng chỉ số")
@@ -861,14 +872,26 @@ class RankedUnitOut(BaseModel):
 class RankingOut(BaseModel):
     """`GET /ranking` — kết quả xếp hạng ĐANG LƯU, không tính lại.
 
-    `computed_at = NULL` nghĩa là dự án chưa từng được xếp hạng lần nào — khác
-    hẳn "đã xếp hạng nhưng không căn nào đạt ngưỡng". Giao diện phải phân biệt
-    được hai trạng thái đó, nên chúng là hai trường khác nhau chứ không phải một
-    danh sách rỗng dùng chung.
+    Một danh sách rỗng không đủ để diễn giải kết quả: dự án có thể chưa từng
+    chạy, không còn căn sống sau sync, hoặc mọi căn đều không đạt coverage.
+    `state` và `reason` là hợp đồng máy-đọc cho ba trường hợp đó; chúng không
+    được suy ra từ `items` hoặc `computed_at` ở client.
     """
 
     project_id: str = Field(..., description="UUID dự án")
     external_project_id: str | None = Field(default=None, description="external_id dự án ở Mini CRM")
+    ranking_run_id: str | None = Field(
+        default=None,
+        description="UUID lần chạy sinh ra kết quả hiện hành; NULL khi chưa từng chạy",
+    )
+    state: Literal["ready", "not_run", "insufficient_data"] = Field(
+        default="not_run",
+        description="ready | not_run | insufficient_data",
+    )
+    reason: Literal["RANKING_NOT_RUN", "NO_LIVE_UNITS", "NO_UNITS_MET_COVERAGE"] | None = Field(
+        default=None,
+        description="Lý do máy-đọc khi state khác ready",
+    )
     computed_at: datetime | None = Field(default=None, description="Mốc tính điểm; NULL nếu chưa từng chạy")
     config_version: int | None = Field(default=None, description="Phiên bản `ranking_configs` đã dùng")
     units_ranked: int = Field(default=0, description="Số căn có điểm trong lần chạy gần nhất")
@@ -979,3 +1002,227 @@ class RankingConfigPublishOut(BaseModel):
         default_factory=dict,
         description="Kết quả xếp hàng tính lại cho MỌI dự án (§8.2 — publish là thay đổi toàn cục)",
     )
+
+
+class AHPJudgmentIn(BaseModel):
+    """Một ô tam giác TRÊN: `a` quan trọng gấp `value` lần `b` (thang Saaty 1–9)."""
+
+    a: str = Field(..., min_length=1, description="Khoá tiêu chí thứ nhất")
+    b: str = Field(..., min_length=1, description="Khoá tiêu chí thứ hai")
+    value: float = Field(..., gt=0, description="1 = ngang nhau, 9 = vượt trội tuyệt đối, cho phép nghịch đảo")
+
+
+class AHPWeightsIn(BaseModel):
+    criteria: list[str] = Field(..., min_length=2, description="Tiêu chí, CÓ THỨ TỰ — thứ tự quyết định ma trận")
+    judgments: list[AHPJudgmentIn] = Field(..., description="Đúng n(n-1)/2 so sánh")
+    feature_specs: dict = Field(
+        ...,
+        description=(
+            "{feature_key: {direction, missing_value_policy, min_confidence}} — AHP cho ĐỘ LỚN, "
+            "không suy ra được chiều hay chính sách thiếu dữ liệu"
+        ),
+    )
+    override: bool = Field(default=False, description="Chấp nhận CR trên ngưỡng, cần kèm override_reason")
+    override_reason: str = Field(default="", description="Bắt buộc khi override=true — đi vào note của config")
+
+
+class AHPHotspotOut(BaseModel):
+    a: str
+    b: str
+    judged: str
+    implied: str
+    deviation: str
+
+
+class AHPWeightsOut(BaseModel):
+    formula_version: str = Field(..., description="Phiên bản CÔNG THỨC, khác ranking_configs.version")
+    weights: dict = Field(..., description="Sẵn sàng POST thẳng sang /ranking/configs")
+    raw_weights: dict = Field(..., description="Trọng số đầy đủ chữ số, trước khi làm tròn 4 số")
+    lambda_max: str
+    consistency_index: str
+    consistency_ratio: str
+    threshold: str
+    consistent: bool
+    override_applied: bool
+    hotspots: list[AHPHotspotOut]
+    note: str = Field(..., description="Vết kiểm toán soạn sẵn — dùng làm `note` khi tạo config")
+
+
+# --- Governance (0033/0034 service layer, P5) --------------------------------
+
+
+class ExpertProfileOut(BaseModel):
+    id: str
+    identity_subject: str
+    organization: str | None = None
+    title: str | None = None
+    expertise_summary: str | None = None
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ExpertProfileIn(BaseModel):
+    identity_subject: str = Field(..., min_length=1, description="Danh tính ổn định của chuyên gia — caller tự khai")
+    organization: str | None = None
+    title: str | None = None
+    expertise_summary: str | None = None
+
+
+class ProposalOut(BaseModel):
+    id: str
+    base_config_id: str | None = None
+    proposed_config_id: str | None = None
+    scope_type: str
+    project_id: str
+    area_id: str | None = None
+    status: str = Field(..., description="draft|submitted|under_review|approved|rejected|withdrawn|published")
+    created_by_expert_id: str
+    submitted_at: datetime | None = None
+    approved_at: datetime | None = None
+    published_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    assertion_kind: str = Field(default="weight", description="weight|value (PR-2)")
+
+
+class ProposalCreateIn(BaseModel):
+    base_config_id: str | None = Field(default=None, description="Bắt buộc cho assertion_kind='weight'")
+    project_id: str
+    created_by_expert_id: str | None = Field(
+        default=None,
+        description="assertion_kind='weight': bắt buộc, caller tự khai (D18, không đổi). "
+        "assertion_kind='value': BỊ BỎ QUA — danh tính luôn suy từ principal đã xác thực (PR-2)",
+    )
+    assertion_kind: str = Field(default="weight", description="weight|value (PR-2, D37/D38)")
+    scope_type: str = Field(default="project", description="value-mode: project|area|market")
+    area_id: str | None = Field(default=None, description="Bắt buộc khi scope_type='area'")
+
+
+class ProposalSetConfigIn(BaseModel):
+    proposed_config_id: str
+    actor_expert_id: str
+
+
+class ProposalActionIn(BaseModel):
+    actor_expert_id: str = Field(..., min_length=1)
+
+
+class JustificationOut(BaseModel):
+    id: str
+    proposal_id: str
+    feature_definition_id: str
+    previous_weight: str | None = None
+    proposed_weight: str | None = None
+    rationale: str
+    methodology: str
+    evidence_summary: str
+    expected_effect: str
+    confidence: str
+    limitations: str
+    created_by_expert_id: str
+    created_at: datetime
+    updated_at: datetime
+    assertion_kind: str = Field(default="weight", description="weight|value (PR-2)")
+    raw_value: str | None = None
+    normalized_value: str | None = None
+    categorical_value: str | None = None
+    effective_at: datetime | None = None
+    expires_at: datetime | None = None
+    external_source_citation: str | None = None
+
+
+class JustificationIn(BaseModel):
+    feature_definition_id: str
+    previous_weight: str | None = None
+    proposed_weight: str | None = Field(default=None, description="Bắt buộc, Decimal string [0,1], cho weight-mode")
+    rationale: str = Field(..., min_length=1)
+    methodology: str = Field(..., min_length=1)
+    evidence_summary: str = Field(..., min_length=1)
+    expected_effect: str = Field(..., description="increase|decrease|neutral|context_dependent")
+    confidence: str = Field(..., description="low|medium|high")
+    limitations: str = Field(..., min_length=1)
+    created_by_expert_id: str | None = Field(
+        default=None,
+        description="assertion_kind='weight': bắt buộc. assertion_kind='value': BỊ BỎ QUA, suy từ principal (PR-2)",
+    )
+    assertion_kind: str = Field(default="weight", description="weight|value (PR-2)")
+    raw_value: str | None = Field(default=None, description="value-mode: Decimal string, giá trị thô")
+    normalized_value: str | None = Field(default=None, description="value-mode: Decimal string trong [0,1]")
+    categorical_value: str | None = None
+    effective_at: datetime | None = None
+    expires_at: datetime | None = None
+    external_source_citation: str | None = Field(default=None, description="Bắt buộc khi scope_type='market'")
+
+
+class EvidenceDocumentOut(BaseModel):
+    id: str
+    proposal_id: str | None = None
+    uploaded_by_expert_id: str
+    original_filename: str
+    mime_type: str
+    object_storage_key: str
+    sha256_checksum: str
+    file_size_bytes: int
+    extraction_status: str
+    created_at: datetime
+
+
+class EvidenceDocumentRegisterIn(BaseModel):
+    """Registers METADATA for a file already written to storage by a lower
+    layer — this route does not accept multipart uploads itself, mirroring
+    the separation `src/services/file_upload.py` already keeps between
+    storing bytes and recording a row (see `governance.py::register_evidence_document`)."""
+
+    proposal_id: str | None = None
+    uploaded_by_expert_id: str
+    original_filename: str = Field(..., min_length=1)
+    mime_type: str = Field(..., description="application/pdf | text/plain | text/markdown")
+    object_storage_key: str = Field(..., min_length=1)
+    sha256_checksum: str = Field(..., pattern=r"^[0-9A-Fa-f]{64}$")
+    file_size_bytes: int = Field(..., gt=0)
+
+
+class EvidenceLinkIn(BaseModel):
+    document_id: str
+    feature_justification_id: str
+
+
+class EvidenceExtractionOut(BaseModel):
+    """Trạng thái trích xuất THẬT — dòng mới nhất trong
+    `ranking_evidence_extraction_attempts` (0035), KHÔNG phải
+    `EvidenceDocumentOut.extraction_status` (cột đó đứng yên ở
+    'not_requested' — xem docstring migration 0035)."""
+
+    document_id: str
+    extraction_status: str
+
+
+class EvidenceChunkOut(BaseModel):
+    id: str
+    document_id: str
+    chunk_index: int
+    page_number: int | None = None
+    content: str
+    token_count: int
+    embedding_model: str
+    created_at: datetime
+
+
+class ReviewOut(BaseModel):
+    id: str
+    proposal_id: str
+    reviewer_expert_id: str
+    decision: str
+    comment: str
+    decided_at: datetime
+
+
+class ReviewIn(BaseModel):
+    reviewer_expert_id: str | None = Field(
+        default=None,
+        description="weight-mode: bắt buộc, caller tự khai (D18, không đổi). "
+        "value-mode: BỊ BỎ QUA — reviewer luôn là principal CEO đã xác thực OIDC (PR-2)",
+    )
+    decision: str = Field(..., description="approved | rejected | request_changes")
+    comment: str = Field(..., min_length=1)

@@ -28,7 +28,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.main import app
-from src.models.tables import agent_recommendations, ranking_scores
+from src.models.tables import agent_recommendations, ranking_scores, units
 from tests.conftest import (
     DASHBOARD_ADMIN_TOKEN,
     DASHBOARD_OPERATOR_TOKEN,
@@ -127,6 +127,27 @@ async def test_a_project_never_ranked_reports_null_computed_at(http):
     body = response.json()
     assert response.status_code == 200
     assert body["computed_at"] is None
+    assert body["ranking_run_id"] is None
+    assert body["state"] == "not_run"
+    assert body["reason"] == "RANKING_NOT_RUN"
+    assert body["items"] == []
+    assert body["units_ranked"] == 0
+
+
+async def test_completed_run_with_no_live_units_is_not_reported_as_never_run(http):
+    """Tombstone là chính sách loại trừ nguồn hiện hành. Run vẫn phải để lại
+    audit metadata và lý do máy-đọc, thay vì làm UI hiểu nhầm là chưa chạy."""
+    async with http.session_factory() as session:
+        await session.execute(sa.update(units).values(deleted_at=sa.func.now()))
+        await session.commit()
+
+    response = await _run(http)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state"] == "insufficient_data"
+    assert body["reason"] == "NO_LIVE_UNITS"
+    assert body["ranking_run_id"] is not None
+    assert body["computed_at"] is not None
     assert body["items"] == []
     assert body["units_ranked"] == 0
 
@@ -146,6 +167,7 @@ async def test_run_then_read_returns_units_ordered_by_rank(http):
     body = (await http.get(API, params={"external_project_id": PROJECT}, headers=ADMIN_HEADER)).json()
 
     assert body["units_ranked"] == 5
+    assert sum(body["band_counts"].values()) == body["total"]
     assert body["config_version"] == 2
     assert body["computed_at"] is not None
     ranks = [item["rank_in_project"] for item in body["items"]]
@@ -224,6 +246,7 @@ async def test_unit_status_filter_keeps_only_sellable_units(http):
     assert body["items"], "phải còn căn nào đó"
     assert all(item["unit_status"] == "available" for item in body["items"])
     assert str(UNIT_IDS["u4"]) not in {item["unit_id"] for item in body["items"]}
+    assert sum(body["band_counts"].values()) == body["total"]
 
 
 async def test_area_filter_scopes_to_one_area(http):

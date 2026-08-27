@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://absorptionforecast.local/schema/crm_sync_v2.schema.json",
-  "title": "CRM sync payload, schema_version 2 (DRAFT — PROPOSED, NOT IMPLEMENTED)",
-  "description": "Hợp đồng NHẬN cho mô hình HỆ NGUỒN LÀ NGUỒN SỰ THẬT: hệ nguồn sở hữu CẢ BỐN tầng Project → Area → Unit → Deal, phía nhận chỉ SOI GƯƠNG. Khác biệt nền tảng so với v1: v1 coi `projects`/`areas` là của phía nhận (CRM chỉ tham chiếu được), v2 coi cả bốn là của hệ nguồn. Vì thế v2 KHÔNG phải là mở rộng cộng thêm của v1 — nó là một mô hình sở hữu KHÁC, và hai phiên bản loại trừ lẫn nhau theo thiết kế. Phía nhận KHÔNG BAO GIỜ tự tạo, tự sửa hay tự đặt giá trị cho bốn thực thể này. `src/services/json_payload.py::SUPPORTED_SCHEMA_VERSIONS` vẫn là `{1}`, nên KHÔNG phong bì v2 nào được chấp nhận tại thời điểm này. Xem docs/crm/sync_contract_v2_draft.md và docs/crm/phase_a_domain_freeze.md.",
+  "title": "CRM sync payload, schema_version 2 (IMPLEMENTED)",
+  "description": "Hợp đồng NHẬN cho mô hình HỆ NGUỒN LÀ NGUỒN SỰ THẬT: hệ nguồn sở hữu CẢ BỐN tầng Project → Area → Unit → Deal, phía nhận chỉ SOI GƯƠNG. Khác biệt nền tảng so với v1: v1 coi `projects`/`areas` là của phía nhận (CRM chỉ tham chiếu được), v2 coi cả bốn là của hệ nguồn. Vì thế v2 KHÔNG phải là mở rộng cộng thêm của v1 — nó là một mô hình sở hữu KHÁC, và hai phiên bản loại trừ lẫn nhau theo thiết kế. Phía nhận KHÔNG BAO GIỜ tự tạo, tự sửa hay tự đặt giá trị cho bốn thực thể này. `src/services/json_payload.py::SUPPORTED_SCHEMA_VERSIONS` là `{1, 2}` — v2 ĐÃ được chấp nhận (chốt sửa 2026-08-23: tiêu đề trước đó ghi 'DRAFT — NOT IMPLEMENTED' đã LỖI THỜI so với mã nguồn, xem docs/crm/minicrm_absorpiq_canonical_sync_contract.md). Xem docs/crm/sync_contract_v2_draft.md và docs/crm/phase_a_domain_freeze.md.",
   "type": "object",
   "required": [
     "schema_version",
@@ -622,6 +622,18 @@
           "minLength": 1,
           "maxLength": 64,
           "description": "Giá trị NGUYÊN VĂN của hệ nguồn. Phía nhận ánh xạ qua bảng tường minh; giá trị không có trong bảng bị TỪ CHỐI, không đoán."
+        },
+        "listing_price": {
+          "description": "Giá niêm yết/chính thức của căn (2026-08-23). TUỲ CHỌN — không phải mọi hệ nguồn biết giá mọi căn. KHÔNG phải giá giao dịch thực (chưa có trường đó ở hợp đồng này — xem docs/crm/minicrm_absorpiq_canonical_sync_contract.md). Không có đơn vị tiền tệ đi kèm: kho lược đồ hiện tại không có quy ước tiền tệ nào, giữ nguyên quy ước đó thay vì bịa một cái mới ở đây. Phía nhận chiếu trường này vào `project_price_observations`, KHÔNG phải một cột trên `units` — xem `src/services/domain_projection.py::_apply_price_observation`.",
+          "oneOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -643,6 +655,17 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64
+        },
+        "listing_price": {
+          "oneOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },

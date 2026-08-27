@@ -45,6 +45,13 @@ def no_roles_configured(monkeypatch):
     for key in ("DASHBOARD_BUSINESS_VIEWER_TOKEN", "DASHBOARD_PIPELINE_OPERATOR_TOKEN", "DASHBOARD_ADMIN_TOKEN"):
         monkeypatch.delenv(key, raising=False)
         monkeypatch.setenv(key, "")
+    # "Nothing configured" must mean nothing configured — including Keycloak.
+    # The real .env carries working OIDC_* defaults (matching docker-compose),
+    # so isolate this fixture from that or `oidc_configured()` stays true and
+    # the 503 DASHBOARD_AUTH_DISABLED path never triggers.
+    for key in ("OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URI"):
+        monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv(key, "")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -116,17 +123,24 @@ async def test_development_bypass_disabled_still_requires_a_token(monkeypatch, a
     assert exc.value.status_code == 401
 
 
-@pytest.mark.asyncio
-async def test_production_ignores_development_bypass(monkeypatch, all_roles_configured):
+def test_production_with_bypass_is_rejected_at_startup(monkeypatch, all_roles_configured):
+    """Trước đây: `APP_ENV=production` + `DEV_AUTH_BYPASS=true` là một cấu hình
+    HỢP LỆ mà `authenticate_dashboard` chỉ ÂM THẦM bỏ qua ở lúc chạy (401 như
+    không có bypass). Giờ tổ hợp đó không còn được coi là hợp lệ nữa: `Settings`
+    từ chối ngay lúc khởi động (`src/config.py::_reject_dev_bypass_outside_development`)
+    — tiến trình không khởi động được thay vì khởi động với một cờ bypass nằm
+    chờ, chỉ cần `APP_ENV` bị đổi là bật lại.
+    """
+    from pydantic import ValidationError
+
     from src.config import get_settings
 
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("DEV_AUTH_BYPASS", "true")
     get_settings.cache_clear()
 
-    with pytest.raises(HTTPException) as exc:
-        await authenticate_dashboard(None)
-    assert exc.value.status_code == 401
+    with pytest.raises(ValidationError, match="DEV_AUTH_BYPASS=true"):
+        get_settings()
 
 
 @pytest.mark.asyncio
@@ -192,14 +206,14 @@ async def test_no_arbitrary_client_role_is_trusted(all_roles_configured):
 @pytest.mark.asyncio
 async def test_require_role_allows_an_exact_match(all_roles_configured):
     dep = require_role("pipeline_operator")
-    principal = await dep(authorization=f"Bearer {OPERATOR}")
+    principal = await dep(authorization=f"Bearer {OPERATOR}", absorbiq_session=None)
     assert principal.role == "pipeline_operator"
 
 
 @pytest.mark.asyncio
 async def test_require_role_allows_a_higher_role(all_roles_configured):
     dep = require_role("pipeline_operator")
-    principal = await dep(authorization=f"Bearer {ADMIN}")
+    principal = await dep(authorization=f"Bearer {ADMIN}", absorbiq_session=None)
     assert principal.role == "admin"
 
 
@@ -208,7 +222,7 @@ async def test_require_role_rejects_a_lower_role_with_403(all_roles_configured):
     """business_viewer không tới được mặt đọc vận hành (đòi pipeline_operator+)."""
     dep = require_role("pipeline_operator")
     with pytest.raises(HTTPException) as exc:
-        await dep(authorization=f"Bearer {VIEWER}")
+        await dep(authorization=f"Bearer {VIEWER}", absorbiq_session=None)
     assert exc.value.status_code == 403
     assert exc.value.detail["error_code"] == "INSUFFICIENT_ROLE"
 
@@ -217,7 +231,7 @@ async def test_require_role_rejects_a_lower_role_with_403(all_roles_configured):
 async def test_pipeline_operator_cannot_reach_an_admin_only_action(all_roles_configured):
     dep = require_role("admin")
     with pytest.raises(HTTPException) as exc:
-        await dep(authorization=f"Bearer {OPERATOR}")
+        await dep(authorization=f"Bearer {OPERATOR}", absorbiq_session=None)
     assert exc.value.status_code == 403
 
 
@@ -227,7 +241,7 @@ async def test_require_role_still_401s_before_403_when_credentials_are_missing(a
     (danh tính đúng nhưng thiếu quyền) — hai lỗi khác nghĩa nhau."""
     dep = require_role("business_viewer")
     with pytest.raises(HTTPException) as exc:
-        await dep(authorization=None)
+        await dep(authorization=None, absorbiq_session=None)
     assert exc.value.status_code == 401
 
 

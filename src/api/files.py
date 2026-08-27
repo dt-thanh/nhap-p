@@ -14,6 +14,20 @@ upload_files, chạy parse nền") vì hai lý do:
 
 Trạng thái và lỗi đọc từ DB chứ không từ job result của RQ: job result hết hạn
 sau 500 giây (result_ttl mặc định), còn bản ghi DB thì còn mãi.
+
+**Phạm vi/quyền (đóng lại lỗ hổng MVP1).** Router này từng hoàn toàn không có
+tầng xác thực nào — mọi route nhận request vô danh. Cùng cơ chế `dashboard_auth`
+đã dùng ở `ranking.py`/`sync.py`/`dashboard.py`, không dựng khung mới:
+
+  * `POST /upload` cần `pipeline_operator` trở lên, và `project_id` gửi lên
+    phải nằm trong phạm vi dự án của token — nạp file vào một dự án ngoài
+    phạm vi là một đường ghi dữ liệu, không phải đọc.
+  * `GET /files`, `/{file_id}/status`, `/{file_id}/errors` cần `business_viewer`
+    trở lên; danh sách bị lọc theo phạm vi, và ba route theo `file_id` đọc
+    `upload_files.project_id` của CHÍNH bản ghi đó rồi mới trả dữ liệu — tra
+    trước rồi mới lọc theo phạm vi, không suy phạm vi từ tham số client tự khai.
+  * `GET /{file_id}/errors.csv` cần `pipeline_operator` trở lên: xuất hàng loạt
+    dễ rò rỉ dữ liệu hơn một trang JSON phân trang.
 """
 
 import csv
@@ -22,7 +36,7 @@ import uuid
 from datetime import UTC, datetime
 
 import sqlalchemy as sa
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from src.db import get_session_factory
@@ -36,12 +50,39 @@ from src.models.schemas import (
     UploadAccepted,
 )
 from src.models.tables import projects, upload_errors, upload_files
+from src.services.dashboard_auth import DashboardPrincipal, require_role, resolve_scope_project_ids
 from src.services.excel_parser import TEMPLATES
 from src.services.file_upload import FileUploadService, UploadRejectedError, validate_suffix
 from src.task_queue import INGEST_QUEUE, get_queue
 
 router = APIRouter(prefix="/files", tags=["files"])
 log = get_logger("src.api.files")
+
+require_viewer = require_role("business_viewer")
+require_operator = require_role("pipeline_operator")
+
+
+async def _ensure_project_in_scope(principal: DashboardPrincipal, project_id: uuid.UUID | None) -> None:
+    """403 `PROJECT_OUT_OF_SCOPE` nếu `project_id` không nằm trong phạm vi token.
+
+    Dùng UUID nội bộ trực tiếp (giống `sync.py::sync_run_payload`) — bảng
+    `upload_files` không giữ `external_id`, chỉ giữ `project_id` nội bộ.
+    `project_id=None` (lô CRM không gắn dự án nào, ví dụ lô TẠO dự án) chỉ lọt
+    qua với phạm vi `ALL` — cùng nguyên tắc "không suy được dự án thì không đoán
+    phạm vi" đã dùng ở `list_sync_runs`.
+    """
+    async with get_session_factory()() as session:
+        scope_ids = await resolve_scope_project_ids(session, principal)
+    if scope_ids == "ALL":
+        return
+    if project_id is None or project_id not in scope_ids:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": "Thao tác nằm ngoài phạm vi dự án được cấp cho token này",
+                "error_code": "PROJECT_OUT_OF_SCOPE",
+            },
+        )
 
 # Số lỗi trả tối đa cho một lần gọi /errors. Bản CSV không bị chặn vì mục đích
 # của nó là tải hết về để sửa.
@@ -157,6 +198,7 @@ async def upload_file(
     file: UploadFile = File(..., description="File Excel/CSV theo template"),
     template: str = Form(..., description="sales | inventory | areas"),
     project_id: str = Form(..., description="UUID dự án mà file này thuộc về"),
+    principal: DashboardPrincipal = Depends(require_operator),
 ) -> UploadAccepted:
     """Nhận file, tạo `upload_files`, đẩy job parse cho worker."""
     # `upload_files.project_id` và `areas.project_id` đều NOT NULL, mà thông tin
@@ -183,6 +225,11 @@ async def upload_file(
             status_code=422,
             detail={"message": f"Dự án '{project_id}' không tồn tại", "error_code": "UNKNOWN_PROJECT"},
         )
+
+    # Dự án có thật rồi mới kiểm phạm vi: một dự án ngoài phạm vi vẫn phải trả
+    # lời "không tồn tại" hay "ngoài phạm vi" đúng thứ tự đó — tồn tại là một sự
+    # thật khách quan, phạm vi là một sự thật về DANH TÍNH người gọi.
+    await _ensure_project_in_scope(principal, project_uuid)
 
     # Chặn sai định dạng TRƯỚC khi đọc body — không tốn băng thông và I/O đĩa.
     try:
@@ -264,6 +311,7 @@ async def list_files(
     ),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    principal: DashboardPrincipal = Depends(require_viewer),
 ) -> FileList:
     """SRS §5.2: lịch sử upload, phân trang theo `uploaded_at`.
 
@@ -283,11 +331,20 @@ async def list_files(
 
     query = sa.select(upload_files).order_by(upload_files.c.uploaded_at.desc())
     if project_id is not None:
-        query = query.where(upload_files.c.project_id == _parse_file_id(project_id))
+        project_uuid = _parse_file_id(project_id)
+        await _ensure_project_in_scope(principal, project_uuid)
+        query = query.where(upload_files.c.project_id == project_uuid)
     if transport_mode is not None:
         query = query.where(upload_files.c.transport_mode == transport_mode)
 
     async with get_session_factory()() as session:
+        if project_id is None:
+            # Không xin lọc theo dự án cụ thể: liệt kê phải tự thu hẹp về đúng
+            # phạm vi của token, không phải trả về mọi dự án rồi trông cậy
+            # client tự lọc — cùng nguyên tắc `list_sync_runs` (src/api/sync.py).
+            scope_ids = await resolve_scope_project_ids(session, principal)
+            if scope_ids != "ALL":
+                query = query.where(upload_files.c.project_id.in_(scope_ids) if scope_ids else sa.false())
         rows = (await session.execute(query.limit(limit).offset(offset))).all()
 
     return FileList(
@@ -315,10 +372,11 @@ async def list_files(
     response_model=FileStatus,
     summary="Trạng thái parse (frontend poll 3 giây/lần)",
 )
-async def file_status(file_id: str) -> FileStatus:
+async def file_status(file_id: str, principal: DashboardPrincipal = Depends(require_viewer)) -> FileStatus:
     """Đọc từ `upload_files`, không từ job result — trạng thái không bốc hơi sau 500s."""
     file_uuid = _parse_file_id(file_id)
     row = await _fetch_upload_file(file_uuid)
+    await _ensure_project_in_scope(principal, row.project_id)
 
     error_code = None
     message = None
@@ -346,10 +404,11 @@ async def file_status(file_id: str) -> FileStatus:
     response_model=FileErrorList,
     summary="Lỗi validate theo dòng và tên cột",
 )
-async def file_errors(file_id: str) -> FileErrorList:
+async def file_errors(file_id: str, principal: DashboardPrincipal = Depends(require_viewer)) -> FileErrorList:
     """Tách khỏi `/status` để payload polling không kéo theo hàng trăm lỗi."""
     file_uuid = _parse_file_id(file_id)
-    await _fetch_upload_file(file_uuid)
+    row = await _fetch_upload_file(file_uuid)
+    await _ensure_project_in_scope(principal, row.project_id)
     errors, total = await _load_errors(file_uuid, limit=MAX_ERRORS_PER_PAGE)
     return FileErrorList(file_id=file_id, errors=errors, total=total)
 
@@ -359,13 +418,19 @@ async def file_errors(file_id: str) -> FileErrorList:
     response_class=StreamingResponse,
     summary="Tải toàn bộ lỗi dạng CSV để sửa rồi nạp lại",
 )
-async def file_errors_csv(file_id: str) -> StreamingResponse:
+async def file_errors_csv(
+    file_id: str, principal: DashboardPrincipal = Depends(require_operator)
+) -> StreamingResponse:
     """Xuất CSV không giới hạn số dòng — mục đích là sửa hàng loạt ngoài Excel.
+
+    Cần `pipeline_operator` trở lên: xuất hàng loạt không phân trang là mặt rò
+    rỉ dữ liệu rộng hơn `/errors` (JSON, có `limit`).
 
     Ghi BOM UTF-8: thiếu nó thì Excel trên Windows đọc tiếng Việt ra ký tự lạ.
     """
     file_uuid = _parse_file_id(file_id)
     row = await _fetch_upload_file(file_uuid)
+    await _ensure_project_in_scope(principal, row.project_id)
     errors, _ = await _load_errors(file_uuid, limit=None)
 
     buffer = io.StringIO()

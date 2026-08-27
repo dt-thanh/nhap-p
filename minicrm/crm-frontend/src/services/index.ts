@@ -24,8 +24,8 @@ import {
 // chưa cấu hình xác thực — đúng tình huống mà một môi trường mới dựng luôn rơi
 // vào. Nhánh đó không được "sửa cho an toàn hơn"; nó bị XOÁ.
 //
-// Đăng nhập bây giờ là một lần điều hướng trình duyệt sang Entra:
-//   `services/api.ts::startLogin()` → `GET /auth/login` → 302 tới Microsoft.
+// Đăng nhập bây giờ là một lần điều hướng trình duyệt sang Keycloak:
+//   `services/api.ts::startLogin()` → `GET /auth/login` → 302 tới Keycloak.
 // Xem `context/AuthContext.tsx`.
 
 // ---------- Dashboard ----------
@@ -114,6 +114,7 @@ export async function fetchProjectKpis(): Promise<Kpi[]> {
 export interface ProjectCreateData {
   name: string;
   launch_date: string;
+  location?: string | null;
 }
 export async function createProject(data: ProjectCreateData): Promise<Project> {
   const res = await apiPost<BEProjectWriteOut>("/projects", data);

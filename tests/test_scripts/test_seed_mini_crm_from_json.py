@@ -38,6 +38,23 @@ from scripts.seed_mini_crm_from_json import (
     resend_guidance,
 )
 
+
+def test_preflight_can_skip_backend_token_when_projection_verification_is_disabled(monkeypatch):
+    class _Healthy:
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr("scripts.seed_mini_crm_from_json.httpx.get", lambda *args, **kwargs: _Healthy())
+    from scripts.seed_mini_crm_from_json import preflight
+
+    preflight(
+        minicrm_url="http://minicrm.test",
+        backend_url="http://backend.test",
+        admin_token="admin-token",
+        backend_token="",
+        require_backend_token=False,
+    )
+
 # --- OutboxRow: phân loại thuần, không I/O -----------------------------------
 
 

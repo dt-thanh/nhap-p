@@ -1,0 +1,11 @@
+feature,source,provenance,direction,note
+ticket_depth_score,expert demand-depth curve over standard_price_vnd (bn),expert map over observed,non-monotonic,"peaks 3.0-3.5bn, falls sharply above 5bn; VN buyers shop to a total budget"
+price_per_sqm_net_score,standard_price_vnd / net_area_sqm,derived from observed,cost,recalculated per spec Step 5
+loan_premium_score,(loan_price - standard_price)/standard_price*100,derived from observed,cost,matches source column
+segment_depth_score,expert map over unit_type_normalized,expert map over observed,benefit,buyer-pool depth per segment; supply mix deliberately NOT used as proxy
+size_fit_score,|gross_area - median(gross_area | unit_type)| / median,derived from observed,cost,proximity to typical size within type; larger is NOT assumed better
+area_efficiency_score,net_area_sqm / gross_area_sqm,derived from observed,benefit,"demoted: range only 0.872-0.927, weak discrimination"
+floor_band_score,floor_band expert map high/mid/low = 100/85/70,derived from observed floor,benefit,mix-adjusted check confirms high > low > mid; raw mid premium was a Loft artifact
+view_score,view expert map,SYNTHETIC,benefit,physical_features_origin = synthetic_v1_tower_stack_floor_band
+direction_score,hướng nhà expert map,SYNTHETIC,benefit,VN orientation convention; synthetic source column
+corner_score,corner_unit_proxy True/False = 100/70,SYNTHETIC,benefit,synthetic source column

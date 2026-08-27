@@ -472,6 +472,133 @@ async def test_two_different_batches_each_keep_their_own_payload(anonymous, issu
     assert count == 2
 
 
+# --- GET /sync-runs/{id} và /sync-runs/{id}/errors (từng hoàn toàn không xác thực) --
+
+
+async def _create_a_run(anonymous, issued, *, batch: str) -> str:
+    response = await anonymous.post(SYNC_URL, json=_payload(batch=batch), headers={"X-API-Key": issued.api_key})
+    assert response.status_code == 202, response.text
+    return response.json()["sync_run_id"]
+
+
+async def test_run_detail_without_any_credential_is_401(anonymous, issued):
+    run_id = await _create_a_run(anonymous, issued, batch="read-anon")
+
+    response = await anonymous.get(f"/api/v1/sync-runs/{run_id}")
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["error_code"] == "MISSING_API_KEY"
+
+
+async def test_run_errors_without_any_credential_is_401(anonymous, issued):
+    run_id = await _create_a_run(anonymous, issued, batch="read-anon-err")
+
+    response = await anonymous.get(f"/api/v1/sync-runs/{run_id}/errors")
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["error_code"] == "MISSING_API_KEY"
+
+
+async def test_run_detail_rejects_an_invalid_api_key(anonymous, issued):
+    run_id = await _create_a_run(anonymous, issued, batch="read-invalid-key")
+
+    response = await anonymous.get(f"/api/v1/sync-runs/{run_id}", headers={"X-API-Key": "afsk_khong-ton-tai"})
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["error_code"] == "INVALID_API_KEY"
+
+
+async def test_run_detail_allows_the_owning_instances_key(anonymous, issued):
+    """Đường vốn có: hệ nguồn tự poll lô của chính nó bằng đúng khoá của nó."""
+    run_id = await _create_a_run(anonymous, issued, batch="read-own-key")
+
+    response = await anonymous.get(f"/api/v1/sync-runs/{run_id}", headers={"X-API-Key": issued.api_key})
+
+    assert response.status_code == 200
+    assert response.json()["sync_run_id"] == run_id
+
+
+async def test_run_detail_rejects_a_key_from_another_instance(anonymous, issued, session_factory):
+    """Không dựa vào UUID khó đoán — một khoá THẬT của instance KHÁC vẫn bị chặn."""
+    from src.services.sync_credentials import SyncCredentialService
+
+    run_id = await _create_a_run(anonymous, issued, batch="read-other-instance")
+
+    async with session_factory() as session:
+        async with session.begin():
+            stranger = await SyncCredentialService().issue(
+                session, source_system="mini_crm", source_instance_id="synthetic-auth-other-reader", label="x"
+            )
+
+    response = await anonymous.get(f"/api/v1/sync-runs/{run_id}", headers={"X-API-Key": stranger.api_key})
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "INSTANCE_MISMATCH"
+
+    async with session_factory() as session:
+        async with session.begin():
+            await session.execute(
+                sa.text("DELETE FROM sync_credentials WHERE source_instance_id = 'synthetic-auth-other-reader'")
+            )
+
+
+async def test_run_detail_rejects_a_viewer_token_with_no_project_scope(anonymous, issued):
+    """Vai trò dashboard hợp lệ nhưng phạm vi RỖNG (không phải ALL) → vẫn 403."""
+    from tests.conftest import DASHBOARD_VIEWER_TOKEN
+
+    run_id = await _create_a_run(anonymous, issued, batch="read-viewer-no-scope")
+
+    response = await anonymous.get(
+        f"/api/v1/sync-runs/{run_id}", headers={"Authorization": f"Bearer {DASHBOARD_VIEWER_TOKEN}"}
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "PROJECT_OUT_OF_SCOPE"
+
+
+async def test_run_detail_allows_an_admin_token_with_all_scope(anonymous, issued):
+    from tests.conftest import DASHBOARD_ADMIN_TOKEN
+
+    run_id = await _create_a_run(anonymous, issued, batch="read-admin-all-scope")
+
+    response = await anonymous.get(
+        f"/api/v1/sync-runs/{run_id}", headers={"Authorization": f"Bearer {DASHBOARD_ADMIN_TOKEN}"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["sync_run_id"] == run_id
+
+
+async def test_run_errors_allows_an_admin_token_with_all_scope(anonymous, issued):
+    from tests.conftest import DASHBOARD_ADMIN_TOKEN
+
+    bad_record = {
+        "source_record_id": "AUTH-READ-BAD",
+        "operation": "upsert",
+        "source_updated_at": "2026-08-09T00:00:00Z",
+        "data": {"area_name": "KHONG-CO", "unit_type": "2PN", "unit_code": "X", "status": "available"},
+    }
+    response = await anonymous.post(
+        SYNC_URL, json=_payload(records=[bad_record], batch="read-errors-admin"), headers={"X-API-Key": issued.api_key}
+    )
+    run_id = response.json()["sync_run_id"]
+
+    errors_response = await anonymous.get(
+        f"/api/v1/sync-runs/{run_id}/errors", headers={"Authorization": f"Bearer {DASHBOARD_ADMIN_TOKEN}"}
+    )
+
+    assert errors_response.status_code == 200
+    assert errors_response.json()["errors"], "phải đọc được lỗi của lô, không chỉ trạng thái"
+
+
+async def test_run_detail_of_an_unknown_run_is_404(anonymous, issued):
+    response = await anonymous.get(
+        f"/api/v1/sync-runs/{uuid.uuid4()}", headers={"X-API-Key": issued.api_key}
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "SYNC_RUN_NOT_FOUND"
+
+
 async def test_payload_survives_a_batch_that_failed_validation(anonymous, issued, session_factory):
     """Lô có bản ghi hỏng vẫn phải giữ payload — đó là lúc cần nó nhất."""
     bad_record = {

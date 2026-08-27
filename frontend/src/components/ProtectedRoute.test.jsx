@@ -1,6 +1,6 @@
 import React from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./ProtectedRoute";
 import { setAccessToken } from "../api/client";
@@ -18,15 +18,23 @@ function renderAt(path) {
   );
 }
 
+// Không có token cũ thì ProtectedRoute hỏi `/auth/me` (qua useAuth) trước khi
+// quyết định — mặc định coi như chưa có phiên SSO (401), từng test tự override
+// khi cần mô phỏng phiên hợp lệ.
+beforeEach(() => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
+});
+
 afterEach(() => {
   setAccessToken(null);
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("ProtectedRoute", () => {
-  it("redirects to /login when there is no access token", () => {
+  it("redirects to /login when there is no access token and no SSO session", async () => {
     renderAt("/overview");
-    expect(screen.getByText("Login page")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Login page")).toBeInTheDocument());
     expect(screen.queryByText("Overview page")).not.toBeInTheDocument();
   });
 
@@ -36,6 +44,12 @@ describe("ProtectedRoute", () => {
     expect(screen.getByText("Overview page")).toBeInTheDocument();
   });
 
+  it("renders the protected route when an SSO session cookie is valid, even without a legacy token", async () => {
+    fetch.mockResolvedValue(new Response(JSON.stringify({ sub: "demo" }), { status: 200 }));
+    renderAt("/overview");
+    await waitFor(() => expect(screen.getByText("Overview page")).toBeInTheDocument());
+  });
+
   it("skips the login redirect when VITE_DEV_AUTH_BYPASS is explicitly enabled, even without a token", () => {
     vi.stubEnv("VITE_DEV_AUTH_BYPASS", "true");
     renderAt("/overview");
@@ -43,9 +57,9 @@ describe("ProtectedRoute", () => {
     expect(screen.queryByText("Login page")).not.toBeInTheDocument();
   });
 
-  it("still redirects to /login when VITE_DEV_AUTH_BYPASS is set to anything other than \"true\"", () => {
+  it("still redirects to /login when VITE_DEV_AUTH_BYPASS is set to anything other than \"true\"", async () => {
     vi.stubEnv("VITE_DEV_AUTH_BYPASS", "false");
     renderAt("/overview");
-    expect(screen.getByText("Login page")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Login page")).toBeInTheDocument());
   });
 });

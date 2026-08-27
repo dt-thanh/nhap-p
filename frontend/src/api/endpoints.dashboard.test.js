@@ -146,6 +146,27 @@ describe("getDashboardSummary", () => {
   });
 });
 
+describe("getMarketDashboard", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  it("requests the live project snapshot by external project ID", async () => {
+    const { getMarketDashboard } = await import("./endpoints");
+    fetch.mockResolvedValue(jsonResponse({ project: { live_units: 1 }, metrics: { active_total: 1 } }));
+
+    const result = await getMarketDashboard("P-0001");
+
+    expect(result.project.live_units).toBe(1);
+    expect(result.metrics.active_total).toBe(1);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/market/dashboard?project_id=P-0001",
+      expect.objectContaining({ credentials: "include" }),
+    );
+  });
+});
+
 describe("getDashboardTrend", () => {
   beforeEach(() => {
     vi.resetModules();

@@ -177,6 +177,32 @@ async def _authorize_reprocess(
     await _authenticate(x_api_key, run["source_instance_id"])
 
 
+async def _authorize_sync_run_read(x_api_key: str | None, authorization: str | None, run) -> None:
+    """Đọc trạng thái/lỗi MỘT lô — cùng mô hình xác thực KÉP với
+    `_authorize_reprocess`: khoá CRM đúng `source_instance_id` của lô (đường
+    VỐN CÓ, hệ nguồn tự poll lô của chính nó), HOẶC vai trò vận hành
+    (`business_viewer` trở lên — đây là ĐỌC, không cần `pipeline_operator` như
+    reprocess) với dự án của lô nằm trong phạm vi token. Không đường nào dựa
+    vào việc `sync_run_id` (UUID) khó đoán để coi là đủ an toàn — hai route này
+    từng hoàn toàn không xác thực.
+    """
+    if authorization is not None:
+        principal = await authenticate_dashboard(authorization)
+        async with get_session_factory()() as session:
+            scope_ids = await resolve_scope_project_ids(session, principal)
+        if scope_ids != "ALL" and (run["project_id"] is None or run["project_id"] not in scope_ids):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "message": "Thao tác nằm ngoài phạm vi dự án được cấp cho token này",
+                    "error_code": "PROJECT_OUT_OF_SCOPE",
+                },
+            )
+        return
+
+    await _authenticate(x_api_key, run["source_instance_id"])
+
+
 def _parse_sync_run_id(sync_run_id: str) -> uuid.UUID:
     try:
         return uuid.UUID(sync_run_id)
@@ -415,9 +441,14 @@ async def reprocess_sync_run(
     response_model=SyncRunDetail,
     summary="Trạng thái một lô đồng bộ (client poll đường này)",
 )
-async def sync_run_detail(sync_run_id: str) -> SyncRunDetail:
+async def sync_run_detail(
+    sync_run_id: str,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> SyncRunDetail:
     """Đọc từ `upload_files` — nguồn duy nhất giữ trạng thái lô cho cả hai đường vào."""
     row = await _fetch_run(_parse_sync_run_id(sync_run_id))
+    await _authorize_sync_run_read(x_api_key, authorization, row)
     summary = row["error_summary"] or {}
 
     return SyncRunDetail(
@@ -454,6 +485,8 @@ async def sync_run_errors(
     limit: int = Query(default=100, ge=1, le=MAX_ERRORS_PER_PAGE),
     offset: int = Query(default=0, ge=0),
     error_category: str | None = Query(default=None, description="Lọc theo nhóm lỗi"),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None, alias="Authorization"),
 ) -> SyncRunErrorList:
     """Tách khỏi `/sync-runs/{id}` để đường polling không tải theo danh sách lỗi.
 
@@ -461,7 +494,8 @@ async def sync_run_errors(
     thì hai lỗi cùng thời điểm có thể đổi chỗ giữa hai trang.
     """
     run_uuid = _parse_sync_run_id(sync_run_id)
-    await _fetch_run(run_uuid)
+    run = await _fetch_run(run_uuid)
+    await _authorize_sync_run_read(x_api_key, authorization, run)
 
     condition = [upload_errors.c.file_id == run_uuid]
     if error_category is not None:

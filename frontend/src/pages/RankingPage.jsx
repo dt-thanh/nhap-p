@@ -1,5 +1,6 @@
 // frontend/src/pages/RankingPage.jsx
-// Bảng xếp hạng căn — đường ĐỌC của `GET /api/v1/ranking`.
+// Bảng xếp hạng căn — đọc kết quả và tự động chạy lại qua `POST /ranking/run`
+// khi người dùng đổi phạm vi.
 //
 // Nguyên tắc trình bày của trang này:
 //
@@ -8,9 +9,9 @@
 //    `ranking_scores.contributions`. Một con số 65.9% không nói cho đội bán hàng
 //    biết phải làm gì; "nhu cầu 0.33 × 0.25" thì có.
 //
-// 2. **Không xếp hạng lại khi mở trang.** Nút "Tính lại" là hành động TƯỜNG MINH
-//    của người dùng (và cần quyền cao hơn), vì tính lại thay thế toàn bộ điểm
-//    của dự án — xem docstring `src/api/ranking.py`.
+// 2. Việc chọn phạm vi là hành động đủ rõ để tự động tính lại xếp hạng. Mỗi
+//    lần chạy vẫn đi qua endpoint có phân quyền; đề xuất bán hàng không được
+//    tạo ra từ đây và vẫn giữ nguyên human-in-the-loop boundary.
 //
 // 3. **Mức (`band`) hiển thị đúng như backend trả về.** Ngưỡng nằm ở
 //    `src/ranking/bands.py`; tính lại ngưỡng ở đây sẽ tạo bản sao thứ hai của
@@ -19,25 +20,33 @@
 // 4. **Miễn trừ trách nhiệm luôn hiện.** Backend gửi kèm chuỗi cố định đó ở mọi
 //    phản hồi; AGENTS.md coi xếp hạng là đầu vào cho người quyết định, không
 //    phải cam kết kết quả bán hàng.
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getRanking, runRanking } from "../api/endpoints";
-import { isAuthError } from "../api/client";
-import { useAsync } from "../hooks/useAsync";
+import * as rankingApi from "../api/endpoints";
 import { useBreakpoint } from "../hooks/useBreakpoint";
 import { useProjectScope } from "../hooks/useProjectScope";
 import ProjectSelector from "../components/ProjectSelector";
+import DemandChart from "../components/DemandChart";
+import RankingGroupTable from "../components/ranking/RankingGroupTable";
+import { DataReliability, RankingDecisionHeader } from "../components/ranking/RankingDecisionHeader";
+import RankingSearchBar, { filterRankingUnits } from "../components/RankingSearchBar";
+import EmptyState from "../components/EmptyState";
+import { RankingSkeleton } from "../components/RankingSkeleton";
 import GlobalKeyframes from "../components/ui/GlobalKeyframes";
 import { SectionState, fmt } from "../components/ui/States";
 import { areaLabel } from "../utils/areaLabel";
 import { color, font, radius, shadow, size, space } from "../styles/tokens";
+import "./RankingPage.css";
 
 const PAGE_SIZE = 50;
 
+const getRanking = (...args) => rankingApi.getRanking(...args);
+const runRanking = (...args) => rankingApi.runRanking(...args);
+
 const BAND_STYLE = {
-  high: { label: "Cao", fg: color.ok, bg: color.okSoft },
-  medium: { label: "Trung bình", fg: color.warn, bg: color.warnSoft },
-  low: { label: "Thấp", fg: color.muted, bg: color.canvas },
+  high: { label: "Hot", threshold: "Điểm ≥ 66%", fg: color.ok, bg: color.okSoft },
+  medium: { label: "Normal", threshold: "Điểm 33–65,9%", fg: color.warn, bg: color.warnSoft },
+  low: { label: "Slow", threshold: "Điểm < 33%", fg: color.muted, bg: color.canvas },
 };
 
 const UNIT_STATUS_LABEL = {
@@ -58,13 +67,6 @@ const FEATURE_LABEL = {
   area_conversion_norm: "Tỉ lệ chốt của phân khu",
 };
 
-const BAND_FILTERS = [
-  { key: null, label: "Tất cả" },
-  { key: "high", label: "Cao" },
-  { key: "medium", label: "Trung bình" },
-  { key: "low", label: "Thấp" },
-];
-
 /** Chuỗi Decimal của backend dài tới 28 chữ số (`0.3333333333333333333333333333`).
  *  Hiển thị nguyên văn là vô nghĩa với người đọc; cắt còn 2 chữ số thập phân. */
 function decimal(value, digits = 2) {
@@ -84,68 +86,261 @@ function freshness(iso) {
   return `${Math.round(hours / 24)} ngày trước`;
 }
 
-export default function RankingPage() {
+function rankingErrorMessage(error) {
+  const raw = String(error?.message || "").trim();
+  const normalized = raw.toLowerCase();
+  if (error?.status === 401 || normalized.includes("access denied") || normalized.includes("unauthorized")) {
+    return "Từ chối truy cập";
+  }
+  if (error?.status === 404 || normalized.includes("project not found")) return "Không tìm thấy dự án";
+  if (normalized.includes("area not found")) return "Không tìm thấy phân khu";
+  if (normalized.includes("invalid project")) return "Dự án không hợp lệ";
+  if (normalized.includes("invalid area")) return "Phân khu không hợp lệ";
+  if (normalized.includes("network") || error?.status === 0) return "Lỗi kết nối. Vui lòng thử lại";
+  if (normalized.includes("failed to load ranking")) return "Không thể tải xếp hạng. Vui lòng thử lại";
+  return raw || "Không thể tải xếp hạng. Vui lòng thử lại";
+}
+
+export default function RankingPage({ projectExternalId }) {
+  return (
+    <div
+      className="ranking-page"
+      style={{
+        "--ranking-canvas": color.canvas,
+        "--ranking-surface": color.surface,
+        "--ranking-border": color.border,
+        "--ranking-border-strong": color.borderStrong,
+        "--ranking-ink": color.ink,
+        "--ranking-body": color.body,
+        "--ranking-muted": color.muted,
+        "--ranking-accent": color.accent,
+        "--ranking-accent-soft": color.accentSoft,
+      }}
+    >
+      <div
+        className="ranking-tab-panel"
+        id="ranking-panel-hot-units"
+        role="tabpanel"
+        aria-label="Xếp hạng căn"
+      >
+        <HotUnitsTab projectExternalId={projectExternalId} />
+      </div>
+    </div>
+  );
+}
+
+// The existing unit-ranking implementation is intentionally kept intact in
+// this extracted tab component. `components/HotUnitsTab.jsx` re-exports it
+// for consumers/tests that use the component-level path.
+export function HotUnitsTab({ projectExternalId: routeProjectExternalId } = {}) {
   const navigate = useNavigate();
-  const scope = useProjectScope();
+  const scope = useProjectScope({ projectExternalId: routeProjectExternalId });
   const { isMobile } = useBreakpoint();
-  const [band, setBand] = useState(null);
   const [availableOnly, setAvailableOnly] = useState(true);
   const [offset, setOffset] = useState(0);
   const [expanded, setExpanded] = useState(null);
-  const [running, setRunning] = useState(false);
-  const [runError, setRunError] = useState("");
+  const [rankingData, setRankingData] = useState(null);
+  const [rankingLoading, setRankingLoading] = useState(false);
+  const [rankingError, setRankingError] = useState(null);
+  const [rankingSearch, setRankingSearch] = useState("");
+  const [selectedDemandLevel, setSelectedDemandLevel] = useState(null);
+  const [selectedGroupKey, setSelectedGroupKey] = useState(null);
+  const [decisionData, setDecisionData] = useState({ summary: null, trend: null, quality: null, loading: false });
+  const requestId = useRef(0);
 
   const projectId = scope.projectExternalId;
   const areaId = scope.areaExternalId;
+  const projectUuid = scope.currentProject?.project_id;
+  const areaUuid = scope.currentArea?.area_id;
+  const defaultsProjectHandled = useRef(false);
+  const defaultsAreaHandled = useRef(false);
 
-  const params = useMemo(() => {
-    const query = { limit: PAGE_SIZE, offset };
-    if (band) query.band = band;
-    // Mặc định CHỈ hiện căn còn bán được: xếp hạng dùng để quyết định đẩy căn
-    // nào, mà một căn đã bán thì không còn quyết định gì để ra. Vẫn bỏ lọc được
-    // — thứ hạng của căn đã bán là bằng chứng cho thấy công thức đang hạ chúng
-    // xuống đúng như mong đợi.
-    if (availableOnly) query.unit_status = "available";
-    if (areaId) query.external_area_id = areaId;
-    return query;
-  }, [band, availableOnly, offset, areaId]);
-
-  const ranking = useAsync(
-    () => (projectId ? getRanking(projectId, params) : Promise.resolve(null)),
-    [projectId, params],
-  );
-
-  // Đổi bộ lọc thì quay về trang đầu — giữ nguyên `offset` cũ sẽ cho ra một
-  // trang trống khi tập kết quả mới ngắn hơn vị trí đang đứng.
-  useEffect(() => { setOffset(0); setExpanded(null); }, [projectId, areaId, band, availableOnly]);
-
-  const recompute = useCallback(async () => {
-    if (!projectId || running) return;
-    setRunning(true);
-    setRunError("");
-    try {
-      await runRanking(projectId, areaId ? { external_area_id: areaId } : {});
-      setOffset(0);
-      ranking.reload();
-    } catch (error) {
-      setRunError(
-        isAuthError(error)
-          ? error.message
-          : error?.status === 403
-            ? "Vai trò hiện tại không đủ để tính lại xếp hạng. Cần pipeline_operator trở lên."
-            : error?.status === 503
-              ? "Chưa có cấu hình xếp hạng nào đang phát hành."
-              : error?.message || "Không tính lại được xếp hạng.",
-      );
-    } finally {
-      setRunning(false);
+  // Preserve deep links, but make a first visit useful immediately: choose the
+  // first scoped project, then its first scoped area once that list arrives.
+  useEffect(() => {
+    if (defaultsProjectHandled.current || scope.loadingProjects) return;
+    defaultsProjectHandled.current = true;
+    const firstProject = scope.projects.find((project) => project.external_id);
+    if (!projectId && firstProject) {
+      scope.setProjectExternalId(firstProject.external_id);
+      defaultsAreaHandled.current = false;
     }
-  }, [projectId, areaId, running, ranking]);
+  }, [projectId, scope]);
 
-  const data = ranking.data;
+  useEffect(() => {
+    if (defaultsAreaHandled.current || scope.loadingAreas || !projectId || areaId || scope.areas.length === 0) return;
+    const firstArea = scope.areas.find((area) => area.external_id);
+    if (!firstArea) return;
+    defaultsAreaHandled.current = true;
+    scope.setAreaExternalId(firstArea.external_id);
+  }, [areaId, projectId, scope]);
+
+  // Đổi phạm vi thì quay về trang đầu và bỏ bộ lọc nhu cầu cũ. Bộ lọc còn
+  // trống được giữ độc lập để có thể kết hợp với mức độ quan tâm.
+  useEffect(() => {
+    setOffset(0);
+    setExpanded(null);
+    setRankingSearch("");
+    setSelectedDemandLevel(null);
+    setSelectedGroupKey(null);
+  }, [projectId, areaId]);
+
+  // Keep the existing availability-filter behavior: changing it starts the
+  // read-only request from page one and clears the text search, while leaving
+  // an active demand row selected so the two filters remain combinable.
+  useEffect(() => {
+    setOffset(0);
+    setExpanded(null);
+    setRankingSearch("");
+    setSelectedGroupKey(null);
+  }, [availableOnly]);
+
+  // Demand bands are filtered by the paginated ranking endpoint, so changing
+  // the band must start from the first matching page.
+  useEffect(() => {
+    setOffset(0);
+    setExpanded(null);
+    setSelectedGroupKey(null);
+  }, [selectedDemandLevel]);
+
+  const prevScopeKey = useRef(null);
+
+  // Only a project/area change is the recalculation action (`POST /ranking/run`,
+  // which replaces `ranking_scores` for the project). "Chỉ còn trống" and
+  // paging are read-only refinements over those SAME stored scores, so they
+  // must go through `GET /ranking` instead — the only path that actually
+  // forwards `unit_status`/`limit`/`offset` to the backend.
+  const fetchRanking = useCallback(async (recompute) => {
+    if (!projectId) {
+      setRankingData(null);
+      setRankingLoading(false);
+      return;
+    }
+    const currentRequest = ++requestId.current;
+    setRankingLoading(true);
+    setRankingError(null);
+    try {
+      const scopeParams = areaId ? { external_area_id: areaId } : {};
+      let data;
+      if (recompute) {
+        data = await runRanking(projectId, scopeParams);
+        // POST /ranking/run deliberately returns the unfiltered first page.
+        // Read it again under the same availability/band scope used by the
+        // table and chart so the initial response cannot mix scopes.
+        if (availableOnly || selectedDemandLevel) {
+          data = await getRanking(projectId, {
+            ...scopeParams,
+            limit: PAGE_SIZE,
+            offset: 0,
+            ...(availableOnly ? { unit_status: "available" } : {}),
+            ...(selectedDemandLevel ? { band: selectedDemandLevel } : {}),
+          });
+        }
+      } else {
+        data = await getRanking(projectId, {
+          ...scopeParams,
+          limit: PAGE_SIZE,
+          offset,
+          ...(availableOnly ? { unit_status: "available" } : {}),
+          ...(selectedDemandLevel ? { band: selectedDemandLevel } : {}),
+        });
+      }
+      if (currentRequest === requestId.current) setRankingData(data);
+    } catch (error) {
+      if (currentRequest !== requestId.current) return;
+      setRankingError({ message: rankingErrorMessage(error), status: error?.status });
+    } finally {
+      if (currentRequest === requestId.current) setRankingLoading(false);
+    }
+  }, [projectId, areaId, offset, availableOnly, selectedDemandLevel]);
+
+  useEffect(() => {
+    if (!projectId) {
+      setRankingData(null);
+      setRankingLoading(false);
+      return undefined;
+    }
+    // Wait for the dependent area list so the initial project selection and
+    // first-area default collapse into one recalculation.
+    if (scope.loadingAreas) {
+      setRankingLoading(true);
+      return undefined;
+    }
+    const scopeKey = `${projectId}:${areaId || ""}`;
+    const scopeChanged = prevScopeKey.current !== scopeKey;
+    prevScopeKey.current = scopeKey;
+    if (scopeChanged) setRankingData(null);
+    setRankingLoading(true);
+    // A nonzero delay in both branches matters, not just for debounce: it lets
+    // the offset-reset effect above (which also fires on an availability
+    // change) cancel this timer and reschedule with `offset` already back at
+    // 0, instead of racing a stale-offset request against the reset one.
+    const timer = window.setTimeout(() => fetchRanking(scopeChanged), scopeChanged ? 300 : 150);
+    return () => window.clearTimeout(timer);
+  }, [projectId, areaId, scope.loadingAreas, availableOnly, offset, fetchRanking]);
+
+  useEffect(() => {
+    if (!projectId || !projectUuid || typeof rankingApi.getDashboardSummary !== "function") {
+      setDecisionData({ summary: null, trend: null, quality: null, loading: false });
+      return undefined;
+    }
+    let cancelled = false;
+    setDecisionData((current) => ({ ...current, loading: true }));
+    const loadDecisionData = async () => {
+      try {
+        const summary = await rankingApi.getDashboardSummary({ projectId: projectUuid, areaId: areaUuid || null });
+        const [trend, quality] = await Promise.all([
+          typeof rankingApi.getDashboardTrend === "function"
+            ? rankingApi.getDashboardTrend({ projectId: projectUuid, areaId: areaUuid || null, areaTotalUnits: summary.total_units, totalSold: summary.units_sold, granularity: "month" })
+            : Promise.resolve(null),
+          typeof rankingApi.getDataQuality === "function"
+            ? rankingApi.getDataQuality({ projectId: projectUuid, externalProjectId: projectId })
+            : Promise.resolve(null),
+        ]);
+        if (!cancelled) setDecisionData({ summary, trend, quality, loading: false });
+      } catch (error) {
+        if (!cancelled) setDecisionData({ summary: null, trend: null, quality: { status: "error", warnings: [error?.message || "Không thể tải độ tin cậy dữ liệu."] }, loading: false });
+      }
+    };
+    loadDecisionData();
+    return () => { cancelled = true; };
+  }, [areaUuid, projectId, projectUuid, areaId]);
+
+  const data = rankingData;
   const items = data?.items ?? [];
+  const applyRankingSearch = useCallback((searchTerm) => {
+    setRankingSearch(searchTerm);
+    return filterRankingUnits(items, searchTerm).length;
+  }, [items]);
+  const searchFilteredItems = useMemo(
+    () => filterRankingUnits(items, rankingSearch),
+    [items, rankingSearch],
+  );
+  const groupFilteredItems = selectedGroupKey
+    ? searchFilteredItems.filter((unit) => `${unit.area_name || "Phân khu chưa rõ"}::${unit.unit_type || ""}` === selectedGroupKey)
+    : searchFilteredItems;
+  const visibleItems = groupFilteredItems;
+  useEffect(() => {
+    setOffset(0);
+    setExpanded(null);
+  }, [rankingSearch]);
   const total = data?.total ?? 0;
-  const neverRanked = Boolean(data) && data.computed_at === null;
+  // Backend owns the distinction between a project that has not run and a
+  // completed run with insufficient inputs. Keep the legacy computed_at
+  // fallback only for older API deployments during a rolling upgrade.
+  const rankingState = data?.state ?? (data?.computed_at == null ? "not_run" : "ready");
+  const unavailableRanking = rankingState !== "ready";
+  const emptyRankingCopy = rankingState === "insufficient_data"
+    ? {
+      title: "Chưa có căn đủ điều kiện để xếp hạng",
+      message: data?.reason === "NO_LIVE_UNITS"
+        ? "Dữ liệu đồng bộ hiện không có căn còn hiệu lực cho dự án này."
+        : "Các căn hiện có chưa đạt mức dữ liệu tối thiểu của cấu hình xếp hạng.",
+    }
+    : {
+      title: "Dự án này chưa được xếp hạng lần nào",
+      message: "Chọn lại dự án hoặc phân khu để tự động chạy bộ xếp hạng trên dữ liệu mới nhất.",
+    };
   const hasNextPage = offset + PAGE_SIZE < total;
 
   return (
@@ -153,8 +348,9 @@ export default function RankingPage() {
       <GlobalKeyframes />
       <header style={S.pageHead}>
         <div>
-          <h1 style={S.h1}>Xếp hạng căn nên ưu tiên</h1>
-          <p style={S.sub}>Điểm tất định từ dữ liệu vận hành · Mỗi dòng mở ra được lý do đằng sau điểm số</p>
+          <span className="ranking-eyebrow">INVESTOR DECISION VIEW</span>
+          <h1 className="ranking-title" style={S.h1}>Ranking kinh tế căn hộ</h1>
+          <p style={S.sub}>Tốc độ hấp thụ, MOS, rủi ro và nhóm hành động trong một màn hình.</p>
         </div>
         {data?.config_version != null && (
           <button
@@ -162,105 +358,130 @@ export default function RankingPage() {
             onClick={() => navigate("/ranking/configs")}
             title="Xem và đổi bộ trọng số xếp hạng"
           >
-            config v{data.config_version} ›
+            cấu hình v{data.config_version} ›
           </button>
         )}
       </header>
 
-      <section style={S.scopeBar} aria-label="Phạm vi xếp hạng">
-        <ProjectSelector
-          projects={scope.projects}
-          value={projectId}
-          onChange={scope.setProjectExternalId}
-          loading={scope.loadingProjects}
-          status={
-            scope.projectsStatus === "unauthorized" ? "unauthorized"
-              : scope.projectsStatus === "error" ? "error" : undefined
-          }
-        />
+      <RankingDecisionHeader
+        summary={decisionData.summary}
+        trend={decisionData.trend}
+        quality={decisionData.quality}
+        ranking={data}
+        loading={decisionData.loading || rankingLoading}
+      />
+
+      <section className="ranking-card" style={S.scopeBar} aria-label="Phạm vi xếp hạng">
+        <div className="ranking-controls-row">
+          <ProjectSelector
+            projects={scope.projects}
+            value={projectId}
+            onChange={scope.setProjectExternalId}
+            loading={scope.loadingProjects}
+            status={
+              scope.projectsStatus === "unauthorized" ? "unauthorized"
+                : scope.projectsStatus === "error" ? "error" : undefined
+            }
+          />
+          {projectId && (
+            <label className="ranking-label" style={S.label}>
+              Phối cảnh
+              <select
+                style={S.select}
+                value={areaId ?? "all"}
+                aria-label="Chọn phân khu"
+                onChange={(e) => scope.setAreaExternalId(e.target.value === "all" ? null : e.target.value)}
+              >
+                <option value="all">Toàn bộ dự án</option>
+                {(scope.areas || []).filter((a) => a.external_id).map((a) => (
+                  <option key={a.external_id} value={a.external_id}>{areaLabel(a)}</option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
         {projectId && (
-          <label style={S.label}>
-            Phân khu
-            <select
-              style={S.select}
-              value={areaId ?? "all"}
-              onChange={(e) => scope.setAreaExternalId(e.target.value === "all" ? null : e.target.value)}
-            >
-              <option value="all">Toàn dự án</option>
-              {(scope.areas || []).filter((a) => a.external_id).map((a) => (
-                <option key={a.external_id} value={a.external_id}>{areaLabel(a)}</option>
-              ))}
-            </select>
-          </label>
-        )}
-        {projectId && (
-          <div style={S.runBox}>
+          <div className="ranking-controls-status" style={S.runBox}>
             <span style={S.freshness}>
               {data?.computed_at ? `Tính lúc ${freshness(data.computed_at)}` : "Chưa từng tính"}
             </span>
-            <button style={{ ...S.runButton, ...(running ? S.runButtonBusy : null) }} onClick={recompute} disabled={running}>
-              {running ? "Đang tính…" : "Tính lại"}
-            </button>
+            <span style={S.autoStatus} aria-live="polite">
+              {rankingLoading ? <><span className="ranking-spinner" aria-hidden="true" /> Đang tự động cập nhật…</> : "Tự động cập nhật khi đổi phạm vi"}
+            </span>
           </div>
         )}
       </section>
 
-      {runError && <div style={S.error}>{runError}</div>}
+      {rankingError && <div style={S.error}>{rankingError.message}</div>}
 
       {!projectId ? (
-        <div style={S.hint}>Chọn một dự án để xem bảng xếp hạng.</div>
+        <EmptyState message={scope.loadingProjects ? "Đang tải danh sách dự án…" : "Chưa có dữ liệu xếp hạng"} />
       ) : (
         <>
-          {data && !neverRanked && (
+          {data && !unavailableRanking && (
             <div style={S.summary}>
               <SummaryCard label="Đã xếp hạng" value={fmt(data.units_ranked)} />
-              <SummaryCard label="Khả năng bán cao" value={fmt(data.band_counts?.high ?? 0)} tone={color.ok} />
-              <SummaryCard label="Trung bình" value={fmt(data.band_counts?.medium ?? 0)} tone={color.warn} />
-              <SummaryCard label="Thấp" value={fmt(data.band_counts?.low ?? 0)} tone={color.muted} />
+              <SummaryCard label="Hot" value={fmt(data.band_counts?.high ?? 0)} tone={color.ok} />
+              <SummaryCard label="Normal" value={fmt(data.band_counts?.medium ?? 0)} tone={color.warn} />
+              <SummaryCard label="Slow" value={fmt(data.band_counts?.low ?? 0)} tone={color.muted} />
               {/* Bỏ qua vì thiếu dữ liệu — KHÁC với "điểm thấp". Trộn hai thứ này
                   vào một ô sẽ khiến một lỗi dữ liệu trông như một kết luận. */}
               <SummaryCard label="Bỏ qua (thiếu dữ liệu)" value={fmt(data.units_skipped)} tone={color.muted} />
             </div>
           )}
 
-          <div style={S.filters}>
-            {BAND_FILTERS.map((f) => (
-              <button
-                key={f.label}
-                onClick={() => setBand(f.key)}
-                style={{ ...S.chip, ...(band === f.key ? S.chipOn : null) }}
-              >
-                {f.label}
-                {f.key && data?.band_counts ? ` (${data.band_counts[f.key] ?? 0})` : ""}
-              </button>
-            ))}
-            <label style={S.toggle}>
-              <input type="checkbox" checked={availableOnly} onChange={(e) => setAvailableOnly(e.target.checked)} />
-              Chỉ căn còn trống
-            </label>
-          </div>
+          {data && !unavailableRanking && (
+            <RankingGroupTable items={items} selectedKey={selectedGroupKey} onSelect={setSelectedGroupKey} />
+          )}
 
-          {neverRanked ? (
+          <label style={S.availabilityFilter}>
+            <input type="checkbox" checked={availableOnly} onChange={(e) => setAvailableOnly(e.target.checked)} />
+            Chỉ căn còn trống
+          </label>
+
+          {data && !unavailableRanking && (
+            <details className="ranking-secondary-panel">
+              <summary>Phân bố điểm và bộ lọc Risk band</summary>
+              <DemandChart
+                units={items}
+                activeCategory={selectedDemandLevel}
+                onCategorySelect={setSelectedDemandLevel}
+                categoryCounts={data.band_counts}
+              />
+            </details>
+          )}
+
+          {data && !unavailableRanking && (
+            <div className="ranking-list-search">
+              <RankingSearchBar
+                onFilter={applyRankingSearch}
+                totalUnits={items.length}
+                resetKey={`${projectId}:${areaId || "all"}:${availableOnly ? "available" : "all"}`}
+              />
+            </div>
+          )}
+
+          {unavailableRanking ? (
             <div style={S.emptyCard}>
               <div style={S.emptyIcon}>▦</div>
-              <b style={{ color: color.ink }}>Dự án này chưa được xếp hạng lần nào</b>
+              <b style={{ color: color.ink }}>{emptyRankingCopy.title}</b>
               <p style={{ margin: `${space(2)}px 0 ${space(4)}px` }}>
-                Bấm “Tính lại” để chạy bộ xếp hạng trên dữ liệu tồn kho và giao dịch hiện tại.
+                {emptyRankingCopy.message}
               </p>
-              <button style={S.runButton} onClick={recompute} disabled={running}>
-                {running ? "Đang tính…" : "Tính lại"}
-              </button>
             </div>
           ) : (
             <SectionState
-              loading={ranking.loading}
-              error={ranking.error}
-              empty={!ranking.loading && !ranking.error && items.length === 0}
-              onRetry={ranking.reload}
+              loading={rankingLoading}
+              error={rankingError}
+              empty={!rankingLoading && !rankingError && visibleItems.length === 0}
+              emptyTitle="Không tìm thấy căn nào phù hợp với bộ lọc"
+              emptyHint="Thử điều chỉnh từ khoá hoặc các bộ lọc để xem thêm dữ liệu."
+              onRetry={() => fetchRanking(true)}
+              skeleton={<RankingSkeleton />}
             >
-              <div style={S.tableCard}>
+              <div className="ranking-card" style={S.tableCard}>
                 <div style={S.scroll}>
-                  <table style={S.table}>
+                  <table className="ranking-table" style={S.table}>
                     <thead>
                       <tr>
                         <th style={{ ...S.th, width: 56 }}>#</th>
@@ -268,13 +489,14 @@ export default function RankingPage() {
                         {!isMobile && <th style={S.th}>Phân khu</th>}
                         <th style={S.th}>Trạng thái</th>
                         <th style={{ ...S.th, minWidth: 180 }}>Điểm</th>
-                        <th style={S.th}>Mức</th>
+                        {!isMobile && <th style={S.th}>Drivers</th>}
+                        <th style={S.th}>Mức độ quan tâm</th>
                         {!isMobile && <th style={S.th}>Hạng trong phân khu</th>}
                         <th style={{ ...S.th, width: 40 }} aria-label="Mở giải thích" />
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map((u) => {
+                      {visibleItems.map((u) => {
                         const bandStyle = BAND_STYLE[u.band] || BAND_STYLE.low;
                         const open = expanded === u.unit_id;
                         const percent = u.score_percent ?? 0;
@@ -296,11 +518,12 @@ export default function RankingPage() {
                                   <span style={S.track}>
                                     <span style={{ ...S.fill, width: `${percent}%`, background: bandStyle.fg }} />
                                   </span>
-                                  <span style={S.percent}>{percent.toFixed(1)}%</span>
+                                  <span className="ranking-score" style={S.percent}>{percent.toFixed(1)}%</span>
                                 </div>
                               </td>
+                              {!isMobile && <td style={S.td}><DriverChips contributions={u.contributions} /></td>}
                               <td style={S.td}>
-                                <span style={{ ...S.badge, color: bandStyle.fg, background: bandStyle.bg }}>
+                                <span className="ranking-badge" title={bandStyle.threshold} style={{ ...S.badge, color: bandStyle.fg, background: bandStyle.bg }}>
                                   {bandStyle.label}
                                 </span>
                               </td>
@@ -309,7 +532,7 @@ export default function RankingPage() {
                             </tr>
                             {open && (
                               <tr>
-                                <td colSpan={isMobile ? 6 : 8} style={S.explainCell}>
+                                <td colSpan={isMobile ? 6 : 9} style={S.explainCell}>
                                   <Explanation unit={u} />
                                 </td>
                               </tr>
@@ -339,6 +562,7 @@ export default function RankingPage() {
           )}
 
           {data?.disclaimer && <p style={S.disclaimer}>{data.disclaimer}</p>}
+          {data && <DataReliability summary={decisionData.summary} quality={decisionData.quality} ranking={data} trend={decisionData.trend} />}
         </>
       )}
     </>
@@ -384,6 +608,19 @@ function Explanation({ unit }) {
   );
 }
 
+function DriverChips({ contributions = [] }) {
+  return (
+    <div className="ranking-driver-chips" aria-label="Ba drivers chính">
+      {contributions.slice(0, 3).map((contribution) => (
+        <span key={contribution.feature_key} title={`${FEATURE_LABEL[contribution.feature_key] || contribution.feature_key}: ${decimal(contribution.contribution, 3)}`}>
+          {FEATURE_LABEL[contribution.feature_key] || contribution.feature_key}
+        </span>
+      ))}
+      {!contributions.length && <span className="ranking-driver-chips__empty">Chưa có</span>}
+    </div>
+  );
+}
+
 function SummaryCard({ label, value, tone }) {
   return (
     <div style={S.summaryCard}>
@@ -395,34 +632,30 @@ function SummaryCard({ label, value, tone }) {
 
 const S = {
   pageHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: space(4), marginBottom: space(5) },
-  h1: { margin: 0, color: color.ink, fontFamily: font.display, fontSize: size.h1, letterSpacing: "-.03em" },
+  h1: { margin: 0, color: color.ink, fontFamily: font.display, fontSize: 28, fontWeight: 700, letterSpacing: "-.03em" },
   sub: { margin: "5px 0 0", color: color.muted, fontSize: size.small },
   configBadge: { flex: "none", color: color.accent, background: color.accentSoft, border: 0, borderRadius: radius.pill, padding: "7px 12px", fontSize: size.tiny, fontWeight: 700, fontFamily: font.mono, cursor: "pointer" },
 
-  scopeBar: { display: "flex", alignItems: "flex-end", gap: space(4), flexWrap: "wrap", background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.md, padding: space(4), marginBottom: space(4), boxShadow: shadow },
-  label: { display: "flex", flexDirection: "column", gap: 5, color: color.ink, fontSize: size.tiny, fontWeight: 700 },
+  scopeBar: { background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.md, padding: space(4), marginBottom: space(4), boxShadow: shadow },
+  label: { display: "flex", flexDirection: "column", gap: 5, color: color.ink, fontSize: 15, fontWeight: 500 },
   select: { minWidth: 190, padding: "9px 11px", border: `1px solid ${color.borderStrong}`, borderRadius: radius.sm, background: color.surface, fontFamily: "inherit" },
-  runBox: { marginLeft: "auto", display: "flex", alignItems: "center", gap: space(3) },
-  freshness: { color: color.muted, fontSize: size.tiny },
-  runButton: { background: color.accent, color: "#fff", border: 0, borderRadius: radius.sm, padding: "10px 16px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: size.small },
-  runButtonBusy: { background: color.borderStrong, cursor: "wait" },
+  runBox: { display: "flex", alignItems: "center", justifyContent: "flex-end", gap: space(3) },
+  freshness: { color: color.muted, fontSize: 15 },
+  autoStatus: { color: color.muted, fontSize: 15, fontWeight: 600, whiteSpace: "nowrap" },
 
   summary: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: space(3), marginBottom: space(4) },
   summaryCard: { background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.md, padding: space(4), display: "flex", flexDirection: "column", gap: 6, boxShadow: shadow },
   summaryLabel: { color: color.muted, fontSize: size.tiny },
   summaryValue: { fontFamily: font.display, fontSize: 24, fontVariantNumeric: "tabular-nums" },
 
-  filters: { display: "flex", gap: space(2), flexWrap: "wrap", alignItems: "center", marginBottom: space(4) },
-  chip: { background: color.surface, color: color.body, border: `1px solid ${color.borderStrong}`, borderRadius: radius.pill, padding: "7px 14px", fontFamily: "inherit", fontSize: size.tiny, cursor: "pointer" },
-  chipOn: { background: color.accent, color: "#fff", borderColor: color.accent, fontWeight: 700 },
-  toggle: { display: "flex", alignItems: "center", gap: 6, color: color.body, fontSize: size.tiny, cursor: "pointer", marginLeft: space(2) },
+  availabilityFilter: { display: "flex", alignItems: "center", gap: 6, color: color.body, fontSize: 15, cursor: "pointer", marginBottom: space(4) },
 
   tableCard: { background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.md, boxShadow: shadow, overflow: "hidden" },
   scroll: { overflowX: "auto" },
-  table: { width: "100%", borderCollapse: "collapse", fontSize: size.small },
-  th: { textAlign: "left", padding: `${space(3)}px ${space(4)}px`, color: color.muted, fontSize: size.tiny, fontWeight: 700, borderBottom: `1px solid ${color.border}`, whiteSpace: "nowrap" },
+  table: { width: "100%", borderCollapse: "collapse", fontSize: 15 },
+  th: { textAlign: "left", padding: "14px 18px", color: color.muted, fontSize: 15, fontWeight: 600, borderBottom: `1px solid ${color.border}`, whiteSpace: "nowrap" },
   row: { cursor: "pointer", borderBottom: `1px solid ${color.border}` },
-  td: { padding: `${space(3)}px ${space(4)}px`, verticalAlign: "middle" },
+  td: { padding: "16px 18px", verticalAlign: "middle", fontSize: 15 },
   rank: { fontFamily: font.mono, color: color.muted, fontVariantNumeric: "tabular-nums" },
   unitType: { display: "block", color: color.muted, fontWeight: 400, fontSize: size.tiny, marginTop: 2 },
   caret: { color: color.muted, textAlign: "center" },
@@ -431,7 +664,7 @@ const S = {
   track: { flex: 1, minWidth: 80, height: 6, borderRadius: radius.pill, background: color.canvas, overflow: "hidden" },
   fill: { display: "block", height: "100%", borderRadius: radius.pill },
   percent: { fontVariantNumeric: "tabular-nums", fontWeight: 700, color: color.ink, minWidth: 52, textAlign: "right" },
-  badge: { borderRadius: radius.pill, padding: "4px 10px", fontSize: size.tiny, fontWeight: 700, whiteSpace: "nowrap" },
+  badge: { borderRadius: radius.pill, padding: "6px 14px", fontSize: 14, fontWeight: 700, whiteSpace: "nowrap" },
 
   explainCell: { padding: 0, background: color.accentSoft, borderBottom: `1px solid ${color.border}` },
   explain: { padding: space(4) },

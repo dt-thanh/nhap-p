@@ -2,9 +2,9 @@ import { useState } from "react";
 import { X } from "lucide-react";
 
 interface Props {
-  project?: { id: string; name: string; launch_date?: string } | null;
+  project?: { id: string; name: string; location?: string; launch_date?: string } | null;
   onClose: () => void;
-  onSave: (data: { name: string; launch_date: string }) => void;
+  onSave: (data: { name: string; location?: string; launch_date: string }) => void;
 }
 
 export function ProjectModal({ project, onClose, onSave }: Props) {
@@ -12,12 +12,13 @@ export function ProjectModal({ project, onClose, onSave }: Props) {
   const [launchDate, setLaunchDate] = useState(
     project?.launch_date ?? new Date().toISOString().slice(0, 10),
   );
+  const [location, setLocation] = useState(project?.location ?? "");
   const [error, setError] = useState("");
 
   function submit() {
     if (!name.trim()) return setError("Vui lòng nhập tên dự án");
     if (!launchDate) return setError("Vui lòng chọn ngày mở bán");
-    onSave({ name: name.trim(), launch_date: launchDate });
+    onSave({ name: name.trim(), location: location.trim() || undefined, launch_date: launchDate });
   }
 
   return (
@@ -39,6 +40,15 @@ export function ProjectModal({ project, onClose, onSave }: Props) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Ví dụ: Ocean Park 3"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-ink">Địa điểm</label>
+            <input
+              className="input"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Ví dụ: Xã Long Hưng, Văn Giang, Hưng Yên"
             />
           </div>
           <div>

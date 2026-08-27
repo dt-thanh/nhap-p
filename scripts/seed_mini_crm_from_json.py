@@ -521,7 +521,9 @@ def resend_guidance(row: OutboxRow, base_url: str) -> str:
     return f"POST {base_url}/outbox/{row.external_batch_id}/resend"
 
 
-def preflight(*, minicrm_url: str, backend_url: str, admin_token: str, backend_token: str) -> None:
+def preflight(
+    *, minicrm_url: str, backend_url: str, admin_token: str, backend_token: str, require_backend_token: bool = True
+) -> None:
     """Kiểm TRƯỚC KHI GHI BẤT CỨ GÌ. Fail closed. KHÔNG BAO GIỜ in giá trị token.
 
     Mini CRM không có route GET nào đòi xác thực (`GET /outbox`/`GET /projects`
@@ -543,7 +545,7 @@ def preflight(*, minicrm_url: str, backend_url: str, admin_token: str, backend_t
             f"Thiếu biến môi trường {ADMIN_TOKEN_ENV} — POST /projects đòi vai trò admin. "
             f"Cấu hình trong {ROOT_ENV_FILE} hoặc {MINICRM_ENV_FILE}, hoặc export trong shell."
         )
-    if not backend_token:
+    if require_backend_token and not backend_token:
         raise SeedError(
             f"Thiếu biến môi trường {BACKEND_TOKEN_ENV} — cần để XÁC MINH lô đã chiếu sang Backend "
             "(Phase C của simulator này), không dùng để ghi bất cứ gì."
@@ -648,12 +650,14 @@ class MiniCrmSeeder:
         *,
         mirror_timeout: float,
         mirror_interval: float,
+        refresh_existing: bool = False,
     ) -> None:
         self.client = client
         self.identity = identity
         self.tracker = tracker
         self.mirror_timeout = mirror_timeout
         self.mirror_interval = mirror_interval
+        self.refresh_existing = refresh_existing
         self.summary = RunSummary()
 
     def _track(
@@ -731,11 +735,17 @@ class MiniCrmSeeder:
                 resp, stale = self._get_existing(f"/projects/{existing_id}", key=key, kind="project")
                 if resp is not None:
                     current = resp.json()
-                    patch = {}
-                    if current["name"] != name:
-                        patch["name"] = name
-                    if str(current["launch_date"]) != str(launch_date):
-                        patch["launch_date"] = launch_date
+                    patch = {
+                        "name": name,
+                        "launch_date": launch_date,
+                    } if self.refresh_existing else {
+                        field_name: value
+                        for field_name, value in (
+                            ("name", name),
+                            ("launch_date", launch_date),
+                        )
+                        if str(current[field_name]) != str(value)
+                    }
                     if patch:
                         r2 = self.client.patch(f"/projects/{existing_id}", json=patch)
                         if r2.status_code == 200:
@@ -854,11 +864,18 @@ class MiniCrmSeeder:
                 resp, stale = self._get_existing(f"/areas/{existing_id}", key=key, kind="area")
                 if resp is not None:
                     current = resp.json()
-                    patch = {
-                        field_name: payload[field_name]
-                        for field_name in ("area_name", "unit_type", "bedrooms", "area_sqm", "total_units")
-                        if current.get(field_name) != payload[field_name]
-                    }
+                    patch = (
+                        {
+                            field_name: payload[field_name]
+                            for field_name in ("area_name", "unit_type", "bedrooms", "area_sqm", "total_units")
+                        }
+                        if self.refresh_existing
+                        else {
+                            field_name: payload[field_name]
+                            for field_name in ("area_name", "unit_type", "bedrooms", "area_sqm", "total_units")
+                            if current.get(field_name) != payload[field_name]
+                        }
+                    )
                     if patch:
                         r2 = self.client.patch(f"/areas/{existing_id}", json=patch)
                         if r2.status_code == 200:
@@ -973,7 +990,7 @@ class MiniCrmSeeder:
                 resp, stale = self._get_existing(f"/units/{existing_id}", key=key, kind="unit")
                 if resp is not None:
                     current = resp.json()
-                    if current.get("unit_status") != unit_status:
+                    if self.refresh_existing or current.get("unit_status") != unit_status:
                         r2 = self.client.patch(f"/units/{existing_id}", json={"unit_status": unit_status})
                         if r2.status_code == 200:
                             out[key] = existing_id
@@ -1016,6 +1033,23 @@ class MiniCrmSeeder:
             if match is not None:
                 self.identity.set(key, "unit", match["external_id"])
                 existing_id = match["external_id"]
+                if self.refresh_existing:
+                    r2 = self.client.patch(f"/units/{existing_id}", json={"unit_status": unit_status})
+                    if r2.status_code == 200:
+                        out[key] = existing_id
+                        item = ItemResult(key, "unit", "updated", existing_id, _classify(r2))
+                        self._track(
+                            item,
+                            kind="unit",
+                            external_id=existing_id,
+                            record=r2.json()["record"],
+                            expected_field=("status", unit_status),
+                        )
+                        self.summary.add(item)
+                    else:
+                        self.summary.add(ItemResult(key, "unit", "failed", existing_id, _classify(r2)))
+                        self._maybe_abort(r2, f"unit '{key}' natural-key refresh")
+                    continue
                 self.summary.add(
                     ItemResult(
                         key,
@@ -1133,11 +1167,17 @@ class MiniCrmSeeder:
                 # mốc không gửi thì GIỮ NGUYÊN) — khác PATCH của project/area,
                 # đây KHÔNG phải upsert-diff toàn trường, chỉ gửi field đổi.
                 patch: dict[str, Any] = {}
-                if already.get("deal_status") != d.get("deal_status"):
+                if self.refresh_existing:
                     patch["deal_status"] = d.get("deal_status")
-                for ts_field in ("reserved_at", "sold_at", "lost_at"):
-                    if d.get(ts_field) and not already.get(ts_field):
-                        patch[ts_field] = d[ts_field]
+                    for ts_field in ("reserved_at", "sold_at", "lost_at"):
+                        if d.get(ts_field):
+                            patch[ts_field] = d[ts_field]
+                else:
+                    if already.get("deal_status") != d.get("deal_status"):
+                        patch["deal_status"] = d.get("deal_status")
+                    for ts_field in ("reserved_at", "sold_at", "lost_at"):
+                        if d.get(ts_field) and not already.get(ts_field):
+                            patch[ts_field] = d[ts_field]
                 if patch:
                     r2 = self.client.patch(f"/deals/{already['external_id']}", json=patch)
                     if r2.status_code == 200:
@@ -1480,6 +1520,11 @@ def main() -> int:
     parser.add_argument("--delivery-interval", type=float, default=DEFAULT_DELIVERY_INTERVAL)
     parser.add_argument("--projection-timeout", type=float, default=DEFAULT_PROJECTION_TIMEOUT)
     parser.add_argument("--projection-interval", type=float, default=DEFAULT_PROJECTION_INTERVAL)
+    parser.add_argument(
+        "--refresh-existing",
+        action="store_true",
+        help="re-emit unchanged fixture records through Mini CRM PATCH so a cleared destination can be rebuilt",
+    )
     parser.add_argument("--skip-verify", action="store_true", help="Bỏ qua Phase D (xác minh chiếu Backend)")
     args = parser.parse_args()
 
@@ -1487,7 +1532,13 @@ def main() -> int:
     backend_token = os.getenv(BACKEND_TOKEN_ENV, "")
 
     try:
-        preflight(minicrm_url=args.base_url, backend_url=args.backend_url, admin_token=admin_token, backend_token=backend_token)
+        preflight(
+            minicrm_url=args.base_url,
+            backend_url=args.backend_url,
+            admin_token=admin_token,
+            backend_token=backend_token,
+            require_backend_token=not args.skip_verify,
+        )
     except SeedError as exc:
         print(f"LỖI (preflight): {exc}", file=sys.stderr)
         return 1
@@ -1516,6 +1567,7 @@ def main() -> int:
             tracker,
             mirror_timeout=args.mirror_timeout,
             mirror_interval=args.mirror_interval,
+            refresh_existing=args.refresh_existing,
         )
 
         project_ids = seeder.seed_projects(data["projects"])

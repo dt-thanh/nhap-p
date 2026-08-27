@@ -9,6 +9,11 @@
 #
 # AN TOÀN: chỉ TẠO file còn thiếu, KHÔNG bao giờ ghi đè file .env đã có (bí mật
 # bạn đang dùng sẽ không bị mất). Chạy lại nhiều lần vô hại.
+#
+# MINICRM_SYNC_API_KEY sinh ở đây CHỈ là placeholder để Compose không chặn lần
+# `up` đầu tiên (chưa có sync_credentials row nào khớp nó) — scripts/dev-reset.sh
+# (qua scripts/ensure_sync_credential.sh) sẽ cấp khoá THẬT và ghi đè giá trị này
+# ngay sau đó. Không dùng script này để xoay/đồng bộ khoá.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -33,7 +38,7 @@ else
     echo "MINICRM_AUTH_ADMIN_TOKEN=${ADMIN_TOKEN}"
     echo "SESSION_SECRET=$(gen 48)"
     echo "SESSION_COOKIE_SECURE=false"
-    echo "# Tắt cửa dev khi đã bật Entra thật."
+    echo "# Tắt cửa dev khi đã bật Keycloak thật."
     echo "DEV_AUTH_BYPASS=true"
   } >> .env
   echo "  .env đã tạo (đã sinh sẵn khoá)."
@@ -62,8 +67,8 @@ else
     echo "MINICRM_SESSION_SECRET=$(gen 48)"
     echo "MINICRM_AUTH_SIGNING_SECRET=$(gen 48)"
     echo "MINICRM_SESSION_COOKIE_SECURE=false"
-    echo "# Bật đường token tĩnh để chạy/test được TRƯỚC khi có tenant Entra."
-    echo "# Đặt false ngay khi MINICRM_ENTRA_* đã có giá trị thật."
+    echo "# Bật đường token tĩnh để chạy/test được TRƯỚC khi có Keycloak."
+    echo "# Đặt false ngay khi MINICRM_OIDC_* đã có giá trị thật."
     echo "MINICRM_LEGACY_TOKEN_AUTH_ENABLED=true"
   } >> minicrm/.env
   echo "  minicrm/.env đã tạo (khoá khớp với .env gốc)."

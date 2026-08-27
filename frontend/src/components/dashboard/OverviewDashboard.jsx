@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Area, AreaChart, CartesianGrid, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { color, font, radius, shadow, size, space } from "../../styles/tokens";
 import { FRESHNESS_LABEL, classifyFreshness, formatBackendTimestamp } from "../../utils/freshness";
@@ -10,6 +10,8 @@ import { ErrorState, SectionState, Skeleton } from "../ui/States";
 
 const ACCENT = color.accent;
 const NAVY = color.ink;
+const TABLET_BEZEL_WIDTH = 182;
+const TABLET_BEZEL_HEIGHT = 238;
 
 export default function OverviewDashboard({
   project,
@@ -18,6 +20,9 @@ export default function OverviewDashboard({
   summaryLoading,
   summaryError,
   onSummaryRetry,
+  market,
+  marketLoading,
+  marketError,
   trend,
   trendLoading,
   trendError,
@@ -51,6 +56,7 @@ export default function OverviewDashboard({
   onCustomTo,
   onSelectArea,
   isWide,
+  preview = false,
 }) {
   const [metric, setMetric] = useState("velocity");
   const freshness = classifyFreshness(summary);
@@ -59,6 +65,61 @@ export default function OverviewDashboard({
   const direction = VELOCITY_DIRECTION_LABEL[velocityDirection];
   const headerTitle = project?.name ? `${project.name} · Tổng quan` : "Tổng quan";
   const context = area?.area_name || area?.name || "Toàn bộ dự án";
+
+  const workspace = (
+    <OverviewWorkspace
+      project={project}
+      summary={summary}
+      summaryLoading={summaryLoading}
+      summaryError={summaryError}
+      onSummaryRetry={onSummaryRetry}
+      market={market}
+      marketLoading={marketLoading}
+      marketError={marketError}
+      trend={trend}
+      trendLoading={trendLoading}
+      trendError={trendError}
+      onTrendRetry={onTrendRetry}
+      trendStatus={trendStatus}
+      trendMessage={trendMessage}
+      areas={areas}
+      areasLoading={areasLoading}
+      areasError={areasError}
+      onAreasRetry={onAreasRetry}
+      dataQuality={dataQuality}
+      dataQualityLoading={dataQualityLoading}
+      dataQualityError={dataQualityError}
+      onDataQualityRetry={onDataQualityRetry}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+      toolbarProjects={toolbarProjects}
+      toolbarAreas={toolbarAreas}
+      projectExternalId={projectExternalId}
+      areaExternalId={areaExternalId}
+      range={range}
+      onProject={onProject}
+      onArea={onArea}
+      onRange={onRange}
+      availableYears={availableYears}
+      selectedYear={selectedYear}
+      onYear={onYear}
+      customFrom={customFrom}
+      customTo={customTo}
+      onCustomFrom={onCustomFrom}
+      onCustomTo={onCustomTo}
+      onSelectArea={onSelectArea}
+      isWide={preview ? false : isWide}
+      metric={metric}
+      onMetric={setMetric}
+      freshnessLabel={freshnessLabel}
+      direction={direction}
+      headerTitle={headerTitle}
+      context={context}
+      preview={preview}
+    />
+  );
+
+  if (preview) return <div style={{ ...S.page, ...S.previewPage }}>{workspace}</div>;
 
   return (
     <div style={S.page}>
@@ -72,106 +133,145 @@ export default function OverviewDashboard({
           direction={direction}
           isWide={isWide}
         />
-
-        <section style={{ ...S.tabletWorkspace, ...(isWide ? null : S.tabletWorkspaceNarrow) }} aria-label="Không gian phân tích tổng quan">
-          <div aria-hidden="true" style={S.tabletNotch} />
-          <div style={{ ...S.tabletScreen, ...(isWide ? null : S.tabletScreenNarrow) }}>
-            <div style={S.workspaceContent}>
-              <header style={S.pageHeader}>
-                <div>
-                  <div style={S.eyebrow}>TỔNG QUAN / {context.toUpperCase()}</div>
-                  <h1 style={S.title}>{headerTitle}</h1>
-                  <p style={S.subtitle}>Phạm vi {context.toLowerCase()} · tỷ lệ hấp thụ là số căn đã bán trên tổng quỹ căn. Dự báo: chưa khả dụng.</p>
-                </div>
-                <div style={S.headerActions}>
-                  <label style={S.search}>
-                    <Icon name="search" size={16} color={color.muted} />
-                    <input aria-label="Tìm kiếm trong dashboard" placeholder="Tìm kiếm  ⌘K" />
-                  </label>
-                  <span style={{ ...S.freshness, ...freshnessTone(freshnessLabel.tone) }} title={formatBackendTimestamp(summary?.last_successful_sync)}>
-                    <span style={S.freshnessDot} />{freshnessLabel.text}
-                  </span>
-                  <button type="button" style={S.iconButton} aria-label="Thông báo" title="Thông báo">
-                    <Icon name="bell" size={17} color={color.body} />
-                  </button>
-                  <span style={S.profile} aria-label="Tài khoản hiện tại">AI</span>
-                  <button type="button" style={S.refreshButton} onClick={onRefresh} disabled={refreshing}>
-                    <Icon name="refresh" size={15} />{refreshing ? "Đang tải…" : "Làm mới"}
-                  </button>
-                </div>
-              </header>
-
-              <FilterToolbar
-                projects={toolbarProjects}
-                areas={toolbarAreas}
-                projectId={projectExternalId}
-                areaId={areaExternalId ?? "all"}
-                range={range}
-                onProject={onProject}
-                onArea={onArea}
-                onRange={onRange}
-                availableYears={availableYears}
-                selectedYear={selectedYear}
-                onYear={onYear}
-                customFrom={customFrom}
-                customTo={customTo}
-                onCustomFrom={onCustomFrom}
-                onCustomTo={onCustomTo}
-                loading={summaryLoading}
-                showProjectSelector
-              />
-
-              <OverviewKpis summary={summary} loading={summaryLoading} error={summaryError} onRetry={onSummaryRetry} direction={direction} />
-
-              <OverviewEvidence
-                summary={summary}
-                summaryLoading={summaryLoading}
-                dataQuality={dataQuality}
-                dataQualityLoading={dataQualityLoading}
-                dataQualityError={dataQualityError}
-                onDataQualityRetry={onDataQualityRetry}
-                areas={areas}
-                areasLoading={areasLoading}
-                areasError={areasError}
-                onAreasRetry={onAreasRetry}
-                isWide={isWide}
-              />
-
-              <div style={{ ...S.mainGrid, ...(isWide ? null : S.mainGridNarrow) }}>
-                <OverviewTrendChart
-                  series={trend}
-                  metric={metric}
-                  onMetric={setMetric}
-                  range={range}
-                  onRange={onRange}
-                  loading={trendLoading}
-                  error={trendError}
-                  onRetry={onTrendRetry}
-                  dataStatus={trendStatus}
-                  emptyMessage={trendMessage}
-                />
-                <PriorityAdvisory loading={areasLoading} error={areasError} onRetry={onAreasRetry} />
-              </div>
-
-              <OverviewBreakdown
-                areas={areas}
-                areasLoading={areasLoading}
-                areasError={areasError}
-                onAreasRetry={onAreasRetry}
-                dataQuality={dataQuality}
-                dataQualityLoading={dataQualityLoading}
-                dataQualityError={dataQualityError}
-                onDataQualityRetry={onDataQualityRetry}
-                project={project}
-              />
-              <UnavailableAnalytics />
-              <footer style={S.disclaimer}>Dữ liệu hiển thị từ backend hiện tại. Dự báo chưa khả dụng và không phải cam kết kết quả.</footer>
-            </div>
-          </div>
+        <section style={{ ...S.tabletPreviewCell, ...(isWide ? null : S.tabletPreviewCellNarrow) }} aria-label="Không gian phân tích tổng quan">
+          <TabletDevicePreview href={buildPreviewHref(projectExternalId, areaExternalId)} isWide={isWide} />
         </section>
       </div>
     </div>
   );
+}
+
+function OverviewWorkspace({
+  project, summary, summaryLoading, summaryError, onSummaryRetry,
+  market, marketLoading, marketError, trend, trendLoading, trendError,
+  onTrendRetry, trendStatus, trendMessage, areas, areasLoading, areasError,
+  onAreasRetry, dataQuality, dataQualityLoading, dataQualityError,
+  onDataQualityRetry, refreshing, onRefresh, toolbarProjects, toolbarAreas,
+  projectExternalId, areaExternalId, range, onProject, onArea, onRange,
+  availableYears, selectedYear, onYear, customFrom, customTo, onCustomFrom,
+  onCustomTo, onSelectArea, isWide, metric, onMetric, freshnessLabel,
+  direction, headerTitle, context, preview,
+}) {
+  return (
+    <div style={{ ...S.workspaceContent, ...(preview ? S.previewWorkspaceContent : null) }}>
+      <header style={S.pageHeader}>
+        <div>
+          <div style={S.eyebrow}>TỔNG QUAN / {context.toUpperCase()}</div>
+          <h1 style={S.title}>{headerTitle}</h1>
+          <p style={S.subtitle}>Phạm vi {context.toLowerCase()} · tỷ lệ hấp thụ là số căn đã bán trên tổng quỹ căn. Dự báo: chưa khả dụng.</p>
+        </div>
+        <div style={S.headerActions}>
+          <label style={S.search}>
+            <Icon name="search" size={16} color={color.muted} />
+            <input aria-label="Tìm kiếm trong dashboard" placeholder="Tìm kiếm  ⌘K" />
+          </label>
+          <span style={{ ...S.freshness, ...freshnessTone(freshnessLabel.tone) }} title={formatBackendTimestamp(summary?.last_successful_sync)}>
+            <span style={S.freshnessDot} />{freshnessLabel.text}
+          </span>
+          <button type="button" style={S.iconButton} aria-label="Thông báo" title="Thông báo">
+            <Icon name="bell" size={17} color={color.body} />
+          </button>
+          <span style={S.profile} aria-label="Tài khoản hiện tại">AI</span>
+          <button type="button" style={S.refreshButton} onClick={onRefresh} disabled={refreshing}>
+            <Icon name="refresh" size={15} />{refreshing ? "Đang tải…" : "Làm mới"}
+          </button>
+        </div>
+      </header>
+
+      <FilterToolbar
+        projects={toolbarProjects}
+        areas={toolbarAreas}
+        projectId={projectExternalId}
+        areaId={areaExternalId ?? "all"}
+        range={range}
+        onProject={onProject}
+        onArea={onArea}
+        onRange={onRange}
+        availableYears={availableYears}
+        selectedYear={selectedYear}
+        onYear={onYear}
+        customFrom={customFrom}
+        customTo={customTo}
+        onCustomFrom={onCustomFrom}
+        onCustomTo={onCustomTo}
+        loading={summaryLoading}
+        showProjectSelector
+      />
+
+      <OverviewKpis summary={summary} loading={summaryLoading} error={summaryError} onRetry={onSummaryRetry} direction={direction} market={market} marketLoading={marketLoading} marketError={marketError} />
+      <OverviewEvidence summary={summary} summaryLoading={summaryLoading} dataQuality={dataQuality} dataQualityLoading={dataQualityLoading} dataQualityError={dataQualityError} onDataQualityRetry={onDataQualityRetry} areas={areas} areasLoading={areasLoading} areasError={areasError} onAreasRetry={onAreasRetry} isWide={isWide} />
+
+      <div style={{ ...S.mainGrid, ...(isWide ? null : S.mainGridNarrow) }}>
+        <OverviewTrendChart series={trend} metric={metric} onMetric={onMetric} range={range} onRange={onRange} loading={trendLoading} error={trendError} onRetry={onTrendRetry} dataStatus={trendStatus} emptyMessage={trendMessage} />
+        <PriorityAdvisory loading={areasLoading} error={areasError} onRetry={onAreasRetry} />
+      </div>
+
+      <OverviewBreakdown areas={areas} areasLoading={areasLoading} areasError={areasError} onAreasRetry={onAreasRetry} dataQuality={dataQuality} dataQualityLoading={dataQualityLoading} dataQualityError={dataQualityError} onDataQualityRetry={onDataQualityRetry} project={project} />
+      <UnavailableAnalytics />
+      <footer style={S.disclaimer}>Dữ liệu hiển thị từ backend hiện tại. Dự báo chưa khả dụng và không phải cam kết kết quả.</footer>
+    </div>
+  );
+}
+
+export function buildPreviewHref(projectExternalId, areaExternalId) {
+  const query = new URLSearchParams();
+  if (projectExternalId) query.set("project", projectExternalId);
+  if (areaExternalId) query.set("area", areaExternalId);
+  const suffix = query.toString();
+  return `/preview/overview${suffix ? `?${suffix}` : ""}`;
+}
+
+function TabletDevicePreview({ href, isWide }) {
+  const cellRef = useRef(null);
+  const { width, height } = useResponsiveDeviceSize(cellRef, isWide);
+
+  return (
+    <device-mockup
+      ref={cellRef}
+      data-testid="overview-tablet-mockup"
+      type="tablet"
+      mode="iframe"
+      href={href}
+      alt="AbsorptionIQ tablet dashboard preview"
+      screen-background="white"
+      width={width ? String(width) : undefined}
+      style={{
+        ...S.tabletMockup,
+        ...(width ? { width, height } : null),
+      }}
+    />
+  );
+}
+
+function useResponsiveDeviceSize(ref, isWide) {
+  const [size, setSize] = useState({ width: null, height: null });
+
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return undefined;
+
+    const measure = () => {
+      const containerWidth = element.parentElement?.getBoundingClientRect().width || window.innerWidth;
+      const viewportWidth = window.innerWidth || 1024;
+      const preferredWidth = isWide
+        ? Math.min(760, Math.max(320, viewportWidth * 0.42))
+        : viewportWidth;
+      const width = Math.max(1, Math.round(Math.min(containerWidth, preferredWidth)));
+      const height = Math.round(width * (TABLET_BEZEL_HEIGHT / TABLET_BEZEL_WIDTH));
+      setSize((current) => current.width === width && current.height === height ? current : { width, height });
+    };
+
+    measure();
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
+    observer?.observe(element.parentElement || element);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [isWide, ref]);
+
+  return size;
 }
 
 function SalesPulse({ project, context, summary, loading, freshnessLabel, direction, isWide }) {
@@ -267,13 +367,15 @@ function SignalRow({ label, item }) {
   return <div style={S.signalRow}><div><strong style={S.evidenceValue}>{item?.name || "Chưa có dữ liệu"}</strong><span style={S.evidenceLabel}>{label}</span></div><strong style={S.signalRate}>{formatDashboardNumber(item?.absorption_rate, { digits: 1, suffix: "%" })}</strong></div>;
 }
 
-function OverviewKpis({ summary, loading, error, onRetry, direction }) {
+function OverviewKpis({ summary, loading, error, onRetry, direction, market, marketLoading, marketError }) {
   if (error) return <div style={S.fullCard}><ErrorState error={error} onRetry={onRetry} compact /></div>;
   const cards = [
     { label: "Tỷ lệ hấp thụ", value: formatDashboardNumber(summary?.sell_through, { digits: 1, suffix: "%" }), detail: "So với kế hoạch: Chưa có dữ liệu", badge: "Thực tế", icon: "rate", tone: ACCENT },
     { label: "Hấp thụ ròng", value: formatDashboardUnits(summary?.units_sold), detail: "Kỳ trước: Chưa có dữ liệu", badge: "Đã bán", icon: "sold", tone: color.ok },
     { label: "Vận tốc đặt chỗ", value: formatDashboardUnits(summary?.velocity_30d, { digits: 1, perWeek: true }), detail: direction?.text || "So với kỳ trước: Chưa có dữ liệu", badge: direction?.arrow || "Chưa có dữ liệu", icon: "velocity", tone: NAVY },
     { label: "Tỷ lệ huỷ", value: "Chưa có dữ liệu", detail: "Chưa có trong dữ liệu summary hiện tại", badge: "Chưa có dữ liệu", icon: "warning", tone: color.muted },
+    { label: "Căn đang sống", value: formatDashboardUnits(market?.project?.live_units), detail: "Từ market dashboard theo dự án", badge: marketError ? "Không tải được" : "Live units", icon: "remaining", tone: color.ok, loading: marketLoading },
+    { label: "Tổng căn hoạt động", value: formatDashboardUnits(market?.metrics?.active_total), detail: "Căn hoạt động trong snapshot", badge: marketError ? "Không tải được" : "Active total", icon: "remaining", tone: ACCENT, loading: marketLoading },
   ];
 
   return (
@@ -284,8 +386,8 @@ function OverviewKpis({ summary, loading, error, onRetry, direction }) {
             <span style={{ ...S.kpiIcon, color: card.tone, background: color.canvas }}><Icon name={card.icon} size={16} color={card.tone} /></span>
             <span style={S.kpiLabel}>{card.label}</span>
           </div>
-          <div style={S.kpiValue}>{loading ? <Skeleton height={28} width="78%" /> : card.value}</div>
-          <div style={S.kpiDetail}>{loading ? <Skeleton height={14} width="90%" /> : card.detail}</div>
+          <div style={S.kpiValue}>{loading || card.loading ? <Skeleton height={28} width="78%" /> : card.value}</div>
+          <div style={S.kpiDetail}>{loading || card.loading ? <Skeleton height={14} width="90%" /> : card.detail}</div>
           <span style={{ ...S.kpiBadge, color: card.tone }}>{card.badge}</span>
         </article>
       ))}
@@ -412,15 +514,19 @@ function freshnessTone(tone) { return tone === "danger" ? { color: color.danger,
 
 const S = {
   page: { minWidth: 0 },
+  previewPage: { width: "100%", minWidth: 0 },
   deviceComposition: { display: "grid", gap: space(5), alignItems: "stretch", marginBottom: space(4) },
-  deviceCompositionWide: { gridTemplateColumns: "minmax(260px, .5fr) minmax(0, 1fr)", alignItems: "start" },
+  deviceCompositionWide: { gridTemplateColumns: "minmax(260px, .5fr) minmax(0, 1fr)", gridTemplateRows: "minmax(0, 1fr)", minHeight: 0, alignItems: "end" },
   deviceCompositionNarrow: { gridTemplateColumns: "1fr" },
-  salesPulse: { position: "relative", width: "100%", maxWidth: 390, justifySelf: "center", aspectRatio: "9 / 19.5", minWidth: 0, minHeight: 0, boxSizing: "border-box", overflow: "hidden", border: "5px solid #050A12", borderRadius: 36, background: "#0B1220", color: color.ink, boxShadow: "inset 1px 1px 0 rgba(255,255,255,.10), inset -1px -1px 0 rgba(0,0,0,.42), 0 24px 48px rgba(32,28,24,.18), 8px 16px 12px -10px rgba(32,28,24,.34)" },
-  salesPulseWide: { position: "sticky", top: space(4), alignSelf: "start" },
-  salesPulseNarrow: { aspectRatio: "auto", minHeight: 420, borderWidth: 4, borderRadius: 28, boxShadow: "inset 1px 1px 0 rgba(255,255,255,.07), 0 12px 26px rgba(32,28,24,.20)" },
+  tabletPreviewCell: { minWidth: 0, minHeight: 0, width: "100%", display: "flex", justifyContent: "flex-end", alignItems: "flex-end", boxSizing: "border-box" },
+  tabletPreviewCellNarrow: { justifyContent: "center" },
+  tabletMockup: { display: "block", maxWidth: "100%", minWidth: 0, minHeight: 0, flex: "0 0 auto", flexShrink: 0, position: "relative", overflow: "hidden", boxSizing: "border-box" },
+  salesPulse: { position: "relative", width: "100%", maxWidth: 390, justifySelf: "center", aspectRatio: "9 / 19.5", minWidth: 0, minHeight: 0, flexShrink: 0, boxSizing: "border-box", overflow: "hidden", border: "5px solid #050A12", borderRadius: 36, background: "#0B1220", color: color.ink, boxShadow: "inset 1px 1px 0 rgba(255,255,255,.10), inset -1px -1px 0 rgba(0,0,0,.42), 0 24px 48px rgba(32,28,24,.18), 8px 16px 12px -10px rgba(32,28,24,.34)" },
+  salesPulseWide: { position: "sticky", top: space(4), alignSelf: "end" },
+  salesPulseNarrow: { aspectRatio: "auto", height: 420, minHeight: 0, borderWidth: 4, borderRadius: 28, boxShadow: "inset 1px 1px 0 rgba(255,255,255,.07), 0 12px 26px rgba(32,28,24,.20)" },
   phoneNotch: { position: "absolute", top: 12, left: "50%", width: 78, height: 18, borderRadius: radius.pill, background: "#050A12", transform: "translateX(-50%)", boxShadow: "0 1px 0 rgba(255,255,255,.1)", zIndex: 1 },
-  pulseInner: { height: "100%", minHeight: 0, display: "flex", flexDirection: "column", padding: `${space(12)}px ${space(5)}px ${space(5)}px`, boxSizing: "border-box", borderRadius: 29, overflow: "hidden", background: "#FFFFFF", color: color.ink, boxShadow: "inset 0 0 0 1px rgba(15,23,42,.08)" },
-  pulseInnerNarrow: { height: "auto", minHeight: 412, borderRadius: 22 },
+  pulseInner: { width: "100%", height: "100%", minWidth: 0, minHeight: 0, flex: "1 1 auto", display: "flex", flexDirection: "column", padding: `${space(12)}px ${space(5)}px ${space(5)}px`, boxSizing: "border-box", borderRadius: 29, overflowX: "auto", overflowY: "auto", overscrollBehavior: "contain", background: "#FFFFFF", color: color.ink, boxShadow: "inset 0 0 0 1px rgba(15,23,42,.08)" },
+  pulseInnerNarrow: { height: "100%", minHeight: 0, borderRadius: 22 },
   pulseBrand: { display: "flex", alignItems: "center", gap: space(2), color: color.ink, fontSize: 13, fontWeight: 800, letterSpacing: "-.01em" },
   pulseLogo: { width: 26, height: 26, display: "grid", placeItems: "center", borderRadius: 8, background: color.accent, color: "#111", fontFamily: font.display, fontWeight: 900 },
   pulseLive: { marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, color: color.muted, fontSize: 10, fontWeight: 700 },
@@ -439,12 +545,8 @@ const S = {
   pulseReference: { marginTop: space(4), color: color.muted, fontSize: 10, lineHeight: 1.45 },
   pulseFoot: { marginTop: "auto", paddingTop: space(5), color: color.muted, fontSize: 10, lineHeight: 1.5 },
   pulseSkeleton: { background: `linear-gradient(90deg, ${color.canvas} 25%, ${color.border} 37%, ${color.canvas} 63%)`, backgroundSize: "400% 100%" },
-  tabletWorkspace: { position: "relative", minWidth: 0, minHeight: "min(880px, 72vw)", overflow: "hidden", border: "5px solid #050A12", borderRadius: 36, background: "#0B1220", boxShadow: "inset 1px 1px 0 rgba(255,255,255,.10), inset -1px -1px 0 rgba(0,0,0,.42), 0 24px 48px rgba(32,28,24,.18), 8px 16px 12px -10px rgba(32,28,24,.34)" },
-  tabletWorkspaceNarrow: { minHeight: 560, borderWidth: 4, borderRadius: 28, boxShadow: "inset 1px 1px 0 rgba(255,255,255,.07), 0 12px 26px rgba(32,28,24,.20)" },
-  tabletNotch: { position: "absolute", top: 6, left: "50%", width: 5, height: 5, borderRadius: "50%", background: "#555", boxShadow: "0 0 0 1px rgba(0,0,0,.16)", transform: "translateX(-50%)", zIndex: 2 },
-  tabletScreen: { minWidth: 0, minHeight: "min(880px, 72vw)", padding: space(3), background: "#F8F8F5", boxSizing: "border-box", overflow: "hidden", borderRadius: 29, boxShadow: "inset 0 0 0 1px rgba(15,23,42,.08)" },
-  tabletScreenNarrow: { minHeight: 560, borderRadius: 22, boxShadow: "inset 0 0 0 1px rgba(15,23,42,.08)" },
-  workspaceContent: { minWidth: 0 },
+  workspaceContent: { minWidth: 0, minHeight: 0 },
+  previewWorkspaceContent: { padding: space(3), background: "#F8F8F5", boxSizing: "border-box" },
   pageHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: space(4), marginBottom: space(5), flexWrap: "wrap" },
   eyebrow: { color: color.muted, fontSize: 11, fontWeight: 800, letterSpacing: ".12em", marginBottom: space(2) },
   title: { margin: 0, color: color.ink, fontFamily: font.display, fontSize: 32, letterSpacing: "-.04em" },

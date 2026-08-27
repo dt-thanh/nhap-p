@@ -1,6 +1,6 @@
 // frontend/src/api/auth.js
 // ---------------------------------------------------------------------------
-// CP5/CP7 — Tích hợp xác thực SSO qua Microsoft Entra ID cho AbsorbIQ.
+// CP5/CP7 — Tích hợp xác thực SSO qua Keycloak (OIDC) cho AbsorbIQ.
 //
 // ĐIỂM BÁM TỐI THIỂU, CÔ LẬP. File này KHÔNG đụng vào UI mà teammate đang sửa:
 // nó chỉ thêm bốn hàm gọi mặt `/auth/*` của Product backend (src/api/auth.py).
@@ -16,7 +16,7 @@
 const AUTH_BASE = "/api/v1/auth";
 
 /** Điều hướng CẢ TRANG sang backend để bắt đầu vòng OIDC. Không dùng fetch:
- *  bước kế tiếp là 302 sang Microsoft, và người dùng phải thấy thanh địa chỉ
+ *  bước kế tiếp là 302 sang Keycloak, và người dùng phải thấy thanh địa chỉ
  *  đó — một luồng đăng nhập chạy ngầm trong XHR là hình dạng của trang lừa đảo. */
 export function startLogin(returnTo) {
   const rt = returnTo ?? window.location.pathname;
@@ -41,21 +41,8 @@ export async function refreshSession() {
   return res.ok;
 }
 
-/** Xoá phiên cục bộ, rồi trả URL đăng xuất Entra để kết thúc luôn phiên SSO ở
- *  phía Microsoft — bỏ bước đó thì lần "đăng nhập" kế tiếp vào thẳng lại. */
+/** Điều hướng tới backend để backend thu hồi phiên rồi chuyển tiếp tới
+ *  Keycloak — fetch không phù hợp vì logout là một front-channel redirect. */
 export async function logout() {
-  try {
-    const res = await fetch(`${AUTH_BASE}/logout`, {
-      method: "POST",
-      credentials: "include",
-    });
-    const data = res.ok ? await res.json() : null;
-    if (data?.entra_logout_url) {
-      window.location.href = data.entra_logout_url;
-      return;
-    }
-  } catch {
-    /* vẫn đưa về /login dù backend lỗi */
-  }
-  window.location.href = "/login";
+  window.location.href = `${AUTH_BASE}/logout`;
 }

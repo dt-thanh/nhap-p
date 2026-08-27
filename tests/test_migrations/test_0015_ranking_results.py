@@ -476,6 +476,21 @@ def test_legacy_tables_are_untouched_by_this_migration(upgraded):
 # --- 14. Bản chiếu Core khớp schema thật ------------------------------------
 
 
+# Cột được các revision SAU 0015 thêm vào bốn bảng này. `upgraded` chỉ migrate
+# tới đúng 0015 (`REVISION`, xem fixture phía trên), nhưng `src/models/tables.py`
+# là hình chiếu CỦA HEAD — nó luôn đi trước schema thật tại điểm kiểm tra này
+# theo đúng những cột revision sau đã thêm. Loại các cột này ra khỏi phần so
+# khớp bên dưới, KHÔNG loại cả bảng: mọi cột khác vẫn phải khớp tuyệt đối.
+#
+# `0037_hierarchical_scoring_pr1` (D29/D37/D41, PR-1) là lần đầu một revision
+# sau 0015 thêm cột vào bốn bảng này — trước đó không migration nào chạm tới,
+# nên hằng số này trước Phase PR-1 sẽ RỖNG.
+COLUMNS_ADDED_AFTER_0015: dict[str, frozenset[str]] = {
+    "ranking_scores": frozenset({"hierarchical_score", "hierarchical_contributions"}),
+    "ranking_configs": frozenset({"hierarchical_weights"}),
+}
+
+
 def test_core_table_definitions_match_the_migrated_schema(upgraded):
     """`src/models/tables.py` là HÌNH CHIẾU của migration, không phải nguồn sự thật.
 
@@ -500,7 +515,8 @@ def test_core_table_definitions_match_the_migrated_schema(upgraded):
 
     for table in tables:
         assert table.name in actual, f"{table.name} không tồn tại trong schema đã migrate"
-        expected_columns = {c.name: c.nullable for c in table.columns}
+        later_columns = COLUMNS_ADDED_AFTER_0015.get(table.name, frozenset())
+        expected_columns = {c.name: c.nullable for c in table.columns if c.name not in later_columns}
         assert expected_columns.keys() == actual[table.name].keys(), (
             f"{table.name}: tập cột của bản chiếu Core lệch khỏi migration"
         )

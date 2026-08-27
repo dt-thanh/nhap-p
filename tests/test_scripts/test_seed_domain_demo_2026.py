@@ -64,7 +64,14 @@ def test_area_filter_keeps_only_its_parent_project():
     assert plan.areas[0]["project_id"] == plan.projects[0]["id"]
 
 
-def test_target_gate_rejects_unclassified_and_production_like_targets():
+def test_target_gate_rejects_unclassified_and_production_like_targets(monkeypatch):
+    # `_target_metadata` rơi về `SEED_ENVIRONMENT`/`APP_ENV` của MÔI TRƯỜNG THẬT
+    # khi không truyền `classification=` tường minh — và `scripts/test_db.sh`
+    # (chạy test này) nạp cả `.env` thật vào tiến trình (thường có
+    # `APP_ENV=development`), nên phải xoá tường minh ở đây để phép thử "chưa
+    # phân loại" không âm thầm "đạt" nhờ giá trị mượn từ máy đang chạy test.
+    monkeypatch.delenv("SEED_ENVIRONMENT", raising=False)
+    monkeypatch.delenv("APP_ENV", raising=False)
     with pytest.raises(RuntimeError, match="explicitly"):
         _target_metadata("postgresql://app:secret@localhost:5432/demo")
     with pytest.raises(RuntimeError, match="production-like"):

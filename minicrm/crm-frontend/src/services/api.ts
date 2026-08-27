@@ -10,24 +10,34 @@ const BASE = "/api";
  *
  * Trước: token đọc từ `localStorage.crm_auth`, kèm fallback
  * `VITE_DEV_BEARER_TOKEN`. Cả hai đã bị GỠ — token phiên bây giờ nằm trong
- * cookie `HttpOnly` do Mini CRM phát sau khi Entra xác thực, và trình duyệt tự
- * đính kèm nhờ `credentials: "include"` bên dưới. JavaScript không đọc được nó,
- * nên cũng không có gì để một script chèn vào trang đánh cắp.
+ * cookie `HttpOnly` do Mini CRM phát sau khi Keycloak xác thực, và trình duyệt
+ * tự đính kèm nhờ `credentials: "include"` bên dưới. JavaScript không đọc được
+ * nó, nên cũng không có gì để một script chèn vào trang đánh cắp.
  *
  * Hệ quả cho dev: không còn "token dán tay". Chạy `docker compose up` với
- * MINICRM_ENTRA_* đã cấu hình rồi đăng nhập thật, hoặc bật đường token tĩnh
+ * MINICRM_OIDC_* đã cấu hình rồi đăng nhập thật, hoặc bật đường token tĩnh
  * bằng MINICRM_LEGACY_TOKEN_AUTH_ENABLED=true (opt-in TƯỜNG MINH, mặc định tắt,
  * KHÔNG dùng cho production).
  */
 
 /** Điều hướng cả trang sang `/auth/login` của backend, nơi bắt đầu vòng OIDC.
- *  Không dùng `fetch`: bước kế tiếp là một 302 sang tên miền của Microsoft, và
+ *  Không dùng `fetch`: bước kế tiếp là một 302 sang tên miền của Keycloak, và
  *  người dùng PHẢI nhìn thấy thanh địa chỉ đó để biết mình đang gõ mật khẩu ở
  *  đâu. Một luồng đăng nhập chạy ngầm trong XHR là đúng hình dạng của một trang
  *  lừa đảo. */
 export function startLogin(returnTo?: string): void {
   const qs = returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : "";
   window.location.href = `${BASE}/auth/login${qs}`;
+}
+
+/**
+ * Kết thúc phiên bằng một navigation toàn trang: backend phải xoá cookie
+ * HttpOnly trước, rồi mới chuyển browser sang Keycloak RP-initiated logout.
+ * Giữ đường dẫn dưới `/api` để Vite/reverse proxy luôn chuyển nó tới Mini CRM,
+ * giống hệt đường `/auth/login` ở trên.
+ */
+export function startLogout(): void {
+  window.location.replace(`${BASE}/auth/logout`);
 }
 
 export class ApiError extends Error {
@@ -89,7 +99,7 @@ export async function apiFetch<T = unknown>(
 
     // 401 trên một request BẤT KỲ = phiên đã hết hạn giữa chừng. Thử gia hạn
     // im lặng đúng MỘT lần rồi phát lại request; vẫn hỏng thì mới đẩy người
-    // dùng về Entra. Không thử lại vòng hai: hai lần 401 liên tiếp nghĩa là
+    // dùng về Keycloak. Không thử lại vòng hai: hai lần 401 liên tiếp nghĩa là
     // refresh token cũng đã chết, và lặp thêm chỉ tạo vòng redirect vô hạn.
     if (res.status === 401 && !skipAuthRecovery && !path.startsWith("/auth/")) {
       const recovered = await tryRefreshSession();

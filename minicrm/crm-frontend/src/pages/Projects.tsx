@@ -30,7 +30,7 @@ export function Projects() {
 
   useEffect(() => { reload(); }, [search]);
 
-  async function handleCreate(data: { name: string; launch_date: string }) {
+  async function handleCreate(data: { name: string; location?: string; launch_date: string }) {
     try {
       setError("");
       await createProject(data);
@@ -39,7 +39,7 @@ export function Projects() {
     } catch (e) { setError((e as Error).message); }
   }
 
-  async function handleUpdate(data: { name: string; launch_date: string }) {
+  async function handleUpdate(data: { name: string; location?: string; launch_date: string }) {
     if (!editing) return;
     try {
       setError("");
@@ -88,6 +88,7 @@ export function Projects() {
             <tr>
               <th className="th-cell">ID</th>
               <th className="th-cell">Dự án</th>
+              <th className="th-cell">Địa điểm</th>
               <th className="th-cell">Ngày mở bán</th>
               <th className="th-cell">Phân khu</th>
               <th className="th-cell">Tổng SP</th>
@@ -100,6 +101,7 @@ export function Projects() {
               <tr key={p.id} onClick={() => navigate(`/projects/${p.id}`)} className="cursor-pointer hover:bg-surface-page">
                 <td className="td-cell font-mono text-xs text-ink-muted">{p.id}</td>
                 <td className="td-cell font-semibold text-ink">{p.name}</td>
+                <td className="td-cell text-ink-muted">{p.location}</td>
                 <td className="td-cell text-ink-muted">{p.tagline}</td>
                 <td className="td-cell">{p.areas}</td>
                 <td className="td-cell">{formatNumber(p.totalUnits)}</td>
@@ -119,7 +121,7 @@ export function Projects() {
               </tr>
             ))}
             {projects.length === 0 && (
-              <tr><td colSpan={7} className="py-12 text-center text-ink-muted">Chưa có dự án nào. Nhấn "Tạo dự án" để bắt đầu.</td></tr>
+              <tr><td colSpan={8} className="py-12 text-center text-ink-muted">Chưa có dự án nào. Nhấn "Tạo dự án" để bắt đầu.</td></tr>
             )}
           </tbody>
         </table>
@@ -129,7 +131,7 @@ export function Projects() {
       {showCreate && <ProjectModal onClose={() => setShowCreate(false)} onSave={handleCreate} />}
       {editing && (
         <ProjectModal
-          project={{ id: editing.id, name: editing.name, launch_date: editing.tagline?.replace("Ngày mở bán: ", "") }}
+          project={{ id: editing.id, name: editing.name, location: editing.location, launch_date: editing.tagline?.replace("Ngày mở bán: ", "") }}
           onClose={() => setEditing(null)}
           onSave={handleUpdate}
         />

@@ -30,7 +30,6 @@ import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.db import get_session_factory
-from src.logging_config import get_logger
 from src.models.schemas import (
     RankedUnitOut,
     RankingConfigDraftIn,
@@ -56,8 +55,6 @@ router = APIRouter(tags=["ranking"])
 require_viewer = require_role("business_viewer")
 require_operator = require_role("pipeline_operator")
 require_admin = require_role("admin")
-log = get_logger("src.api.ranking")
-
 MAX_UNITS_PER_PAGE = 200
 BANDS = ("high", "medium", "low")
 
@@ -161,6 +158,56 @@ async def get_ranking(
     area_uuid = await _resolve_area(external_area_id)
 
     async with get_session_factory()() as session:
+        # Metadata phải được đọc độc lập với bảng điểm đã lọc. Nếu dùng dòng
+        # đầu của `rows`, một run hoàn tất nhưng không có score (hoặc một filter
+        # không khớp score nào) sẽ bị nói nhầm là chưa từng chạy.
+        score_meta = (
+            await session.execute(
+                sa.select(
+                    ranking_scores.c.ranking_run_id,
+                    ranking_scores.c.computed_at,
+                    ranking_runs.c.units_processed,
+                    ranking_runs.c.units_ranked,
+                    ranking_runs.c.units_skipped,
+                    ranking_configs.c.version,
+                )
+                .select_from(
+                    ranking_scores.join(ranking_runs, ranking_scores.c.ranking_run_id == ranking_runs.c.id).join(
+                        ranking_configs, ranking_runs.c.config_version_id == ranking_configs.c.id
+                    )
+                )
+                .where(ranking_scores.c.project_id == project_uuid)
+                .order_by(ranking_scores.c.computed_at.desc())
+                .limit(1)
+            )
+        ).mappings().first()
+
+        # A completed zero-score run intentionally leaves `ranking_scores`
+        # empty. Its append-only run row is therefore the only authoritative
+        # evidence that ranking did happen and why it returned no candidates.
+        completed_run_meta = None
+        if score_meta is None:
+            completed_run_meta = (
+                await session.execute(
+                    sa.select(
+                        ranking_runs.c.id.label("ranking_run_id"),
+                        ranking_runs.c.finished_at.label("computed_at"),
+                        ranking_runs.c.units_processed,
+                        ranking_runs.c.units_ranked,
+                        ranking_runs.c.units_skipped,
+                        ranking_configs.c.version,
+                    )
+                    .select_from(
+                        ranking_runs.join(
+                            ranking_configs, ranking_runs.c.config_version_id == ranking_configs.c.id
+                        )
+                    )
+                    .where(ranking_runs.c.project_id == project_uuid, ranking_runs.c.status == "completed")
+                    .order_by(ranking_runs.c.finished_at.desc(), ranking_runs.c.enqueued_at.desc())
+                    .limit(1)
+                )
+            ).mappings().first()
+
         query = (
             sa.select(
                 ranking_scores.c.unit_id,
@@ -192,23 +239,7 @@ async def get_ranking(
 
         rows = list((await session.execute(query)).mappings().all())
 
-        run_meta = None
-        if rows:
-            run_meta = (
-                await session.execute(
-                    sa.select(
-                        ranking_runs.c.units_ranked,
-                        ranking_runs.c.units_skipped,
-                        ranking_configs.c.version,
-                    )
-                    .select_from(
-                        ranking_runs.join(
-                            ranking_configs, ranking_runs.c.config_version_id == ranking_configs.c.id
-                        )
-                    )
-                    .where(ranking_runs.c.id == rows[0]["ranking_run_id"])
-                )
-            ).mappings().first()
+        run_meta = score_meta or completed_run_meta
 
     # Mức được tính MỘT lần ở đây rồi dùng lại cho cả bộ lọc lẫn phần đếm, để
     # con số trên chip lọc và số dòng thực tế không bao giờ lệch nhau.
@@ -218,10 +249,25 @@ async def get_ranking(
     matched = [(row, b) for row, b in banded if band is None or b == band]
     page = matched[offset : offset + limit]
 
+    state = "ready"
+    reason = None
+    if run_meta is None:
+        state = "not_run"
+        reason = "RANKING_NOT_RUN"
+    elif run_meta["units_processed"] == 0:
+        state = "insufficient_data"
+        reason = "NO_LIVE_UNITS"
+    elif run_meta["units_ranked"] == 0:
+        state = "insufficient_data"
+        reason = "NO_UNITS_MET_COVERAGE"
+
     return RankingOut(
         project_id=str(project_uuid),
         external_project_id=project_external_id,
-        computed_at=rows[0]["computed_at"] if rows else None,
+        ranking_run_id=str(run_meta["ranking_run_id"]) if run_meta else None,
+        state=state,
+        reason=reason,
+        computed_at=run_meta["computed_at"] if run_meta else None,
         config_version=run_meta["version"] if run_meta else None,
         units_ranked=run_meta["units_ranked"] if run_meta else 0,
         units_skipped=run_meta["units_skipped"] if run_meta else 0,

@@ -18,10 +18,53 @@ lập ở đây thành lời hứa suông.
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
+from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Đường dẫn Compose `secrets:` mount vào MỌI container có khai secret đó —
+# cố định theo quy ước Docker, không cấu hình được qua biến môi trường. Xem
+# `docker-compose.yml` (khối `secrets:` + `services.minicrm.secrets`) và
+# `scripts/dev-reset.sh`.
+SYNC_API_KEY_SECRET_FILE = Path("/run/secrets/minicrm_sync_api_key")
+
+
+def _read_sync_api_key_secret_file(path: Path | None = None) -> str | None:
+    """Đọc khoá từ file bí mật Compose. `None` nếu file không tồn tại hoặc rỗng
+    sau khi cắt newline cuối — KHÔNG cắt khoảng trắng bên trong, chỉ cắt đúng
+    newline mà `docker compose` (hoặc `printf`) có thể để lại ở cuối file.
+
+    `path=None` đọc lại biến MODULE `SYNC_API_KEY_SECRET_FILE` NGAY LÚC GỌI
+    (không phải lúc định nghĩa hàm) — cố ý, để test monkeypatch được nó. Một
+    default parameter kiểu `path: Path = SYNC_API_KEY_SECRET_FILE` sẽ bind
+    GIÁ TRỊ ban đầu một lần duy nhất lúc nạp module, và monkeypatch sau đó sẽ
+    không có tác dụng gì với hàm này — đúng lỗi đã bắt được khi viết test.
+    """
+    if path is None:
+        path = SYNC_API_KEY_SECRET_FILE
+    try:
+        raw = path.read_text()
+    except (FileNotFoundError, IsADirectoryError, PermissionError):
+        return None
+    value = raw.rstrip("\n")
+    return value or None
+
+# Phải khớp `app/session.py::CANONICAL_APP_ROLES` — trùng lặp CÓ CHỦ Ý (không
+# import: `config.py` không được phụ thuộc vào tầng service) để canh đúng một
+# việc: MINICRM_OIDC_ROLE_MAP không được định nghĩa lại ba khoá vai trò chuẩn
+# này thành một giá trị khác ở `_reject_conflicting_canonical_role_map` dưới đây.
+_CANONICAL_APP_ROLES = {
+    "CRM.CEO": "admin",
+    "CRM.Admin": "admin",
+    "CRM.ADVISOR": "business_viewer",
+    "CRM.Viewer": "business_viewer",
+    "CRM.SALES": "pipeline_operator",
+    "CRM.Operator": "pipeline_operator",
+}
 
 
 class Settings(BaseSettings):
@@ -47,6 +90,7 @@ class Settings(BaseSettings):
     sync_base_url: str = "http://api:8000"
     sync_api_key: SecretStr = SecretStr("")
     sync_timeout_seconds: float = Field(default=10.0, gt=0)
+    redis_url: SecretStr = SecretStr("redis://redis:6379/0")
 
     # Danh tính hệ nguồn mà backend sẽ thấy. `source_instance_id` là ranh giới cô
     # lập ở phía backend, và khoá API bị buộc vào đúng giá trị này.
@@ -80,7 +124,7 @@ class Settings(BaseSettings):
     # Các field này thuộc về `app/human_auth.py` + `app/auth_contract.py` (JWT
     # nội bộ HS256, lifecycle mời/đăng nhập/đặt lại mật khẩu). Chúng bị mất khi
     # merge/conflict đè config, nên `test_auth_contract.py` fail. Khôi phục
-    # nguyên vẹn ở đây — Entra (bên dưới) là hệ THỨ HAI sống song song, không
+    # nguyên vẹn ở đây — Keycloak (bên dưới) là hệ THỨ HAI sống song song, không
     # thay thế hệ này. Ràng buộc lấy từ chính test contract của đội:
     #   - algorithm PHẢI là HS256 (JWT ký đối xứng bằng auth_signing_secret)
     #   - mọi TTL PHẢI > 0
@@ -95,6 +139,12 @@ class Settings(BaseSettings):
     password_reset_token_ttl_seconds: int = Field(default=3_600, gt=0)
     login_rate_limit_attempts: int = Field(default=5, ge=1)
     login_rate_limit_window_seconds: float = Field(default=60.0, gt=0)
+    # Ngưỡng rộng hơn login: logout hợp lệ có thể bị gọi lặp (nhiều tab, nút bấm
+    # kép) mà không phải tấn công — nhưng vẫn cần một trần cứng để một client
+    # không dội hàng nghìn request thu hồi vào Redis + endpoint revoke của
+    # Keycloak mỗi giây.
+    logout_rate_limit_attempts: int = Field(default=20, ge=1)
+    logout_rate_limit_window_seconds: float = Field(default=60.0, gt=0)
     # "global_visibility" = mọi human đã xác thực đọc được toàn bộ (Phase 4a).
     authorization_mode: str = "global_visibility"
     # Cửa dev CHỈ cho localhost + APP_ENV=development; mặc định TẮT.
@@ -104,8 +154,8 @@ class Settings(BaseSettings):
     @classmethod
     def _only_hs256_for_human_auth(cls, value: str) -> str:
         # JWT nội bộ của human_auth ký ĐỐI XỨNG bằng auth_signing_secret. Chỉ
-        # HS* hợp lệ; RS256 (bất đối xứng) là của đường Entra, không dùng ở đây.
-        # Test contract của đội canh đúng điểm này.
+        # HS* hợp lệ; RS256 (bất đối xứng) là của đường Keycloak, không dùng ở
+        # đây. Test contract của đội canh đúng điểm này.
         if value not in {"HS256", "HS384", "HS512"}:
             raise ValueError(f"auth_algorithm phải là HS256/HS384/HS512, nhận '{value}'")
         return value
@@ -121,33 +171,46 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def _reject_conflicting_canonical_role_map(self) -> "Settings":
+        """CRM.CEO/CRM.ADVISOR/CRM.SALES là vai trò nghiệp vụ chuẩn, dùng chung
+        với Product/AbsorbIQ (`app/session.py::CANONICAL_APP_ROLES`) — cố định
+        trong code. Nếu `MINICRM_OIDC_ROLE_MAP` cố tình gán một trong ba khoá
+        này cho một vai trò nội bộ KHÁC, đó là một cấu hình mâu thuẫn: từ chối
+        ngay lúc khởi động thay vì để `resolve_role` phải âm thầm quyết định bên
+        nào thắng.
+        """
+        raw = self.oidc_role_map.get_secret_value()
+        if not raw:
+            return self
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            return self
+        if not isinstance(parsed, dict):
+            return self
+        for key, canonical_value in _CANONICAL_APP_ROLES.items():
+            configured_value = parsed.get(key)
+            if configured_value is not None and configured_value != canonical_value:
+                raise ValueError(
+                    f"MINICRM_OIDC_ROLE_MAP đặt '{key}' thành '{configured_value}', nhưng đây là "
+                    f"vai trò chuẩn cố định trong code ('{canonical_value}'). Xoá khoá này khỏi "
+                    "MINICRM_OIDC_ROLE_MAP, hoặc dùng đúng giá trị chuẩn."
+                )
+        return self
 
-    # --- Microsoft Entra ID (CP4) -------------------------------------------
-    # KHÔNG hard-code bất cứ giá trị nào dưới đây. Rỗng = đường Entra CHƯA bật
-    # (`app/entra.py::entra_configured()`), không phải "mở".
-    entra_tenant_id: str = ""
-    entra_client_id: str = ""
-    entra_client_secret: SecretStr = SecretStr("")
-    entra_redirect_uri: str = ""
-    entra_post_logout_redirect_uri: str = ""
-    entra_authority_host: str = "https://login.microsoftonline.com"
-    # Chỉ đặt khi tenant phát `iss`/`aud` khác mặc định (B2C/CIAM, hoặc IdP giả
-    # lập trong test). Rỗng ⇒ suy ra từ tenant/client id.
-    entra_issuer: str = ""
-    entra_audience: str = ""
-    entra_scopes: str = "openid profile email offline_access"
-    entra_allowed_algorithms: str = "RS256"
-    entra_clock_skew_seconds: int = Field(default=60, ge=0, le=300)
-    # JSON {"<app-role|group-id>": "admin|pipeline_operator|business_viewer"}.
-    # Không khớp claim nào = KHÔNG có vai trò (403), xem app/session.py.
-    entra_role_map: SecretStr = SecretStr("")
-    # JSON {"<app-role|group-id>": ["P-0001"] | "ALL"}. Vắng mặt = phạm vi RỖNG.
-    entra_project_scope: SecretStr = SecretStr("")
+    # --- Auth provider -----------------------------------------------------
+    # Chỉ Keycloak được hỗ trợ ở runtime. Khai báo TƯỜNG MINH — không còn Entra
+    # để chọn — để một biến môi trường thất lạc/kiểu cũ không bao giờ có thể ÂM
+    # THẦM bật một đường xác thực khác: giá trị nào khác "keycloak" bị Pydantic
+    # từ chối ngay lúc khởi động.
+    auth_provider: Literal["keycloak"] = "keycloak"
 
-    # --- Generic OIDC (Keycloak local, hoặc IdP OIDC bất kỳ) -----------------
-    # Tiền tố env MINICRM_ (env_prefix). §12: MINICRM_OIDC_* set ⇒ dùng OIDC;
-    # rỗng ⇒ rơi về MINICRM_ENTRA_*. ISSUER = URL CÔNG KHAI/front-channel;
+    # --- OIDC / Keycloak (SSO) -----------------------------------------------
+    # Tiền tố env MINICRM_ (env_prefix). ISSUER = URL CÔNG KHAI/front-channel;
     # INTERNAL_BASE_URL = URL back-channel qua Docker DNS. Xem app/oidc.py.
+    # KHÔNG hard-code — rỗng nghĩa là đường đăng nhập người dùng TẮT (503 rõ
+    # ràng ở route auth, không phải "mở").
     oidc_issuer: str = ""
     oidc_internal_base_url: str = ""
     oidc_client_id: str = ""
@@ -158,6 +221,11 @@ class Settings(BaseSettings):
     oidc_audience: str = ""
     oidc_allowed_algorithms: str = "RS256"
     oidc_clock_skew_seconds: int = Field(default=60, ge=0, le=300)
+    # JSON {"<claim|group-id>": "admin|pipeline_operator|business_viewer"}.
+    # Không khớp claim nào = KHÔNG có vai trò (403), xem app/session.py.
+    oidc_role_map: SecretStr = SecretStr("")
+    # JSON {"<claim|group-id>": ["P-0001"] | "ALL"}. Vắng mặt = phạm vi RỖNG.
+    oidc_project_scope: SecretStr = SecretStr("")
 
     # --- Phiên đăng nhập (cookie HttpOnly do Mini CRM tự ký) ------------------
     session_secret: SecretStr = SecretStr("")
@@ -167,7 +235,7 @@ class Settings(BaseSettings):
 
     # --- Tương thích ngược cho token TĨNH (D-14) -----------------------------
     # MẶC ĐỊNH TẮT. Bật chỉ cho dev/CI hoặc đường máy-với-máy; production dùng
-    # Entra. Đây là cờ opt-in TƯỜNG MINH, không phải fallback âm thầm.
+    # Keycloak. Đây là cờ opt-in TƯỜNG MINH, không phải fallback âm thầm.
     legacy_token_auth_enabled: bool = False
 
     # --- Liên kết sang Product/AbsorbIQ (CP6) --------------------------------
@@ -185,7 +253,29 @@ class Settings(BaseSettings):
 
     @property
     def sync_api_key_value(self) -> str:
-        return self.sync_api_key.get_secret_value()
+        """Khoá `X-API-Key` gửi sang AbsorpIQ.
+
+        Ưu tiên file bí mật Compose (`/run/secrets/minicrm_sync_api_key`,
+        mount READ-ONLY qua `secrets:` — không lộ qua `docker inspect`, không
+        nằm trong biến môi trường container nên không lộ qua
+        `docker compose config`/log biến môi trường). `MINICRM_SYNC_API_KEY`
+        (env, từ `.env`) là đường TƯƠNG THÍCH NGƯỢC — dùng khi chạy host-mode
+        hoặc test, nơi không có Compose secrets. Thiếu cả hai -> lỗi cấu hình
+        RÕ RÀNG ngay lúc gọi, không âm thầm gửi khoá rỗng (chuỗi rỗng vẫn là
+        `str`, sẽ lọt qua mọi kiểm `is None`).
+        """
+        from_file = _read_sync_api_key_secret_file()
+        if from_file is not None:
+            return from_file
+        from_env = self.sync_api_key.get_secret_value()
+        if from_env:
+            return from_env
+        raise RuntimeError(
+            "Thiếu sync API key: không thấy /run/secrets/minicrm_sync_api_key "
+            "và MINICRM_SYNC_API_KEY cũng rỗng. Chạy `make dev-reset` (hoặc "
+            "`./scripts/dev-reset.sh --yes`) để cấp credential cho dev cục bộ, "
+            "hoặc đặt MINICRM_SYNC_API_KEY thủ công khi chạy ngoài Compose."
+        )
 
 
 @lru_cache

@@ -75,6 +75,8 @@ pytestmark = [
 ]
 
 PROJECT_ID = uuid.UUID("d4e5f6a7-b8c9-4012-8345-6789abcdef01")
+PROJECT_EXTERNAL_ID = "P-RECON-0001"
+OTHER_PROJECT_EXTERNAL_ID = "P-RECON-OTHER"
 INSTANCE = "synthetic-recon-crm"
 SOURCE_SYSTEM = "mini_crm"
 
@@ -125,8 +127,11 @@ async def db_env(session_factory, monkeypatch):
         async with session.begin():
             await wipe(session)
             await session.execute(
-                sa.text("INSERT INTO projects (id, name, launch_date, created_at) VALUES (:id, 'RECON', :d, :ts)"),
-                {"id": PROJECT_ID, "d": date(2026, 1, 1), "ts": datetime.now(UTC)},
+                sa.text(
+                    "INSERT INTO projects (id, name, launch_date, created_at, external_id) "
+                    "VALUES (:id, 'RECON', :d, :ts, :ext)"
+                ),
+                {"id": PROJECT_ID, "d": date(2026, 1, 1), "ts": datetime.now(UTC), "ext": PROJECT_EXTERNAL_ID},
             )
             await session.execute(
                 sa.insert(areas),
@@ -977,6 +982,99 @@ async def test_findings_are_machine_readable(client):
     assert scoped["details"]["project_id"] == str(PROJECT_ID)
 
 
+async def test_reconciliation_run_detail_requires_a_key(client, session_factory):
+    """`GET /reconciliation/runs/{id}` từng hoàn toàn không có xác thực."""
+    result = await _reconcile(client)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as anonymous:
+        response = await anonymous.get(f"{RECON_URL}/{result['reconciliation_run_id']}")
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["error_code"] == "MISSING_API_KEY"
+
+
+async def test_reconciliation_findings_require_a_key(client):
+    result = await _reconcile(client)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as anonymous:
+        response = await anonymous.get(f"{RECON_URL}/{result['reconciliation_run_id']}/findings")
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["error_code"] == "MISSING_API_KEY"
+
+
+async def test_reconciliation_run_detail_rejects_an_unknown_key(client):
+    result = await _reconcile(client)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test", headers={"X-API-Key": "afsk_khong-ton-tai"}
+    ) as unknown:
+        response = await unknown.get(f"{RECON_URL}/{result['reconciliation_run_id']}")
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["error_code"] == "INVALID_API_KEY"
+
+
+async def test_reconciliation_run_detail_rejects_a_key_from_another_instance(client, session_factory):
+    """Không dựa vào UUID khó đoán — một khoá THẬT nhưng khác instance vẫn bị chặn."""
+    from src.services.sync_credentials import SyncCredentialService
+
+    result = await _reconcile(client)
+
+    async with session_factory() as session:
+        async with session.begin():
+            stranger = await SyncCredentialService().issue(
+                session, source_system=SOURCE_SYSTEM, source_instance_id="synthetic-recon-stranger-read", label="x"
+            )
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test", headers={"X-API-Key": stranger.api_key}
+        ) as other:
+            detail_response = await other.get(f"{RECON_URL}/{result['reconciliation_run_id']}")
+            findings_response = await other.get(f"{RECON_URL}/{result['reconciliation_run_id']}/findings")
+    finally:
+        async with session_factory() as session:
+            async with session.begin():
+                await session.execute(
+                    sa.text("DELETE FROM sync_credentials WHERE source_instance_id = 'synthetic-recon-stranger-read'")
+                )
+
+    assert detail_response.status_code == 403
+    assert detail_response.json()["detail"]["error_code"] == "INSTANCE_MISMATCH"
+    assert findings_response.status_code == 403
+    assert findings_response.json()["detail"]["error_code"] == "INSTANCE_MISMATCH"
+
+
+async def test_reconciliation_run_detail_allows_the_owning_instance(client):
+    """Đường vốn có vẫn hoạt động: đúng khoá của instance sở hữu lượt chạy."""
+    result = await _reconcile(client)
+
+    response = await client.get(f"{RECON_URL}/{result['reconciliation_run_id']}")
+
+    assert response.status_code == 200
+    assert response.json()["reconciliation_run_id"] == result["reconciliation_run_id"]
+
+
+async def test_reconciliation_run_detail_malformed_uuid_is_422(client):
+    response = await client.get(f"{RECON_URL}/khong-phai-uuid")
+    assert response.status_code == 422
+    assert response.json()["detail"]["error_code"] == "INVALID_RECONCILIATION_RUN_ID"
+
+
+async def test_reconciliation_run_detail_unknown_run_is_404(client):
+    response = await client.get(f"{RECON_URL}/{uuid.uuid4()}")
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "RECONCILIATION_RUN_NOT_FOUND"
+
+
+async def test_reconciliation_findings_unknown_run_is_404_not_an_empty_list(client):
+    """Trước bản vá: run_id lạ trả 200 kèm danh sách rỗng, im lặng sai — giờ 404."""
+    response = await client.get(f"{RECON_URL}/{uuid.uuid4()}/findings")
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "RECONCILIATION_RUN_NOT_FOUND"
+
+
 async def test_reconciliation_requires_a_key_for_its_instance(session_factory):
     """Không mượn được danh nghĩa hệ nguồn khác để chạy đối soát."""
     from src.services.sync_credentials import SyncCredentialService
@@ -999,3 +1097,204 @@ async def test_reconciliation_requires_a_key_for_its_instance(session_factory):
             await session.execute(
                 sa.text("DELETE FROM sync_credentials WHERE source_instance_id = 'synthetic-recon-stranger'")
             )
+
+
+# --- Đường vai trò dashboard (Keycloak/token tĩnh) — người dùng thật -------
+#
+# Ba route ở trên vốn CHỈ xác thực bằng khoá CRM (X-API-Key) — một người dùng
+# dashboard thật (CEO/Advisor/Sales) không có khoá đó và không nên cần nó.
+# Bộ test dưới đây kiểm đường THỨ HAI, cộng thêm, không thay thế đường trên:
+# `Authorization: Bearer <token vai trò>` (Keycloak session hoặc token tĩnh).
+
+
+def _bearer(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def test_reconciliation_run_detail_rejects_an_invalid_dashboard_token(client):
+    result = await _reconcile(client)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as anon:
+        response = await anon.get(f"{RECON_URL}/{result['reconciliation_run_id']}", headers=_bearer("not-a-real-token"))
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["error_code"] == "INVALID_CREDENTIALS"
+
+
+async def test_reconciliation_run_detail_viewer_with_no_scope_is_403(client):
+    """Vai trò dashboard hợp lệ (`business_viewer`) nhưng phạm vi RỖNG → 403,
+    không phải 401: danh tính đúng, chỉ là không được cấp dự án nào."""
+    from tests.conftest import DASHBOARD_VIEWER_TOKEN
+
+    result = await _reconcile(client)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as anon:
+        response = await anon.get(
+            f"{RECON_URL}/{result['reconciliation_run_id']}", headers=_bearer(DASHBOARD_VIEWER_TOKEN)
+        )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "PROJECT_OUT_OF_SCOPE"
+
+
+async def test_reconciliation_run_detail_viewer_in_scope_is_allowed(client, monkeypatch):
+    """`business_viewer` với đúng dự án trong phạm vi → ĐỌC được, không cần vai
+    trò cao hơn — đọc kết quả đối soát không phải hành động ghi."""
+    import json
+
+    from src.config import get_settings
+    from tests.conftest import DASHBOARD_VIEWER_TOKEN
+
+    result = await _reconcile(client)
+
+    monkeypatch.setenv("DASHBOARD_PROJECT_SCOPE", json.dumps({DASHBOARD_VIEWER_TOKEN: [PROJECT_EXTERNAL_ID]}))
+    get_settings.cache_clear()
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as anon:
+            response = await anon.get(
+                f"{RECON_URL}/{result['reconciliation_run_id']}", headers=_bearer(DASHBOARD_VIEWER_TOKEN)
+            )
+    finally:
+        get_settings.cache_clear()
+
+    assert response.status_code == 200
+    assert response.json()["reconciliation_run_id"] == result["reconciliation_run_id"]
+
+
+async def test_reconciliation_run_detail_viewer_scoped_to_another_project_is_403(client, monkeypatch):
+    """Token vai trò hợp lệ, có phạm vi CẤP, nhưng phạm vi đó là một dự án KHÁC —
+    một `run_id` (UUID) hợp lệ không được đối xử như một quyết định cấp quyền."""
+    import json
+
+    from src.config import get_settings
+    from tests.conftest import DASHBOARD_VIEWER_TOKEN
+
+    result = await _reconcile(client)
+
+    monkeypatch.setenv("DASHBOARD_PROJECT_SCOPE", json.dumps({DASHBOARD_VIEWER_TOKEN: [OTHER_PROJECT_EXTERNAL_ID]}))
+    get_settings.cache_clear()
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as anon:
+            detail_response = await anon.get(
+                f"{RECON_URL}/{result['reconciliation_run_id']}", headers=_bearer(DASHBOARD_VIEWER_TOKEN)
+            )
+            findings_response = await anon.get(
+                f"{RECON_URL}/{result['reconciliation_run_id']}/findings", headers=_bearer(DASHBOARD_VIEWER_TOKEN)
+            )
+    finally:
+        get_settings.cache_clear()
+
+    assert detail_response.status_code == 403
+    assert detail_response.json()["detail"]["error_code"] == "PROJECT_OUT_OF_SCOPE"
+    assert findings_response.status_code == 403
+    assert findings_response.json()["detail"]["error_code"] == "PROJECT_OUT_OF_SCOPE"
+
+
+async def test_reconciliation_run_detail_allows_an_admin_token_with_all_scope(client):
+    from tests.conftest import DASHBOARD_ADMIN_TOKEN
+
+    result = await _reconcile(client)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as anon:
+        response = await anon.get(
+            f"{RECON_URL}/{result['reconciliation_run_id']}", headers=_bearer(DASHBOARD_ADMIN_TOKEN)
+        )
+
+    assert response.status_code == 200
+    assert response.json()["reconciliation_run_id"] == result["reconciliation_run_id"]
+
+
+async def test_reconciliation_findings_allows_an_admin_token_with_all_scope(client):
+    """Mặt đọc "export/download" của đối soát — cùng route `findings`."""
+    from tests.conftest import DASHBOARD_ADMIN_TOKEN
+
+    await _seed_units(client, count=2)
+    result = await _reconcile(client)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as anon:
+        response = await anon.get(
+            f"{RECON_URL}/{result['reconciliation_run_id']}/findings", headers=_bearer(DASHBOARD_ADMIN_TOKEN)
+        )
+
+    assert response.status_code == 200
+    assert isinstance(response.json()["findings"], list)
+
+
+async def test_start_reconciliation_business_viewer_is_403_and_creates_no_run(client, session_factory):
+    """Đọc thì được, GHI (chạy một lượt đối soát) thì không — `business_viewer`
+    không phải `pipeline_operator`. Từ chối phải KHÔNG để lại dấu vết trong DB."""
+    from tests.conftest import DASHBOARD_VIEWER_TOKEN
+
+    async with session_factory() as session:
+        before = await session.scalar(
+            sa.select(sa.func.count()).select_from(reconciliation_runs).where(reconciliation_runs.c.project_id == PROJECT_ID)
+        )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as anon:
+        response = await anon.post(
+            RECON_URL,
+            json={"project_id": str(PROJECT_ID), "source_instance_id": INSTANCE},
+            headers=_bearer(DASHBOARD_VIEWER_TOKEN),
+        )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "INSUFFICIENT_ROLE"
+
+    async with session_factory() as session:
+        after = await session.scalar(
+            sa.select(sa.func.count()).select_from(reconciliation_runs).where(reconciliation_runs.c.project_id == PROJECT_ID)
+        )
+    assert after == before, "một request bị từ chối đã tạo ra một lượt đối soát"
+
+
+async def test_start_reconciliation_operator_token_with_all_scope_is_allowed(client):
+    """`pipeline_operator` (hoặc cao hơn) với phạm vi `ALL` — kích hoạt được đối
+    soát: đây là "hành động vận hành" theo đúng chính sách Sales/pipeline_operator."""
+    from tests.conftest import DASHBOARD_OPERATOR_TOKEN
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as anon:
+        response = await anon.post(
+            RECON_URL,
+            json={"project_id": str(PROJECT_ID), "source_instance_id": INSTANCE},
+            headers=_bearer(DASHBOARD_OPERATOR_TOKEN),
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["passed"] is True
+
+
+async def test_start_reconciliation_operator_out_of_project_scope_is_403_and_creates_no_run(
+    client, monkeypatch, session_factory
+):
+    """Vai trò đủ, nhưng dự án nằm ngoài phạm vi CẤP cho token — không có
+    "vai trò cao thì bỏ qua phạm vi" (§A7.3). Từ chối không được để lại dấu vết."""
+    import json
+
+    from src.config import get_settings
+    from tests.conftest import DASHBOARD_OPERATOR_TOKEN
+
+    async with session_factory() as session:
+        before = await session.scalar(
+            sa.select(sa.func.count()).select_from(reconciliation_runs).where(reconciliation_runs.c.project_id == PROJECT_ID)
+        )
+
+    monkeypatch.setenv("DASHBOARD_PROJECT_SCOPE", json.dumps({DASHBOARD_OPERATOR_TOKEN: [OTHER_PROJECT_EXTERNAL_ID]}))
+    get_settings.cache_clear()
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as anon:
+            response = await anon.post(
+                RECON_URL,
+                json={"project_id": str(PROJECT_ID), "source_instance_id": INSTANCE},
+                headers=_bearer(DASHBOARD_OPERATOR_TOKEN),
+            )
+    finally:
+        get_settings.cache_clear()
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "PROJECT_OUT_OF_SCOPE"
+
+    async with session_factory() as session:
+        after = await session.scalar(
+            sa.select(sa.func.count()).select_from(reconciliation_runs).where(reconciliation_runs.c.project_id == PROJECT_ID)
+        )
+    assert after == before, "một request bị từ chối đã tạo ra một lượt đối soát"

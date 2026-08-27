@@ -1,0 +1,77 @@
+/* AbsorptionForecast / P-100 — brand overlay for keycloak.v2 login.
+   Cosmetic only. Failure here degrades to base v2 styling; login still works. */
+
+:root {
+  --af-gold: #c9a227;
+  --af-gold-light: #e4c25a;
+  --af-ink: #0f1115;
+  --af-ink-2: #171a21;
+  --af-card: #1b1f27;
+  --af-border: rgba(201, 162, 39, 0.28);
+}
+
+/* Page background */
+html,
+body,
+body.login-pf,
+.login-pf-page,
+.pf-v5-c-login,
+.pf-v5-c-background-image {
+  background: radial-gradient(1200px 600px at 50% -10%, #1d222c 0%, var(--af-ink) 60%) !important;
+}
+
+/* Brand header (realm displayNameHtml renders here) */
+#kc-header,
+#kc-header-wrapper {
+  color: var(--af-gold) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.14em !important;
+  text-transform: uppercase !important;
+  font-size: 26px !important;
+  padding-top: 8px !important;
+}
+#kc-header-wrapper::before {
+  content: "";
+  display: block;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 14px;
+  background: url("../img/logo.svg") center / contain no-repeat;
+}
+
+/* Login card */
+.pf-v5-c-login__main,
+.card-pf,
+#kc-content-wrapper .pf-v5-c-login__main {
+  background: var(--af-card) !important;
+  border: 1px solid var(--af-border) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45) !important;
+}
+
+/* Primary button -> brand gold */
+.pf-v5-c-button.pf-m-primary,
+input[type="submit"].pf-v5-c-button.pf-m-primary,
+#kc-login {
+  background: linear-gradient(90deg, var(--af-gold), var(--af-gold-light)) !important;
+  border-color: var(--af-gold) !important;
+  color: #1a1400 !important;
+  font-weight: 600 !important;
+}
+.pf-v5-c-button.pf-m-primary:hover {
+  filter: brightness(1.05);
+}
+
+/* Links (Register / Forgot password) */
+a,
+#kc-registration a,
+#kc-info-wrapper a {
+  color: var(--af-gold-light) !important;
+}
+
+/* Inputs focus accent */
+.pf-v5-c-form-control:focus,
+input:focus {
+  outline-color: var(--af-gold) !important;
+  border-color: var(--af-gold) !important;
+}

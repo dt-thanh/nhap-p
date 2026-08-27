@@ -32,6 +32,9 @@ crm_projects = sa.Table(
     # dùng lại — giả định A1 của hợp đồng, áp dụng cho CẢ BỐN tầng ở v2.
     sa.Column("external_id", sa.Text(), nullable=False),
     sa.Column("name", sa.Text(), nullable=False),
+    # Optional location metadata owned by Mini CRM. It is intentionally not
+    # part of the v2 sync payload yet; the backend has no corresponding field.
+    sa.Column("location", sa.Text(), nullable=True),
     sa.Column("launch_date", sa.Date(), nullable=False),
     # 'active' | 'archived'. KHÔNG có 'pending'/'rejected' — không có quy trình
     # duyệt nào ở Mini CRM cho dự án của chính nó.
@@ -92,6 +95,10 @@ crm_units = sa.Table(
     sa.Column("unit_type", sa.Text(), nullable=False),
     sa.Column("unit_code", sa.Text(), nullable=False),
     sa.Column("unit_status", sa.Text(), nullable=False),
+    # Giá niêm yết/chính thức (0008) — KHÔNG phải giá giao dịch thực
+    # (`transaction_price` chưa tồn tại, xem docstring migration 0008). NULL =
+    # chưa biết giá, khác với một giá trị 0 (bị CHECK chặn).
+    sa.Column("listing_price", sa.Numeric(18, 2), nullable=True),
     # Tăng MỖI lần ghi, kể cả xoá. Đây là căn cứ duy nhất backend dùng để xếp thứ
     # tự; không dùng đồng hồ.
     sa.Column("source_revision", sa.BigInteger(), nullable=False),

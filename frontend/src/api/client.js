@@ -86,6 +86,7 @@ export function isAuthError(err) {
 export const api = {
   get: (p, o) => request(p, { ...o, method: "GET" }),
   post: (p, b, o) => request(p, { ...o, method: "POST", body: b }),
+  patch: (p, b, o) => request(p, { ...o, method: "PATCH", body: b }),
   // `del` chứ không phải `delete`: delete là từ khoá của JavaScript.
   del: (p, o) => request(p, { ...o, method: "DELETE" }),
   put: (p, b, o) => request(p, { ...o, method: "PUT", body: b }),

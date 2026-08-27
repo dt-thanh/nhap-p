@@ -10,9 +10,10 @@ import { useProjectScope } from "./useProjectScope";
 vi.mock("../api/endpoints", () => ({
   listProjects: vi.fn(),
   listAreasScoped: vi.fn(),
+  bootstrapInventoryDefault: vi.fn(),
 }));
 
-import { listProjects, listAreasScoped } from "../api/endpoints";
+import { bootstrapInventoryDefault, listProjects, listAreasScoped } from "../api/endpoints";
 
 function wrapper(initialEntries) {
   // eslint-disable-next-line react/display-name
@@ -22,6 +23,10 @@ function wrapper(initialEntries) {
 describe("useProjectScope", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    bootstrapInventoryDefault.mockResolvedValue({
+      project: { external_id: "inventory-demo-v1", project_id: "demo-project", name: "AbsorptionIQ Demo Project" },
+      area: { external_id: "inventory-demo-v1-area-default", area_id: "demo-area", area_name: "Default Area" },
+    });
   });
 
   it("only shows what /v1/projects returns (backend already scoped it — no FE re-filtering)", async () => {
@@ -29,7 +34,7 @@ describe("useProjectScope", () => {
       { external_id: "P-0001", name: "A", project_id: "u1" },
       { external_id: "P-0002", name: "B", project_id: "u2" },
     ]);
-    listAreasScoped.mockResolvedValue([]);
+    listAreasScoped.mockResolvedValue([{ external_id: "A-0001", area_name: "Toa 1", area_id: "au1" }]);
 
     const { result } = renderHook(() => useProjectScope(), { wrapper: wrapper(["/projects"]) });
 
@@ -57,7 +62,9 @@ describe("useProjectScope", () => {
       { external_id: "P-0001", name: "A", project_id: "u1" },
       { external_id: "P-0002", name: "B", project_id: "u2" },
     ]);
-    listAreasScoped.mockResolvedValue([]);
+    listAreasScoped.mockImplementation((projectId) => Promise.resolve([
+      { external_id: projectId === "P-0001" ? "A-0001" : "A-0002", area_name: "Toa 1", area_id: "au1" },
+    ]));
 
     const { result } = renderHook(() => useProjectScope(), {
       wrapper: wrapper(["/projects?project=P-0001&area=A-0001"]),
@@ -68,7 +75,7 @@ describe("useProjectScope", () => {
     act(() => result.current.setProjectExternalId("P-0002"));
 
     await waitFor(() => expect(result.current.projectExternalId).toBe("P-0002"));
-    expect(result.current.areaExternalId).toBeNull();
+    await waitFor(() => expect(result.current.areaExternalId).toBe("A-0002"));
   });
 
   it("queries areas scoped to the selected project, not a global default", async () => {
@@ -81,14 +88,66 @@ describe("useProjectScope", () => {
     expect(listAreasScoped).not.toHaveBeenCalledWith(undefined);
   });
 
-  it("no project selected -> no area query at all, areas stay empty", async () => {
+  it("selects the first valid project and then loads its scoped areas", async () => {
     listProjects.mockResolvedValue([{ external_id: "P-0001", name: "A", project_id: "u1" }]);
+    listAreasScoped.mockResolvedValue([{ external_id: "A-0001", area_name: "Toa 1", area_id: "au1" }]);
 
     const { result } = renderHook(() => useProjectScope(), { wrapper: wrapper(["/projects"]) });
 
     await waitFor(() => expect(result.current.loadingProjects).toBe(false));
-    expect(result.current.areas).toEqual([]);
-    expect(listAreasScoped).not.toHaveBeenCalled();
+    await waitFor(() => expect(result.current.projectExternalId).toBe("P-0001"));
+    expect(listAreasScoped).toHaveBeenCalledWith("P-0001");
+  });
+
+  it("replaces an invalid saved project with the first API project", async () => {
+    listProjects.mockResolvedValue([{ external_id: "P-0001", name: "A", project_id: "u1" }]);
+    listAreasScoped.mockResolvedValue([{ external_id: "A-0001", area_name: "Toa 1", area_id: "au1" }]);
+
+    const { result } = renderHook(() => useProjectScope(), { wrapper: wrapper(["/projects?project=missing&area=stale"]) });
+
+    await waitFor(() => expect(result.current.projectExternalId).toBe("P-0001"));
+    await waitFor(() => expect(result.current.areaExternalId).toBe("A-0001"));
+    expect(listAreasScoped).toHaveBeenCalledWith("P-0001");
+  });
+
+  it("ignores a late area response from the project that was just deselected", async () => {
+    let resolveFirstAreas;
+    listProjects.mockResolvedValue([
+      { external_id: "P-0001", name: "A", project_id: "u1" },
+      { external_id: "P-0002", name: "B", project_id: "u2" },
+    ]);
+    listAreasScoped.mockImplementation((projectId) => {
+      if (projectId === "P-0001") {
+        return new Promise((resolve) => { resolveFirstAreas = resolve; });
+      }
+      return Promise.resolve([{ external_id: "A-0002", area_name: "Toa 2", area_id: "au2" }]);
+    });
+
+    const { result } = renderHook(() => useProjectScope(), {
+      wrapper: wrapper(["/projects?project=P-0001"]),
+    });
+    await waitFor(() => expect(listAreasScoped).toHaveBeenCalledWith("P-0001"));
+
+    act(() => result.current.setProjectExternalId("P-0002"));
+    await waitFor(() => expect(result.current.projectExternalId).toBe("P-0002"));
+    await waitFor(() => expect(result.current.areaExternalId).toBe("A-0002"));
+
+    act(() => resolveFirstAreas([{ external_id: "A-0001", area_name: "Toa 1", area_id: "au1" }]));
+    await waitFor(() => expect(result.current.currentArea?.external_id).toBe("A-0002"));
+    expect(result.current.areas.map((area) => area.external_id)).toEqual(["A-0002"]);
+  });
+
+  it("bootstraps the isolated demo scope when the API returns no projects", async () => {
+    listProjects.mockResolvedValue([]);
+    listAreasScoped.mockResolvedValue([
+      { external_id: "inventory-demo-v1-area-default", area_name: "Default Area", area_id: "demo-area" },
+    ]);
+
+    const { result } = renderHook(() => useProjectScope(), { wrapper: wrapper(["/projects"]) });
+
+    await waitFor(() => expect(bootstrapInventoryDefault).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.projectExternalId).toBe("inventory-demo-v1"));
+    expect(result.current.areaExternalId).toBe("inventory-demo-v1-area-default");
   });
 
   it("marks projectsStatus as unauthorized on a 401/403 (ProjectSelector reads this to show a safe message)", async () => {
@@ -130,7 +189,10 @@ describe("useProjectScope({ projectExternalId }) — route-scoped mode", () => {
   });
 
   it("setProjectExternalId is a no-op in route-scoped mode (the page must navigate() instead)", async () => {
-    listProjects.mockResolvedValue([{ external_id: "P-0001", name: "A", project_id: "u1" }]);
+    listProjects.mockResolvedValue([
+      { external_id: "P-0001", name: "A", project_id: "u1" },
+      { external_id: "P-0002", name: "B", project_id: "u2" },
+    ]);
     listAreasScoped.mockResolvedValue([]);
 
     const { result } = renderHook(() => useProjectScope({ projectExternalId: "P-0001" }), {
@@ -159,8 +221,11 @@ describe("useProjectScope({ projectExternalId }) — route-scoped mode", () => {
   });
 
   it("calling the hook with no options remains query-param scoped", async () => {
-    listProjects.mockResolvedValue([{ external_id: "P-0001", name: "A", project_id: "u1" }]);
-    listAreasScoped.mockResolvedValue([]);
+    listProjects.mockResolvedValue([
+      { external_id: "P-0001", name: "A", project_id: "u1" },
+      { external_id: "P-0002", name: "B", project_id: "u2" },
+    ]);
+    listAreasScoped.mockResolvedValue([{ external_id: "A-0001", area_name: "Toa 1", area_id: "au1" }]);
 
     const { result } = renderHook(() => useProjectScope(), { wrapper: wrapper(["/projects?project=P-0001"]) });
 

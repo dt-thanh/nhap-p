@@ -236,10 +236,14 @@ async def test_deal_v2_payload_has_no_project_or_area_ref(crm_app, backend):
     assert record_payload["external_unit_id"] == "U-0001"
 
 
-# --- C5/C6: dòng v2 CHỈ LƯU — resend/replay-stale bị chặn tường minh -----------
+# --- C5/C6: dòng v2 CHỈ LƯU ngay lúc ghi; C.5b mở `resend` cho v2 -------------
 
 
-def test_resend_a_v2_row_is_rejected_with_a_clear_boundary_error(crm_app, backend):
+def test_resend_on_a_pending_v2_row_is_rejected_not_delivered_early(crm_app, backend):
+    """Một dòng v2 vừa ghi (`http_status IS NULL`, chưa tới lượt relay) VẪN bị
+    `resend` từ chối 409 — không có `crud._resend_v2`/"Phase C.5b" nào trong mã
+    nguồn hiện tại (xem `crud._reject_v2_delivery`, `resend()`): đường gửi DUY
+    NHẤT của v2 là vòng relay tự động, kể cả khi dòng đó đang chờ lượt đầu tiên."""
     with _client() as client:
         client.post("/projects", json=PROJECT)
         batch_id = _v2_rows(client, "projects")[0]["external_batch_id"]
@@ -248,8 +252,15 @@ def test_resend_a_v2_row_is_rejected_with_a_clear_boundary_error(crm_app, backen
         assert response.status_code == 409
         assert response.json()["error_code"] == "V2_DELIVERY_NOT_ENABLED"
 
+        row = client.get(f"/outbox/{batch_id}").json()
+        assert row["http_status"] is None
+        assert row["attempts"] == 0
+
 
 def test_replay_stale_on_an_explicit_v2_batch_id_is_rejected(crm_app, backend):
+    """`replay-stale` — khác `resend` — vẫn KHÔNG hỗ trợ v2 (xem
+    `crud._reject_v2_delivery`: khái niệm "payload cũ dưới batch id mới" chưa có
+    tương đương v2 đã thiết kế)."""
     with _client() as client:
         client.post("/projects", json=PROJECT)
         batch_id = _v2_rows(client, "projects")[0]["external_batch_id"]
@@ -259,20 +270,23 @@ def test_replay_stale_on_an_explicit_v2_batch_id_is_rejected(crm_app, backend):
         assert response.json()["error_code"] == "V2_DELIVERY_NOT_ENABLED"
 
 
-def test_duplicate_resend_attempts_on_a_v2_row_stay_safe_and_leave_no_trace(crm_app, backend):
-    """"Gửi lại lặp lại không tạo sự kiện nghiệp vụ thứ hai" — với một dòng v2,
-    "an toàn" nghĩa là bị chặn NHẤT QUÁN, không side effect nào tích luỹ."""
+def test_repeated_resend_attempts_on_a_v2_row_are_all_rejected_and_send_nothing(crm_app, backend):
+    """Gọi `resend` nhiều lần liên tiếp trên cùng một dòng v2 — MỖI lần đều 409,
+    không lần nào chạm mạng (không có "lần đầu thành công, các lần sau replayed"
+    như một dòng v1 thật; xem test cùng tên đã bỏ 'Phase C.5b')."""
     with _client() as client:
         client.post("/projects", json=PROJECT)
         batch_id = _v2_rows(client, "projects")[0]["external_batch_id"]
+        request_count = len(backend.requests)
 
         for _ in range(3):
-            assert client.post(f"/outbox/{batch_id}/resend").status_code == 409
+            response = client.post(f"/outbox/{batch_id}/resend")
+            assert response.status_code == 409
+            assert response.json()["error_code"] == "V2_DELIVERY_NOT_ENABLED"
 
         row = client.get(f"/outbox/{batch_id}").json()
         assert row["attempts"] == 0
-        assert row["http_status"] is None
-        assert row["sent_at"] is None
+        assert len(backend.requests) == request_count, "không có request nào rời khỏi máy"
 
 
 def test_a_v2_row_http_status_is_still_null_immediately_after_write(crm_app, backend):
@@ -303,10 +317,17 @@ def test_v2_capture_is_committed_before_relay_delivery(crm_app, backend):
         assert v2_row["http_status"] is None
 
 
-def test_canonical_unit_write_has_no_v1_resend_path(crm_app, backend):
-    """Canonical Unit writes expose only the relay-owned v2 row."""
+def test_canonical_unit_write_is_labelled_units_v2_not_the_v1_entity_string(crm_app, backend):
+    """Canonical Unit writes produce a `units_v2` outbox row, never bare
+    `"units"` — `_reject_v2_delivery` checks `row["entity"] in
+    sync_client.V2_CAPTURE_ENTITIES` to decide whether `resend` may touch it. A
+    row mislabelled as v1 would let `resend` slip through `_reject_v2_delivery`
+    and try to mark mirrored state on the wrong row shape."""
     with _client() as client:
-        batch_id = client.post("/units", json=UNIT).json()["sync"]["external_batch_id"]
-        response = client.post(f"/outbox/{batch_id}/resend")
-        assert response.status_code == 409
-        assert response.json()["error_code"] == "V2_DELIVERY_NOT_ENABLED"
+        response = client.post("/units", json=UNIT)
+        batch_id = response.json()["sync"]["external_batch_id"]
+        assert _v2_rows(client, "units_v2")[0]["external_batch_id"] == batch_id
+
+        resend = client.post(f"/outbox/{batch_id}/resend")
+        assert resend.status_code == 409
+        assert resend.json()["error_code"] == "V2_DELIVERY_NOT_ENABLED"

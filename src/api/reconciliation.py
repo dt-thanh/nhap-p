@@ -23,6 +23,8 @@ from src.models.schemas import (
     ReconciliationRunOut,
 )
 from src.models.tables import projects, reconciliation_findings, reconciliation_runs
+from src.services.dashboard_auth import audit, authenticate_dashboard, resolve_scope_project_ids
+from src.services.dashboard_auth import role_level as _role_level
 from src.services.reconciliation import ReconciliationService
 from src.services.sync_credentials import CredentialError, SyncCredentialService
 
@@ -55,6 +57,83 @@ async def _authenticate(api_key: str | None, claimed_instance: str | None):
         ) from exc
 
 
+async def _authorize_write(
+    x_api_key: str | None, authorization: str | None, project_id: uuid.UUID, source_instance_id: str
+) -> None:
+    """Chạy một lượt đối soát cần MỘT trong hai: khoá CRM đúng phạm vi (đường vốn
+    có, hệ nguồn tự kiểm chính nó), HOẶC vai trò vận hành `pipeline_operator` trở
+    lên với dự án nằm trong phạm vi token (đường mới, người dùng Keycloak thật) —
+    hai đường CỘNG, không đường nào bắt buộc. Không đường nào đọc/ghi TRƯỚC khi
+    tự thân nó cho qua.
+    """
+    if authorization is not None:
+        principal = await authenticate_dashboard(authorization)
+        if _role_level(principal.role) < _role_level("pipeline_operator"):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "message": f"Vai trò '{principal.role}' không đủ quyền chạy đối soát",
+                    "error_code": "INSUFFICIENT_ROLE",
+                },
+            )
+        async with get_session_factory()() as session:
+            scope_ids = await resolve_scope_project_ids(session, principal)
+        if scope_ids != "ALL" and project_id not in scope_ids:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "message": "Thao tác nằm ngoài phạm vi dự án được cấp cho token này",
+                    "error_code": "PROJECT_OUT_OF_SCOPE",
+                },
+            )
+        audit("reconciliation_run", principal, project_id=str(project_id))
+        return
+
+    await _authenticate(x_api_key, source_instance_id)
+
+
+async def _load_run(run_uuid: uuid.UUID) -> dict:
+    """Tra `reconciliation_runs`, 404 nếu không có. Dùng cho CẢ HAI route đọc
+    dưới đây, để `findings` cũng 404 đúng như `run_detail` thay vì âm thầm trả
+    danh sách rỗng cho một `run_id` không tồn tại."""
+    async with get_session_factory()() as session:
+        row = (
+            (await session.execute(sa.select(reconciliation_runs).where(reconciliation_runs.c.id == run_uuid)))
+            .mappings()
+            .one_or_none()
+        )
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"message": "Không tìm thấy lượt đối soát", "error_code": "RECONCILIATION_RUN_NOT_FOUND"},
+        )
+    return dict(row)
+
+
+async def _authorize_read(x_api_key: str | None, authorization: str | None, run: dict) -> None:
+    """Đọc kết quả đối soát — cùng mô hình xác thực KÉP với `_authorize_write`:
+    khoá CRM đúng `source_instance_id` của lượt chạy đó (đường VỐN CÓ), HOẶC vai
+    trò dashboard bất kỳ (`business_viewer` trở lên — đây là ĐỌC, không cần
+    `pipeline_operator`) với dự án của lượt chạy nằm trong phạm vi token. Không
+    đường nào dựa vào việc `run_id` (UUID) khó đoán để coi là đủ an toàn — một
+    UUID sở hữu được không phải là một quyết định cấp quyền."""
+    if authorization is not None:
+        principal = await authenticate_dashboard(authorization)
+        async with get_session_factory()() as session:
+            scope_ids = await resolve_scope_project_ids(session, principal)
+        if scope_ids != "ALL" and run["project_id"] not in scope_ids:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "message": "Thao tác nằm ngoài phạm vi dự án được cấp cho token này",
+                    "error_code": "PROJECT_OUT_OF_SCOPE",
+                },
+            )
+        return
+
+    await _authenticate(x_api_key, run["source_instance_id"])
+
+
 @router.post(
     "/reconciliation/runs",
     response_model=ReconciliationRunOut,
@@ -63,6 +142,7 @@ async def _authenticate(api_key: str | None, claimed_instance: str | None):
 async def start_reconciliation(
     payload: dict = Body(...),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None, alias="Authorization"),
 ) -> ReconciliationRunOut:
     """Chạy đối soát nội bộ, hoặc đối soát theo ảnh chụp.
 
@@ -88,7 +168,7 @@ async def start_reconciliation(
             detail={"message": "'project_id' phải là UUID hợp lệ", "error_code": "INVALID_PROJECT_ID"},
         ) from exc
 
-    await _authenticate(x_api_key, source_instance_id)
+    await _authorize_write(x_api_key, authorization, project_uuid, source_instance_id)
 
     async with get_session_factory()() as session:
         exists = await session.scalar(sa.select(projects.c.id).where(projects.c.id == project_uuid))
@@ -141,19 +221,14 @@ async def start_reconciliation(
     response_model=ReconciliationRunOut,
     summary="Kết quả một lượt đối soát",
 )
-async def reconciliation_run_detail(run_id: str) -> ReconciliationRunOut:
+async def reconciliation_run_detail(
+    run_id: str,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> ReconciliationRunOut:
     run_uuid = _parse_uuid(run_id)
-    async with get_session_factory()() as session:
-        row = (
-            (await session.execute(sa.select(reconciliation_runs).where(reconciliation_runs.c.id == run_uuid)))
-            .mappings()
-            .one_or_none()
-        )
-    if row is None:
-        raise HTTPException(
-            status_code=404,
-            detail={"message": "Không tìm thấy lượt đối soát", "error_code": "RECONCILIATION_RUN_NOT_FOUND"},
-        )
+    row = await _load_run(run_uuid)
+    await _authorize_read(x_api_key, authorization, row)
 
     return ReconciliationRunOut(
         reconciliation_run_id=str(row["id"]),
@@ -180,8 +255,12 @@ async def reconciliation_findings_list(
     check_code: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=MAX_FINDINGS_PER_PAGE),
     offset: int = Query(default=0, ge=0),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None, alias="Authorization"),
 ) -> ReconciliationFindingList:
     run_uuid = _parse_uuid(run_id)
+    run = await _load_run(run_uuid)
+    await _authorize_read(x_api_key, authorization, run)
 
     condition = [reconciliation_findings.c.reconciliation_run_id == run_uuid]
     if severity is not None:

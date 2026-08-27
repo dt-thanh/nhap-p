@@ -25,7 +25,11 @@ import DashboardPage from "./pages/DashboardPage";
 import InventoryPage from "./pages/InventoryPage";
 import AgentPage from "./pages/AgentPage";
 import RankingPage from "./pages/RankingPage";
+import RankingDashboardPage from "./pages/RankingDashboardPage";
+import RankingProjectPage from "./pages/RankingProjectPage";
 import RankingConfigPage from "./pages/RankingConfigPage";
+import ConsultantAdvisoryPage from "./pages/ConsultantAdvisoryPage";
+import ConsultantEvidencePage from "./pages/ConsultantEvidencePage";
 
 import ProjectsPage from "./pages/ProjectsPage";
 import ProjectDetailPage from "./pages/ProjectDetailPage";
@@ -36,6 +40,7 @@ import SettingsPage from "./pages/SettingsPage";
 import ImportSelectPage from "./pages/ImportSelectPage";
 import UploadPage from "./pages/UploadPage";
 import OverviewPage from "./pages/OverviewPage";
+import PreviewOverviewPage from "./pages/PreviewOverviewPage";
 
 export function AppRoutes() {
   return (
@@ -45,17 +50,21 @@ export function AppRoutes() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 
-        {/* Các trang nằm trong app layout — bọc ProtectedRoute (Entra SSO).
+        {/* Các trang nằm trong app layout — bọc ProtectedRoute (Keycloak SSO).
             "/", "/login", "/register" CỐ Ý nằm ngoài để trang đăng nhập và
             landing vẫn mở được khi chưa có phiên. */}
         <Route element={<ProtectedRoute />}>
+          <Route path="/preview/overview" element={<PreviewOverviewPage />} />
           <Route element={<AppLayout />}>
           <Route path="/overview" element={<OverviewPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/ai-agent" element={<AgentPage />} />
-          <Route path="/ranking" element={<RankingPage />} />
+          <Route path="/ranking" element={<RankingDashboardPage />} />
           <Route path="/ranking/configs" element={<RankingConfigPage />} />
+          <Route path="/ranking/:projectId" element={<RankingProjectPage />} />
+          <Route path="/consultant/:consultantId/advisory" element={<ConsultantAdvisoryPage />} />
+          <Route path="/consultant/:consultantId/evidence" element={<ConsultantEvidencePage />} />
 
           {/* Danh sách dự án */}
           <Route path="/projects" element={<ProjectsPage />} />

@@ -204,6 +204,15 @@ def iso(value: Any) -> str | None:
     return str(value)
 
 
+def _price_number(value: Any) -> float | None:
+    """`Decimal` của DB (cột `NUMERIC(18, 2)`) → `float` cho JSON. `None` đi qua
+    nguyên vẹn — cùng nguyên tắc với `iso()`: đây là một khẳng định hợp lệ
+    ("chưa biết giá"), không phải một khoá bị bỏ đi (0008)."""
+    if value is None:
+        return None
+    return float(value)
+
+
 def _envelope(records: list[dict[str, Any]], *, batch_id: str) -> dict[str, Any]:
     settings = get_settings()
     return {
@@ -429,10 +438,23 @@ def build_area_envelope(
 def build_unit_envelope_v2(
     units: list[dict[str, Any]], *, batch_id: str, external_project_id: str, operation: str = "upsert"
 ) -> dict[str, Any]:
-    """Phong bì v2 cho một lô căn. Khác `build_unit_envelope` (v1) đúng một chỗ:
+    """Phong bì v2 cho một lô căn. Khác `build_unit_envelope` (v1) hai chỗ:
     `area_ref` mang `{external_area_id}` — v2 KHÔNG chấp nhận hình dạng
-    `{area_name, unit_type}` của v1 (§4 sync_contract_v2_draft.md). Mỗi phần tử
-    `units` cần thêm `external_area_id` so với phiên bản v1.
+    `{area_name, unit_type}` của v1 (§4 sync_contract_v2_draft.md); và `payload`
+    có thêm `listing_price` (0008, tuỳ chọn).
+
+    `listing_price` LUÔN có mặt trong `payload` — giá trị hoặc `null` — không
+    bao giờ bị BỎ khỏi dict, cùng nguyên tắc với ba mốc lịch sử của
+    `build_deal_envelope`/`build_deal_envelope_v2`: bản ghi này là `full`
+    (không khai `payload_completeness`), nên một trường VẮNG MẶT trong khi bản
+    sao đang giữ giá trị sẽ bị hiểu nhầm là đánh rơi lịch sử ở phía nhận nếu
+    field đó từng được đăng ký chốt A4. `listing_price` KHÔNG nằm trong chốt A4
+    ở phía nhận (xem `src/services/history_guard.py::HISTORY_FIELDS["units"]`
+    — cố ý để trống, giá sống ở `project_price_observations`, một bảng khác
+    hẳn `units`, nên không hợp với cơ chế đọc-lại-cùng-bảng của chốt đó) —
+    nhưng luôn gửi tường minh vẫn là thói quen an toàn hơn, và khớp Mini CRM
+    chỉ có MỘT giá trị `listing_price` cho một căn tại một thời điểm (không có
+    khái niệm "một phần đã đổi, phần khác chưa" cho riêng trường này).
     """
     records = [
         {
@@ -448,6 +470,7 @@ def build_unit_envelope_v2(
                         "area_ref": {"external_area_id": unit["external_area_id"]},
                         "unit_code": unit["unit_code"],
                         "unit_status": unit["unit_status"],
+                        "listing_price": _price_number(unit.get("listing_price")),
                     }
                 }
             ),

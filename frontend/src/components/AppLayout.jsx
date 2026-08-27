@@ -7,6 +7,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import Brand from "./Brand";
 import ChatWidget from "./ChatWidget";
 import Icon from "./ui/Icon";
+import LogoutButton from "./LogoutButton";
 import { USE_MOCK } from "../api/client";
 import { getMePermissions } from "../api/endpoints";
 import { color, size, radius, space, layout } from "../styles/tokens";
@@ -144,6 +145,7 @@ export default function AppLayout() {
               {USE_MOCK && !isMobile && (
                 <span style={S.mockTag} title="Đang chạy dữ liệu giả — đổi USE_MOCK trong api/client.js khi backend sẵn sàng">dữ liệu giả</span>
               )}
+              <LogoutButton />
             </div>
           </div>
         </header>
@@ -161,7 +163,7 @@ export default function AppLayout() {
 }
 
 const S = {
-  shell: { minHeight: "100vh", display: "flex", background: color.canvas, fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif', color: color.body },
+  shell: { height: "100vh", minHeight: 0, display: "flex", overflow: "hidden", background: color.canvas, fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif', color: color.body },
   sidebar: {
     top: 0,
     left: 0,
@@ -212,15 +214,15 @@ const S = {
   linkHover: { background: color.sidebarSurface, color: color.sidebarText },
   linkActive: { background: color.sidebarActiveSoft, color: color.accent, fontWeight: 600, boxShadow: `inset 3px 0 0 ${color.accent}` },
   overlay: { position: "fixed", inset: 0, width: "100%", height: "100%", padding: 0, border: "none", background: "rgba(15,17,23,.48)", zIndex: 30, cursor: "pointer" },
-  content: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column" },
-  contentDesktop: { minHeight: "calc(100vh - 32px)", margin: "16px 16px 16px 20px", boxSizing: "border-box", border: "8px solid #2F3949", borderRadius: 32, background: "#F8F8F5", boxShadow: "inset 0 0 0 1px rgba(255,255,255,.52), inset 1px 1px 0 rgba(255,255,255,.7), inset -1px -1px 0 rgba(15,23,42,.3), 0 22px 44px rgba(32,28,24,.17), 8px 14px 10px -10px rgba(32,28,24,.32)" },
-  contentNarrow: { minHeight: "100vh", margin: 0, border: "none", borderRadius: 0, background: color.canvas, boxShadow: "none" },
-  bar: { background: "rgba(255,255,255,.94)", borderBottom: `1px solid ${color.border}`, borderRadius: "30px 30px 0 0", position: "sticky", top: 0, zIndex: 20 },
+  content: { flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" },
+  contentDesktop: { height: "calc(100vh - 32px)", margin: "16px 16px 16px 20px", boxSizing: "border-box", border: "8px solid #2F3949", borderRadius: 32, background: "#F8F8F5", boxShadow: "inset 0 0 0 1px rgba(255,255,255,.52), inset 1px 1px 0 rgba(255,255,255,.7), inset -1px -1px 0 rgba(15,23,42,.3), 0 22px 44px rgba(32,28,24,.17), 8px 14px 10px -10px rgba(32,28,24,.32)" },
+  contentNarrow: { height: "100vh", margin: 0, border: "none", borderRadius: 0, background: color.canvas, boxShadow: "none" },
+  bar: { flexShrink: 0, background: "rgba(255,255,255,.94)", borderBottom: `1px solid ${color.border}`, borderRadius: "30px 30px 0 0", position: "sticky", top: 0, zIndex: 20 },
   barNarrow: { borderRadius: 0 },
   barInner: { margin: "0 auto", width: "100%", height: 64, display: "flex", alignItems: "center", gap: space(3), boxSizing: "border-box" },
   menuButton: { width: 38, height: 38, display: "grid", placeItems: "center", border: `1px solid ${color.borderStrong}`, borderRadius: radius.sm, background: color.surface, color: color.body, cursor: "pointer", fontSize: 19, lineHeight: 1 },
   mobileBrand: { border: "none", background: "transparent", padding: 0, cursor: "pointer" },
-  main: { minWidth: 0, flex: 1 },
+  main: { minWidth: 0, minHeight: 0, flex: 1, overflowY: "auto" },
   mainInner: { width: "100%", margin: "0 auto", boxSizing: "border-box" },
   right: { marginLeft: "auto", display: "flex", alignItems: "center", gap: space(3), flex: "none" },
   mockTag: { fontSize: size.tiny, color: color.warn, background: color.warnSoft, border: `1px solid ${color.warn}33`, padding: "3px 9px", borderRadius: radius.pill, fontWeight: 600 },

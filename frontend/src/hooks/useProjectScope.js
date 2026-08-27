@@ -12,9 +12,9 @@
 //   3. Đổi Project RESET Area và dữ liệu scoped theo nó — không giữ lại area
 //      của dự án cũ (đó chính là lớp lỗi "activeProjectId() cache toàn cục"
 //      mà endpoints.js cũ mắc phải, xem ghi chú ở đó).
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { listAreasScoped, listProjects } from "../api/endpoints";
+import { bootstrapInventoryDefault, listAreasScoped, listProjects } from "../api/endpoints";
 import { isAuthError } from "../api/client";
 
 const PROJECT_PARAM = "project";
@@ -41,6 +41,34 @@ export function useProjectScope({ projectExternalId: routeProjectExternalId } = 
   // "idle" | "ok" | "unauthorized" | "error"
   const [projectsStatus, setProjectsStatus] = useState("idle");
   const [areasStatus, setAreasStatus] = useState("idle");
+  const [bootstrapping, setBootstrapping] = useState(false);
+  const bootstrapPromise = useRef(null);
+
+  const applyBootstrap = useCallback(async () => {
+    if (bootstrapPromise.current) return bootstrapPromise.current;
+    const request = (async () => {
+      setBootstrapping(true);
+      try {
+        const result = await bootstrapInventoryDefault();
+        const project = result.project;
+        const area = result.area;
+        setProjects((current) => [...current.filter((item) => item.external_id !== project.external_id), project]);
+        setAreas([area]);
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.set(PROJECT_PARAM, project.external_id);
+          next.set(AREA_PARAM, area.external_id);
+          return next;
+        });
+        return result;
+      } finally {
+        setBootstrapping(false);
+        bootstrapPromise.current = null;
+      }
+    })();
+    bootstrapPromise.current = request;
+    return request;
+  }, [setSearchParams]);
 
   const setProjectExternalId = useCallback(
     (nextId) => {
@@ -97,6 +125,19 @@ export function useProjectScope({ projectExternalId: routeProjectExternalId } = 
     };
   }, []);
 
+  // Resolve only IDs that the API actually returned. A stale URL/local state
+  // must never trigger a scoped request for another project.
+  useEffect(() => {
+    if (routeProjectExternalId !== undefined || loadingProjects || projectsStatus !== "ok") return;
+    const valid = projects.filter((project) => project.external_id);
+    if (valid.some((project) => project.external_id === projectExternalId)) return;
+    if (valid.length) {
+      setProjectExternalId(valid[0].external_id);
+      return;
+    }
+    applyBootstrap().catch((error) => setProjectsStatus(isAuthError(error) ? "unauthorized" : "error"));
+  }, [applyBootstrap, loadingProjects, projectExternalId, projects, projectsStatus, routeProjectExternalId, setProjectExternalId]);
+
   // 2) Danh sách Area của Project đang chọn — nạp lại mỗi khi Project đổi.
   useEffect(() => {
     if (!projectExternalId) {
@@ -126,6 +167,23 @@ export function useProjectScope({ projectExternalId: routeProjectExternalId } = 
     };
   }, [projectExternalId]);
 
+  useEffect(() => {
+    if (!projectExternalId || loadingAreas || areasStatus !== "ok") return;
+    const valid = areas.filter((area) => area.external_id);
+    if (valid.some((area) => area.external_id === areaExternalId)) return;
+    if (valid.length) {
+      setAreaExternalId(valid[0].external_id);
+      return;
+    }
+    // A path-scoped page cannot switch projects without changing its route.
+    // Keep that contract intact; only query-scoped Inventory may resolve an
+    // empty database by moving to the isolated demo project.
+    if (routeProjectExternalId !== undefined) return;
+    // Never add an area to a user project. The bootstrap returns its isolated
+    // demo project instead, preserving source ownership and real data.
+    applyBootstrap().catch((error) => setAreasStatus(isAuthError(error) ? "unauthorized" : "error"));
+  }, [applyBootstrap, areaExternalId, areas, areasStatus, loadingAreas, projectExternalId, routeProjectExternalId, setAreaExternalId]);
+
   const currentProject = useMemo(
     () => projects.find((p) => p.external_id === projectExternalId) || null,
     [projects, projectExternalId],
@@ -148,5 +206,7 @@ export function useProjectScope({ projectExternalId: routeProjectExternalId } = 
     loadingAreas,
     projectsStatus,
     areasStatus,
+    bootstrapping,
+    bootstrapDefault: applyBootstrap,
   };
 }

@@ -3,15 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import LoginPage from "./LoginPage";
-import { ApiError, getAccessToken, setAccessToken } from "../api/client";
+import { setAccessToken } from "../api/client";
 
 vi.mock("../hooks/useBreakpoint", () => ({
   useBreakpoint: () => ({ isNarrow: false }),
 }));
 
-vi.mock("../api/endpoints", () => ({ getMePermissions: vi.fn() }));
+vi.mock("../api/auth", () => ({
+  fetchMe: vi.fn(),
+  startLogin: vi.fn(),
+}));
 
-import { getMePermissions } from "../api/endpoints";
+import { fetchMe, startLogin } from "../api/auth";
 
 function renderAt(path = "/login", { from } = {}) {
   return render(
@@ -27,52 +30,38 @@ function renderAt(path = "/login", { from } = {}) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  fetchMe.mockResolvedValue(null);
 });
 
 afterEach(() => setAccessToken(null));
 
 describe("LoginPage", () => {
-  it("stores the token and enters the app on a valid token", async () => {
-    getMePermissions.mockResolvedValue({ role: "business_viewer", project_scope: "ALL" });
+  it("restores an existing SSO session and enters the app", async () => {
+    fetchMe.mockResolvedValue({ role: "business_viewer", project_scope: "ALL" });
     renderAt();
-
-    fireEvent.change(screen.getByPlaceholderText("Dán token vai trò được cấp"), { target: { value: "my-token" } });
-    fireEvent.click(screen.getByRole("button", { name: "Đăng nhập" }));
 
     expect(await screen.findByText("Overview page")).toBeInTheDocument();
-    expect(getAccessToken()).toBe("my-token");
   });
 
-  it("returns to the originally requested route after login", async () => {
-    getMePermissions.mockResolvedValue({ role: "pipeline_operator", project_scope: "ALL" });
+  it("starts Keycloak SSO for the originally requested route", async () => {
     renderAt("/login", { from: "/ranking" });
 
-    fireEvent.change(screen.getByPlaceholderText("Dán token vai trò được cấp"), { target: { value: "my-token" } });
-    fireEvent.click(screen.getByRole("button", { name: "Đăng nhập" }));
+    fireEvent.click(screen.getByRole("button", { name: "Đăng nhập SSO" }));
 
-    expect(await screen.findByText("Ranking page")).toBeInTheDocument();
+    expect(startLogin).toHaveBeenCalledWith("/ranking");
   });
 
-  it("clears the token and shows an error on an invalid token", async () => {
-    getMePermissions.mockRejectedValue(new ApiError(401, "Token không hợp lệ", null));
+  it("does not render the legacy token form by default", () => {
     renderAt();
 
-    fireEvent.change(screen.getByPlaceholderText("Dán token vai trò được cấp"), { target: { value: "wrong-token" } });
-    fireEvent.click(screen.getByRole("button", { name: "Đăng nhập" }));
-
-    expect(await screen.findByText("Token không hợp lệ.")).toBeInTheDocument();
-    expect(getAccessToken()).toBeNull();
-    expect(screen.queryByText("Overview page")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Dán token vai trò được cấp")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Đăng nhập SSO" })).toBeInTheDocument();
   });
 
-  it("shows a network error distinct from an invalid token", async () => {
-    getMePermissions.mockRejectedValue(new TypeError("Failed to fetch"));
+  it("stays on login when no SSO session exists", async () => {
     renderAt();
 
-    fireEvent.change(screen.getByPlaceholderText("Dán token vai trò được cấp"), { target: { value: "any-token" } });
-    fireEvent.click(screen.getByRole("button", { name: "Đăng nhập" }));
-
-    expect(await screen.findByText("Không kết nối được máy chủ, thử lại sau.")).toBeInTheDocument();
-    expect(getAccessToken()).toBeNull();
+    expect(await screen.findByRole("button", { name: "Đăng nhập SSO" })).toBeInTheDocument();
+    expect(fetchMe).toHaveBeenCalledOnce();
   });
 });

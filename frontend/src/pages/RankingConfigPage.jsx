@@ -20,6 +20,7 @@ import {
   rollbackRankingConfig,
 } from "../api/endpoints";
 import { isAuthError } from "../api/client";
+import AhpWeightPanel from "../components/ranking/AhpWeightPanel";
 import { useAsync } from "../hooks/useAsync";
 import GlobalKeyframes from "../components/ui/GlobalKeyframes";
 import { SectionState } from "../components/ui/States";
@@ -123,6 +124,36 @@ export default function RankingConfigPage() {
     }));
   }
 
+  // Đặc trưng ĐANG BẬT trong bản nháp chính là tập tiêu chí AHP sẽ hỏi. Lấy từ
+  // đây thay vì hardcode nghĩa là `direction`/`missing_value_policy` gửi lên
+  // backend luôn khớp với thứ người dùng đang nhìn thấy ngay bên dưới.
+  const draftFeatures = useMemo(
+    () =>
+      editing
+        ? Object.entries(editing.weights).map(([key, spec]) => ({
+            key,
+            label: FEATURES[key]?.label ?? key,
+            direction: spec.direction,
+            missing_value_policy: spec.missing_value_policy,
+            min_confidence: spec.min_confidence,
+          }))
+        : [],
+    [editing],
+  );
+
+  // AHP chỉ ĐIỀN vào biểu mẫu. Không lưu, không phát hành — người dùng vẫn phải
+  // bấm hai nút đó, vì vòng duyệt của người là yêu cầu cứng của AGENTS.md.
+  function applyAhpWeights(weights, note) {
+    setEditing((current) => ({
+      ...current,
+      weights: Object.fromEntries(
+        Object.entries(weights).map(([key, spec]) => [key, { ...DEFAULT_SPEC, ...spec }]),
+      ),
+      note: note || current.note,
+    }));
+    setNotice({ kind: "ok", text: "Đã điền trọng số AHP vào bản nháp. Kiểm lại rồi bấm Lưu bản nháp." });
+  }
+
   function toggleFeature(key, on) {
     setEditing((current) => {
       const weights = { ...current.weights };
@@ -174,6 +205,13 @@ export default function RankingConfigPage() {
             </span>
           </div>
 
+          <AhpWeightPanel
+            features={draftFeatures}
+            publishedWeights={published?.weights ?? {}}
+            onApply={applyAhpWeights}
+            disabled={busy}
+          />
+
           <div style={S.featureList}>
             {Object.entries(FEATURES).map(([key, meta]) => {
               const spec = editing.weights[key];
@@ -192,7 +230,7 @@ export default function RankingConfigPage() {
                         <input
                           style={S.specInput}
                           type="number"
-                          step="0.05"
+                          step="0.0001"
                           min="0"
                           max="1"
                           value={spec.weight}

@@ -17,11 +17,10 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from app import contract, crud
+from app import contract, crud, human_auth
 from app.config import get_settings
 from app.relay import relay_loop
-from app import human_auth
-from app.routers import areas, auth_routes, deals, outbox, projects, units
+from app.routers import areas, auth, auth_routes, deals, outbox, projects, units
 from app.schemas import HealthOut
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,6 +65,21 @@ app.add_middleware(
 )
 
 app.include_router(auth_routes.router)
+# `app/routers/auth.py` (human_auth — Checkpoint 1/2, mật khẩu + phiên nội bộ)
+# ĐĂNG KÝ SAU `auth_routes.router` một cách CÓ CHỦ ĐÍCH. Hai router chung tiền
+# tố `/auth` và trùng đường ở BA route (`GET /auth/me`, `POST /auth/refresh`,
+# `POST /auth/logout`) — FastAPI khớp theo THỨ TỰ đăng ký, nên đăng ký sau nghĩa
+# là thua ở ba route trùng đó: phiên Keycloak vẫn là nguồn sự thật cho chúng,
+# không đổi. Các route KHÔNG trùng của human_auth (`POST /auth/login`,
+# `/auth/invitations`, `/auth/password-reset/*`, `POST /auth/logout-all`) trở
+# nên gọi được — trước dòng này chúng tồn tại trong code nhưng KHÔNG router nào
+# nạp `auth.router`, nên mọi request tới đó nhận 405 (xem pipeline_status.md,
+# mục "Reconciliation Authorization, Credential Lifecycle, and MiniCRM Test
+# Health" — 28 test trong test_human_auth.py/test_phase3a_auth.py/
+# test_phase3b_password_reset.py/test_phase4a_authorization.py đều thất bại vì
+# thiếu đúng dòng này). KHÔNG đổi hành vi Keycloak: chỉ BẬT LẠI một hệ đã có sẵn
+# handler lỗi riêng (`human_auth_error_handler` ở dưới) nhưng chưa từng có router.
+app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(areas.router)
 app.include_router(units.router)

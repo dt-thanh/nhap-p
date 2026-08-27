@@ -697,8 +697,14 @@ async def test_the_lock_preamble_locks_every_existing_identity_in_the_batch(sess
 
 
 async def test_no_ranking_row_is_created_by_any_of_these_races(newer_then_older, session_factory):
-    """Bản vá đồng thời không được kéo theo một dòng xếp hạng nào. Phase 6 chưa bắt đầu."""
+    """`src/services/ranking_trigger.py` (§8.3) giờ XẾP HÀNG một lần chạy xếp
+    hạng sau mỗi lô đồng bộ — Phase 6 ĐÃ bắt đầu từ khi test này được viết. Bản
+    vá đồng thời ở trên vẫn không được để lại HAI dòng `ranking_runs` (đúng luật
+    "một job cho một run" — các lần đồng bộ chồng lấn phải GỘP thành một lần chờ,
+    không nhân đôi), và chắc chắn KHÔNG được tự tính ra điểm xếp hạng nào — tính
+    toán thật là việc của worker (RQ), không xảy ra đồng bộ trong test này."""
     async with session_factory() as session:
         runs = await session.scalar(sa.text("SELECT count(*) FROM ranking_runs"))
         scores = await session.scalar(sa.text("SELECT count(*) FROM ranking_scores"))
-    assert (runs, scores) == (0, 0)
+    assert runs <= 1, "các lần đồng bộ chồng lấn phải GỘP vào một lần chờ xếp hạng, không nhân đôi"
+    assert scores == 0, "tính điểm xếp hạng là việc của worker — không được xảy ra đồng bộ trong sync"

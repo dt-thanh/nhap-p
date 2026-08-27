@@ -208,13 +208,20 @@ async def _resolve_analytics_scope(
                 status_code=422,
                 detail={"message": "Cần project_id hoặc area_id để xác định phạm vi", "error_code": "MISSING_SCOPE"},
             )
-        external_id = await session.scalar(sa.select(projects.c.external_id).where(projects.c.id == project_id))
-        if external_id is None:
+        row = (
+            await session.execute(sa.select(projects.c.external_id).where(projects.c.id == project_id))
+        ).one_or_none()
+        if row is None:
             raise HTTPException(
                 status_code=404,
                 detail={"message": "Không tìm thấy dự án", "error_code": "PROJECT_NOT_FOUND"},
             )
-        require_project_in_scope(principal, external_id)
+        # `row.external_id` CÓ THỂ None (dự án DI SẢN, trước Phase D) — đó không
+        # phải "không tồn tại", chỉ là "không suy được phạm vi tường minh".
+        # `require_project_in_scope` đã biết xử lý None đúng cách (chỉ ALL mới
+        # qua được, xem `scope_permits`) — CÙNG một luật với `GET /projects` và
+        # nhánh `area_id` ở trên, không phải một luật 404 riêng cho nhánh này.
+        require_project_in_scope(principal, row.external_id)
         return project_id, None
 
 

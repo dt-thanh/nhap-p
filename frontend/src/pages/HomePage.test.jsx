@@ -57,7 +57,7 @@ describe("HomePage", () => {
     expect(within(resources).getByRole("group", { name: "Luồng dữ liệu qua sáu giai đoạn từ đồng bộ đến tư vấn" })).toBeInTheDocument();
     const stageLegend = within(resources).getByRole("list", { name: "Các giai đoạn quy trình dữ liệu" });
     expect(stageLegend).toBeInTheDocument();
-    expect(within(resources).getByText("Đang xử lý: Đồng bộ")).toHaveAttribute("aria-live", "polite");
+    expect(resources.querySelector('p[aria-live="polite"]')).toHaveTextContent("Đồng bộ");
     expect(within(resources).getByText("Dữ liệu được đồng bộ từ CRM, kiểm tra tính nhất quán và chuẩn bị cho phân tích hấp thụ.")).toBeInTheDocument();
     expect(resources.querySelectorAll(".pipeline-node")).toHaveLength(6);
     expect(within(stageLegend).getAllByRole("listitem")).toHaveLength(6);
@@ -70,12 +70,12 @@ describe("HomePage", () => {
       renderPage();
 
       const resources = document.querySelector("#resources");
-      expect(within(resources).getByText("Đang xử lý: Đồng bộ")).toBeInTheDocument();
+      expect(resources.querySelector('p[aria-live="polite"]')).toHaveTextContent("Đồng bộ");
       act(() => vi.advanceTimersByTime(3200));
-      expect(within(resources).getByText("Đang xử lý: Kiểm tra")).toBeInTheDocument();
+      expect(resources.querySelector('p[aria-live="polite"]')).toHaveTextContent("Kiểm tra");
       expect(resources.querySelectorAll(".pipeline-node-completed")).toHaveLength(1);
       act(() => vi.advanceTimersByTime(800));
-      expect(within(resources).getByText("Đang xử lý: Phân tích")).toBeInTheDocument();
+      expect(resources.querySelector('p[aria-live="polite"]')).toHaveTextContent("Phân tích");
       expect(resources.querySelectorAll(".pipeline-node-completed")).toHaveLength(2);
     } finally {
       vi.useRealTimers();

@@ -1,0 +1,74 @@
+feature,value,count,share_pct,distinct_in_feature
+subdivision,Zenia,158,40.31,4
+subdivision,Risa,114,29.08,4
+subdivision,Lusso d'Arte,61,15.56,4
+subdivision,Lusso Saigon,59,15.05,4
+tower,B3,92,23.47,7
+tower,A4,77,19.64,7
+tower,B4,66,16.84,7
+tower,B2,61,15.56,7
+tower,A3,37,9.44,7
+tower,A2,36,9.18,7
+tower,A1,23,5.87,7
+unit_type_normalized,2PN,152,38.78,11
+unit_type_normalized,3PN,56,14.29,11
+unit_type_normalized,1PN+,44,11.22,11
+unit_type_normalized,Loft,39,9.95,11
+unit_type_normalized,2PN+2WC,39,9.95,11
+unit_type_normalized,1PN,31,7.91,11
+unit_type_normalized,RISA,14,3.57,11
+unit_type_normalized,Garden,8,2.04,11
+unit_type_normalized,4PN,7,1.79,11
+unit_type_normalized,SkyVilla,1,0.26,11
+unit_type_normalized,2PN+1WC,1,0.26,11
+floor_band,high,164,41.84,3
+floor_band,low,116,29.59,3
+floor_band,mid,112,28.57,3
+direction,Nam,71,18.11,8
+direction,Tây Bắc,64,16.33,8
+direction,Đông Nam,59,15.05,8
+direction,Bắc,55,14.03,8
+direction,Đông Bắc,47,11.99,8
+direction,Đông,41,10.46,8
+direction,Tây,38,9.69,8
+direction,Tây Nam,17,4.34,8
+balcony_direction,Tây,71,18.11,8
+balcony_direction,Đông Bắc,64,16.33,8
+balcony_direction,Tây Nam,59,15.05,8
+balcony_direction,Đông,55,14.03,8
+balcony_direction,Đông Nam,47,11.99,8
+balcony_direction,Nam,41,10.46,8
+balcony_direction,Bắc,38,9.69,8
+balcony_direction,Tây Bắc,17,4.34,8
+view,Nội khu,95,24.23,6
+view,Hồ bơi,84,21.43,6
+view,Thành phố,73,18.62,6
+view,Toàn cảnh,56,14.29,6
+view,Sông,44,11.22,6
+view,Cảnh quan nội khu,40,10.2,6
+corner_unit_proxy,False,322,82.14,2
+corner_unit_proxy,True,70,17.86,2
+unit_status,available,199,50.77,3
+unit_status,sold,130,33.16,3
+unit_status,reserved,63,16.07,3
+agency_name,HBL,98,25.0,12
+agency_name,MEGA REALTY,91,23.21,12
+agency_name,AUH,78,19.9,12
+agency_name,VSH,66,16.84,12
+agency_name,AKH,32,8.16,12
+agency_name,VNL,20,5.1,12
+agency_name,Cas,2,0.51,12
+agency_name,MKL,1,0.26,12
+agency_name,Azh,1,0.26,12
+agency_name,HANA,1,0.26,12
+agency_name,Rever,1,0.26,12
+agency_name,VAL,1,0.26,12
+data_profile,demo,392,100.0,1
+physical_features_origin,synthetic_v1_tower_stack_floor_band,392,100.0,1
+crm_signals_origin,synthetic_v1_causal_funnel,392,100.0,1
+agency_name_origin,synthetic,378,96.43,2
+agency_name_origin,observed,14,3.57,2
+deal_lifecycle_stage,lead,146,37.24,4
+deal_lifecycle_stage,sold,130,33.16,4
+deal_lifecycle_stage,reserved,63,16.07,4
+deal_lifecycle_stage,no_lead,53,13.52,4

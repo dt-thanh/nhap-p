@@ -8,7 +8,7 @@
 // cả hai phía, nên nó là canonical ID (xem `docs/integration/canonical_ids.md`).
 //
 // KHÔNG kèm token vào URL. SSO đã lo phần danh tính: Product Frontend tự chạy
-// vòng OIDC của nó với CÙNG tenant Entra, và vì phiên SSO ở phía Microsoft đã
+// vòng OIDC của nó với CÙNG realm Keycloak, và vì phiên SSO ở phía Keycloak đã
 // tồn tại, người dùng không bị hỏi lại mật khẩu. Một access token trong query
 // string sẽ nằm lại trong lịch sử trình duyệt, log của proxy và header
 // `Referer` — ba nơi không ai kiểm soát được.

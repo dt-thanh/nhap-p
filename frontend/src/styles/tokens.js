@@ -52,6 +52,15 @@ export const size = {
   tiny: 12.5,
 };
 
+// Thang chữ dùng cho các màn hình có mật độ dữ liệu cao. Quy mô mobile được
+// áp dụng tại stylesheet để giữ responsive behavior trong CSS hiện tại.
+export const typography = {
+  h1: { fontSize: 28, fontWeight: 700, mobileFontSize: 24 },
+  h2: { fontSize: 24, fontWeight: 600, mobileFontSize: 20 },
+  body1: { fontSize: 16, fontWeight: 400, mobileFontSize: 15 },
+  body2: { fontSize: 15, fontWeight: 400, mobileFontSize: 14 },
+};
+
 export const radius = { sm: 8, md: 12, lg: 16, pill: 999 };
 
 export const space = (n) => n * 4;

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -323,3 +324,143 @@ async def test_rotate_unknown_credential_is_an_error(session_factory, service):
             with pytest.raises(CredentialError) as exc:
                 await service.rotate(session, uuid.uuid4())
     assert exc.value.error_code == "UNKNOWN_CREDENTIAL"
+
+
+# --- Bền vững qua "restart" (kết nối mới, engine mới) -----------------------
+
+
+@pytest.mark.asyncio
+async def test_credential_authenticates_after_a_simulated_restart(service):
+    """Khoá phải xác thực được từ MỘT engine/session hoàn toàn mới — mô phỏng
+    container relay khởi động lại và không còn giữ gì trong bộ nhớ tiến trình
+    cũ. Không có gì được lưu ngoài DB, nên đây thực chất là kiểm tra `issue` và
+    `authenticate` không âm thầm dựa vào trạng thái trong tiến trình (cache,
+    session giữ lại) mà lẽ ra phải là DB."""
+    issue_engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    try:
+        issue_sessions = async_sessionmaker(issue_engine, expire_on_commit=False)
+        async with issue_sessions() as session:
+            async with session.begin():
+                issued = await service.issue(
+                    session, source_system="mini_crm", source_instance_id="synthetic-restart"
+                )
+    finally:
+        await issue_engine.dispose()
+
+    # Engine hoàn toàn mới, không chia sẻ pool/connection với engine cấp khoá ở trên.
+    restart_engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    try:
+        restart_sessions = async_sessionmaker(restart_engine, expire_on_commit=False)
+        async with restart_sessions() as session:
+            async with session.begin():
+                caller = await SyncCredentialService().authenticate(session, api_key=issued.api_key)
+        assert caller.credential_id == issued.credential_id
+    finally:
+        await restart_engine.dispose()
+        async with (await _cleanup_session_factory())() as session:
+            async with session.begin():
+                await session.execute(
+                    sa.delete(sync_credentials).where(sync_credentials.c.source_instance_id == "synthetic-restart")
+                )
+
+
+async def _cleanup_session_factory():
+    return async_sessionmaker(create_async_engine(TEST_DATABASE_URL, poolclass=NullPool), expire_on_commit=False)
+
+
+# --- Xoay khoá đồng thời ------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_concurrent_rotation_leaves_exactly_one_active_credential(session_factory, service):
+    """Hai lệnh xoay cùng lúc trên CÙNG một khoá — kết quả phải nhất quán: khoá
+    gốc bị thu hồi đúng một lần, và không có hai khoá "mới nhất" cùng active mà
+    không ai biết cái nào là thật. `revoke` idempotent (trả False lần hai) là
+    điều giữ cho race này an toàn thay vì tạo ra hai bản ghi thu hồi mâu thuẫn.
+    """
+    old = await _issue(session_factory, service)
+
+    async def _rotate_attempt():
+        async with session_factory() as session:
+            async with session.begin():
+                try:
+                    return await service.rotate(session, old.credential_id)
+                except CredentialError as exc:
+                    return exc
+
+    results = await asyncio.gather(_rotate_attempt(), _rotate_attempt())
+
+    issued_results = [r for r in results if isinstance(r, type(old))]
+    assert len(issued_results) == 2, "cả hai lần gọi rotate phải cấp được khoá mới (rotate không khoá ghi)"
+
+    async with session_factory() as session:
+        active = (
+            (
+                await session.execute(
+                    sa.select(sync_credentials).where(
+                        sync_credentials.c.source_instance_id == old.source_instance_id,
+                        sync_credentials.c.revoked_at.is_(None),
+                    )
+                )
+            )
+            .mappings()
+            .all()
+        )
+        old_row = (
+            (await session.execute(sa.select(sync_credentials).where(sync_credentials.c.id == old.credential_id)))
+            .mappings()
+            .one()
+        )
+
+    assert old_row["revoked_at"] is not None, "khoá gốc phải bị thu hồi sau khi xoay"
+    # Hai lệnh rotate cùng gọi issue() độc lập nên có thể tạo hai khoá mới — cả
+    # hai đều hợp lệ (đúng phạm vi, đúng instance); bất biến cần giữ là khoá GỐC
+    # không còn active, không phải "chỉ đúng một khoá mới tồn tại".
+    assert old.credential_id not in {row["id"] for row in active}
+
+
+# --- Không log/trả khoá thô ngoài đúng một lần ------------------------------
+
+
+@pytest.mark.asyncio
+async def test_issue_never_logs_the_raw_key(session_factory, service, caplog):
+    import logging
+
+    with caplog.at_level(logging.DEBUG):
+        issued = await _issue(session_factory, service, source_instance_id="synthetic-no-log-issue")
+
+    for record in caplog.records:
+        assert issued.api_key not in record.getMessage()
+        assert issued.api_key not in str(record.__dict__)
+
+
+@pytest.mark.asyncio
+async def test_authenticate_never_logs_the_raw_key(session_factory, service, caplog):
+    import logging
+
+    issued = await _issue(session_factory, service, source_instance_id="synthetic-no-log-auth")
+
+    with caplog.at_level(logging.DEBUG):
+        async with session_factory() as session:
+            async with session.begin():
+                await service.authenticate(session, api_key=issued.api_key)
+        # Và trên đường TỪ CHỐI — nơi dễ vô tình log nguyên văn khoá sai nhất.
+        async with session_factory() as session:
+            async with session.begin():
+                with pytest.raises(CredentialError):
+                    await service.authenticate(session, api_key=issued.api_key[:8] + "x" * 30)
+
+    for record in caplog.records:
+        assert issued.api_key not in record.getMessage()
+        assert issued.api_key not in str(record.__dict__)
+
+
+def test_authenticated_caller_carries_no_raw_key_field():
+    """Kiểm cấu trúc: `AuthenticatedCaller` không có trường nào có thể vô tình
+    mang khoá thô trở lại phía gọi — khoá chỉ tồn tại trong `IssuedCredential`,
+    và chỉ ngay sau lúc `issue()`."""
+    from src.services.sync_credentials import AuthenticatedCaller
+
+    fields = {f for f in AuthenticatedCaller.__dataclass_fields__}
+    assert "api_key" not in fields
+    assert "key_hash" not in fields

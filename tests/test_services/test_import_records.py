@@ -38,7 +38,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from src.models.tables import (
-    absorption_daily,
     areas,
     inventory_snapshots,
     sales_records,
@@ -122,19 +121,51 @@ async def session_factory():
 async def clean_db(session_factory):
     """Mỗi test bắt đầu từ DB sạch nên chạy lại nhiều lần vẫn ra kết quả như nhau.
 
-    Thứ tự xoá đi ngược chiều khoá ngoại. `projects` xoá bằng SQL thô vì không
-    khai trong `src.models.tables` (tầng insert không ghi vào đó).
+    Release-hardening pass (post-PR-5): trước đây hàm này tự liệt kê một danh
+    sách `DELETE FROM` hẹp (chỉ sáu bảng thuộc riêng luồng nạp file), không
+    biết gì về `units`/`deals`/bảng xếp hạng — những bảng KHÔNG thuộc phạm vi
+    file này nhưng vẫn FK tới `areas`. `DELETE FROM areas` khi đó là xoá TOÀN
+    BỘ bảng (không giới hạn theo `PROJECT_ID` của riêng test này), nên một
+    hàng `units` còn sót (từ một suite khác, hoặc từ một tiến trình pytest bị
+    ngắt giữa chừng trước khi fixture dọn dẹp của NÓ kịp chạy — đã xảy ra thật:
+    máy chủ hết đĩa giữa một lượt test, Postgres crash, và lượt chạy `pytest`
+    kế tiếp gặp `ForeignKeyViolationError` ngay ở fixture này) sẽ làm
+    `DELETE FROM areas` nổ khoá ngoại `fk_units_area_id`, và lỗi hiện ra ở một
+    file hoàn toàn không liên quan tới nguyên nhân thật.
+
+    Fix: dùng lại `truncate_tables()` — MỘT nguồn liệt kê bảng duy nhất mà
+    `tests/conftest.py::truncate_all` đã dùng cho các module khác — với
+    `TRUNCATE ... RESTART IDENTITY CASCADE`. `CASCADE` ở đây dọn luôn mọi bảng
+    FK-phụ thuộc dù không được liệt kê tường minh (`units`/`deals`/
+    `ranking_scores`/...), nên fixture này không còn cần BIẾT về những bảng đó
+    để vẫn an toàn trước chúng — đúng tinh thần "test cleanup, không phải mô
+    hình dữ liệu sản phẩm" (không đụng constraint/FK nào, không CASCADE trong
+    migration/schema thật). Dọn CẢ HAI đầu (trước và sau mỗi test), cùng kỷ
+    luật `truncate_all`: một suite khác chạy NGAY SAU file này cũng không thấy
+    sót lại gì.
     """
+    from tests.conftest import truncate_tables
+
+    statement = sa.text(
+        "TRUNCATE TABLE " + ", ".join(f'"{t}"' for t in truncate_tables()) + " RESTART IDENTITY CASCADE"
+    )
+
+    async def _reset() -> None:
+        async with session_factory() as session:
+            async with session.begin():
+                await session.execute(statement)
+                await session.execute(
+                    sa.text(
+                        "INSERT INTO projects (id, name, launch_date, created_at) VALUES (:id, 'Pilot', :d, :ts)"
+                    ),
+                    {"id": PROJECT_ID, "d": date(2026, 1, 1), "ts": datetime.now(UTC)},
+                )
+
+    await _reset()
+    yield
     async with session_factory() as session:
         async with session.begin():
-            for table in (upload_errors, absorption_daily, sales_records, inventory_snapshots, areas, upload_files):
-                await session.execute(sa.delete(table))
-            await session.execute(sa.text("DELETE FROM projects"))
-            await session.execute(
-                sa.text("INSERT INTO projects (id, name, launch_date, created_at) VALUES (:id, 'Pilot', :d, :ts)"),
-                {"id": PROJECT_ID, "d": date(2026, 1, 1), "ts": datetime.now(UTC)},
-            )
-    yield
+            await session.execute(statement)
 
 
 # --- Helper -----------------------------------------------------------------

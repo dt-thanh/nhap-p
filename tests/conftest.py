@@ -96,6 +96,36 @@ EXTRA_TRUNCATE_TABLES: tuple[str, ...] = (
     # CASCADE của các bảng đó đã quét nó, liệt kê tường minh chỉ để tài liệu hoá
     # quan hệ, giống `ranking_scores` ở trên.
     "agent_recommendations",
+    # P5 (audit 2026-08-25): governance 0033/0034 — `src/services/governance.py`
+    # + `tests/test_services/test_governance.py`. Con trước cha, cùng quy ước:
+    # `ranking_evidence_document_features` trỏ `ranking_evidence_documents` +
+    # `ranking_feature_justifications`; `ranking_config_audit_events`/
+    # `ranking_proposal_reviews`/`ranking_evidence_documents` trỏ
+    # `ranking_weight_proposals`/`expert_profiles`; `ranking_feature_justifications`
+    # trỏ `ranking_weight_proposals` + `ranking_feature_definitions`.
+    "ranking_evidence_document_features",
+    "ranking_config_audit_events",
+    "ranking_proposal_reviews",
+    # 0035 (§21.4): chunks + log trạng thái trích xuất đều trỏ
+    # `ranking_evidence_documents`, phải dọn trước nó.
+    "ranking_evidence_document_chunks",
+    "ranking_evidence_extraction_attempts",
+    "ranking_evidence_documents",
+    "ranking_feature_justifications",
+    "ranking_weight_proposals",
+    "expert_profiles",
+    # PR-3 (0039): materialized Project-grain feature values — con trước cha,
+    # cùng quy ước: `ranking_feature_lineage` trỏ `ranking_feature_values`
+    # trỏ `ranking_feature_snapshots` (+ `ranking_feature_definitions` qua
+    # `feature_definition_id`, cả hai đã có từ 0033, và `ranking_feature_justifications`
+    # qua `source_justification_id` mới, 0039).
+    "ranking_feature_lineage",
+    "ranking_feature_values",
+    "ranking_feature_snapshots",
+    # 0033 — không bảng nào ở trên FK tới nó cần dọn trước, nhưng test P5 tự
+    # tạo hàng ở đây làm fixture nên nó phải được dọn cùng, không cách nào
+    # CASCADE tới được nó từ các bảng con phía trên.
+    "ranking_feature_definitions",
 )
 
 

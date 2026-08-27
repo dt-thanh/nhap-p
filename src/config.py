@@ -1,8 +1,22 @@
+import json
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Phải khớp `src/services/oidc.py::CANONICAL_APP_ROLES` — trùng lặp CÓ CHỦ Ý
+# (không import: `config.py` không được phụ thuộc vào tầng service) để canh
+# đúng một việc: OIDC_ROLE_MAP không được định nghĩa lại ba khoá vai trò chuẩn
+# này thành một giá trị khác ở `_reject_conflicting_canonical_role_map` dưới đây.
+_CANONICAL_APP_ROLES = {
+    "CRM.CEO": "admin",
+    "CRM.Admin": "admin",
+    "CRM.ADVISOR": "business_viewer",
+    "CRM.Viewer": "business_viewer",
+    "CRM.SALES": "pipeline_operator",
+    "CRM.Operator": "pipeline_operator",
+}
 
 
 class Settings(BaseSettings):
@@ -14,7 +28,7 @@ class Settings(BaseSettings):
 
     # App
     app_name: str = "AI20K Agent"
-    app_env: Literal["development", "production", "staging", "test"] = "production"
+    app_env: Literal["development", "demo", "production", "staging", "test"] = "production"
     app_port: int = Field(default=8000, ge=1, le=65535)
     app_host: str = "0.0.0.0"
     cors_origins: str = "http://localhost:3000"
@@ -58,6 +72,12 @@ class Settings(BaseSettings):
     parallel_run_capture_enabled: bool = True
     parallel_run_capture_cron: str = "30 3 * * *"
 
+    # PR-1 hierarchical ranking (D29/D37/D41, `docs/ranking/ranking_consultant.md`
+    # §24). MẶC ĐỊNH TẮT: cột mới nullable và an toàn khi tắt, nhưng bước tính
+    # bổ sung này chưa có Market/Project/Area/Legal nguồn thật (PR-1) — bật cờ
+    # chỉ nên làm khi có `ranking_configs.hierarchical_weights` hợp lệ để đọc.
+    hierarchical_ranking_enabled: bool = False
+
     # Endpoint vận hành. RỖNG = endpoint tắt (503), không phải mở: dữ liệu lạc hậu
     # kèm project_id là thông tin nội bộ, mặc định phải là đóng.
     ops_api_token: SecretStr = SecretStr("")
@@ -96,27 +116,17 @@ class Settings(BaseSettings):
     # xem docs/crm/phase_a_domain_freeze.md §A7.3.
     dashboard_project_scope: SecretStr = SecretStr("")
 
-    # --- Microsoft Entra ID / SSO (CP5) --------------------------------------
-    # CÙNG TENANT với Mini CRM — đó là toàn bộ cơ chế SSO. Client id/secret có
-    # thể (nên) khác: hai app registration tách bạch, thu hồi được độc lập.
-    # KHÔNG hard-code; rỗng = đường Entra chưa bật.
-    entra_tenant_id: str = ""
-    entra_client_id: str = ""
-    entra_client_secret: SecretStr = SecretStr("")
-    entra_redirect_uri: str = ""
-    entra_post_logout_redirect_uri: str = ""
-    entra_authority_host: str = "https://login.microsoftonline.com"
-    entra_issuer: str = ""
-    entra_audience: str = ""
-    entra_scopes: str = "openid profile email offline_access"
-    entra_allowed_algorithms: str = "RS256"
-    entra_clock_skew_seconds: int = 60
-    entra_role_map: SecretStr = SecretStr("")
-    entra_project_scope: SecretStr = SecretStr("")
+    # --- Auth provider ---------------------------------------------------------
+    # Chỉ Keycloak được hỗ trợ ở runtime. Field này KHÔNG chọn giữa nhiều nhà
+    # cung cấp (không còn Entra để chọn) — nó là một khai báo TƯỜNG MINH, để một
+    # biến môi trường thất lạc/kiểu cũ không bao giờ có thể ÂM THẦM bật một
+    # đường xác thực khác: giá trị nào khác "keycloak" bị Pydantic từ chối ngay
+    # lúc khởi động, không phải lúc có request đầu tiên.
+    auth_provider: Literal["keycloak"] = "keycloak"
 
-    # --- Generic OIDC (Keycloak local, hoặc bất kỳ IdP OIDC nào) --------------
-    # §12: OIDC_* set ⇒ dùng OIDC provider; rỗng ⇒ rơi về ENTRA_* nếu hợp lệ.
-    # KHÔNG hard-code — rỗng nghĩa là đường OIDC generic TẮT (đóng, không mở).
+    # --- OIDC / Keycloak (SSO) -------------------------------------------------
+    # KHÔNG hard-code — rỗng nghĩa là đường đăng nhập người dùng TẮT (đóng, không
+    # mở); route auth trả 503 rõ ràng thay vì đoán một nhà cung cấp khác.
     # ISSUER là URL CÔNG KHAI/front-channel (browser mở được), INTERNAL_BASE_URL
     # là URL back-channel qua Docker DNS (container gọi). Xem src/services/oidc.py.
     oidc_issuer: str = ""
@@ -129,6 +139,12 @@ class Settings(BaseSettings):
     oidc_audience: str = ""
     oidc_allowed_algorithms: str = "RS256"
     oidc_clock_skew_seconds: int = 60
+    # JSON: {"<claim>": "<vai trò nội bộ>"}. Ba khoá CRM.CEO/CRM.ADVISOR/CRM.SALES
+    # luôn được seed vào bản đồ này (xem oidc.py::resolve_role) — map này chỉ để
+    # THÊM claim/nhóm tuỳ biến, không thể định nghĩa lại ba khoá chuẩn.
+    oidc_role_map: SecretStr = SecretStr("")
+    # JSON: {"<claim>": ["ext_id", ...]} hoặc {"<claim>": "ALL"}.
+    oidc_project_scope: SecretStr = SecretStr("")
 
     session_secret: SecretStr = SecretStr("")
     session_ttl_seconds: int = 3600
@@ -151,6 +167,52 @@ class Settings(BaseSettings):
     # chối cả lô (SRS §5.2). Không đặt trong bảng `settings` được vì
     # settings.updated_by là NOT NULL -> users.id, mà MVP 1 chưa có users.
     import_error_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _reject_dev_bypass_outside_development(self) -> "Settings":
+        """Chốt khởi động, không chỉ chốt lúc chạy. `dashboard_auth.py` đã tự
+        gác `dev_auth_bypass` sau `app_env == "development"`, nhưng đó là một
+        điều kiện ÂM THẦM lặng lẽ vô hiệu hoá cờ — tiến trình vẫn khởi động
+        bình thường với một cờ bypass nằm chờ, chỉ cần `APP_ENV` đổi (hoặc bị
+        bỏ trống, mặc định rơi về "production" — xem field phía trên) là bật
+        lại. Từ chối ngay ở đây thay vì im lặng bỏ qua: một compose file dev bị
+        tái sử dụng sai chỗ sẽ KHÔNG khởi động được, thay vì khởi động rồi âm
+        thầm mở toang quyền admin cho request không kèm token.
+        """
+        if self.dev_auth_bypass and self.app_env != "development":
+            raise ValueError(
+                "DEV_AUTH_BYPASS=true chỉ được phép khi APP_ENV=development "
+                f"(đang là '{self.app_env}'). Đặt DEV_AUTH_BYPASS=false, hoặc "
+                "APP_ENV=development nếu đây thật sự là máy dev cục bộ."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _reject_conflicting_canonical_role_map(self) -> "Settings":
+        """CRM.CEO/CRM.ADVISOR/CRM.SALES là vai trò nghiệp vụ chuẩn, dùng chung
+        với Mini CRM (`oidc.py::CANONICAL_APP_ROLES`) — cố định trong code.
+        Nếu `OIDC_ROLE_MAP` cố tình gán một trong ba khoá này cho một vai trò
+        nội bộ KHÁC, đó là một cấu hình mâu thuẫn: từ chối ngay lúc khởi động
+        thay vì để `resolve_role` phải âm thầm quyết định bên nào thắng.
+        """
+        raw = self.oidc_role_map.get_secret_value()
+        if not raw:
+            return self
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            return self
+        if not isinstance(parsed, dict):
+            return self
+        for key, canonical_value in _CANONICAL_APP_ROLES.items():
+            configured_value = parsed.get(key)
+            if configured_value is not None and configured_value != canonical_value:
+                raise ValueError(
+                    f"OIDC_ROLE_MAP đặt '{key}' thành '{configured_value}', nhưng đây là vai trò "
+                    f"chuẩn cố định trong code ('{canonical_value}'). Xoá khoá này khỏi "
+                    "OIDC_ROLE_MAP, hoặc dùng đúng giá trị chuẩn."
+                )
+        return self
 
     @property
     def resolved_llm_api_key(self) -> str:

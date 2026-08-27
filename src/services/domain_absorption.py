@@ -395,7 +395,7 @@ class ComparisonReport:
     project_id: uuid.UUID
     legacy_units_sold: int = 0
     domain_units_sold: int = 0
-    legacy_units_remaining: int = 0
+    legacy_units_remaining: int | None = 0
     domain_units_remaining: int = 0
     domain_units_reserved: int = 0
     differences: list[dict] = field(default_factory=list)
@@ -435,13 +435,23 @@ class ParallelRunComparator:
             ("units_sold", legacy.units_sold, domain.units_sold),
             ("units_remaining", legacy.units_remaining, domain.units_remaining),
         ):
+            if legacy_value is None and not domain_value:
+                # Bộ tính cũ "không biết" (không có phân khu/bản chốt tồn kho
+                # nào) VÀ bộ tính mới cũng không có gì để báo (0/rỗng) — cả hai
+                # cùng nói "không có dữ liệu", không phải một chênh lệch.
+                continue
             if legacy_value != domain_value:
+                delta = (
+                    domain_value - legacy_value
+                    if isinstance(legacy_value, int) and isinstance(domain_value, int)
+                    else None
+                )
                 report.differences.append(
                     {
                         "metric": metric,
                         "legacy": legacy_value,
                         "domain": domain_value,
-                        "delta": domain_value - legacy_value,
+                        "delta": delta,
                     }
                 )
 
@@ -630,8 +640,12 @@ class DomainSalesAnalyticsService:
         remaining = max(total_units - units_sold, 0)
         sell_through = _percent(units_sold, total_units)
         velocity_7d = Decimal(int(recent.seven or 0)) if units_sold else None
-        velocity_30d = (Decimal(int(recent.thirty or 0)) * Decimal(7) / Decimal(30)) if units_sold else None
-        estimated = _weeks_to_sell_out(remaining, velocity_30d)
+        velocity_30d_raw = (Decimal(int(recent.thirty or 0)) * Decimal(7) / Decimal(30)) if units_sold else None
+        # `estimated` dùng giá trị CHƯA làm tròn — làm tròn velocity_30d trước
+        # khi chia sẽ khuếch đại sai số vào số tuần ước tính. Trường trả về
+        # `velocity_30d` làm tròn RIÊNG, chỉ để hiển thị.
+        estimated = _weeks_to_sell_out(remaining, velocity_30d_raw)
+        velocity_30d = velocity_30d_raw.quantize(Decimal("0.0001")) if velocity_30d_raw is not None else None
         if total_units == 0:
             data_status, message = "no_units", "Phạm vi chưa có căn hộ."
         elif units_sold == 0:

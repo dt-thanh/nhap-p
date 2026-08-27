@@ -12,10 +12,13 @@ route CÓ SẴN, không sửa gì) rồi POST y hệt sang backend — HAI ĐẦ
 THẬT, HTTP THẬT, ghi DB THẬT. Không có phản hồi nào bị giả lập; đây là bằng chứng
 chiếu THẬT, không phải một `FakeBackend`.
 
-Yêu cầu: `docker compose up -d` (minicrm, minicrm_db, api, db) đã chạy, và
-`.env` mang `MINICRM_SYNC_API_KEY` hợp lệ cho `MINICRM_SOURCE_INSTANCE_ID`
-(đã có sẵn từ Phase 3 — cùng khoá mà `minicrm/tests/test_real_backend_sync.py`
-dùng cho v1).
+Yêu cầu: `docker compose up -d` (minicrm, minicrm_db, api, db) đã chạy, và có
+một sync API key hợp lệ cho `MINICRM_SOURCE_INSTANCE_ID` — ưu tiên đọc từ
+`.dev-secrets/minicrm_sync_api_key` (Compose secrets, do `scripts/dev-reset.sh`/
+`scripts/bootstrap_dev.py --credential-output-file` cấp; xem
+`minicrm/app/config.py::sync_api_key_value` cho cùng thứ tự ưu tiên), rơi về
+`.env`'s `MINICRM_SYNC_API_KEY` chỉ khi file đó không có — cùng khoá mà
+`minicrm/tests/test_real_backend_sync.py` dùng cho v1.
 
 Chạy: pytest tests/test_services/test_real_hierarchy_e2e.py -q
 (KHÔNG qua scripts/test_db.sh — bộ này nói chuyện với container THẬT, không phải
@@ -57,8 +60,24 @@ def _env_file() -> dict[str, str]:
     return values
 
 
+def _sync_api_key(env: dict[str, str]) -> str:
+    """Cùng thứ tự ưu tiên với `minicrm/app/config.py::sync_api_key_value`:
+    file bí mật Compose trước (luôn khớp credential ACTIVE hiện tại, kể cả sau
+    `dev-reset.sh`/`bootstrap_dev.py --credential-output-file`), `.env` chỉ là
+    lối tương thích ngược — và không còn được ghi tự động kể từ khi có luồng
+    cấp credential tự động cho dev cục bộ."""
+    secret_file = REPO_ROOT / ".dev-secrets" / "minicrm_sync_api_key"
+    try:
+        from_file = secret_file.read_text().rstrip("\n")
+    except (FileNotFoundError, IsADirectoryError, PermissionError):
+        from_file = ""
+    if from_file:
+        return from_file
+    return env.get("MINICRM_SYNC_API_KEY", "")
+
+
 ENV = _env_file()
-SYNC_API_KEY = ENV.get("MINICRM_SYNC_API_KEY", "")
+SYNC_API_KEY = _sync_api_key(ENV)
 SOURCE_INSTANCE = ENV.get("MINICRM_SOURCE_INSTANCE_ID", "mini-crm-dev")
 # D-14: Mini CRM giờ đòi xác thực GHI. `admin` (phạm vi ALL, `.env`) — fixture
 # này dựng hệ thống phân cấp qua nhiều dự án khác nhau (kể cả một dự án NGOÀI

@@ -9,6 +9,8 @@ NHẤT kiểm chính cơ chế xác thực/phạm vi, không lẫn với test CR
 
 from __future__ import annotations
 
+import pytest
+
 from app.main import app
 from fastapi.testclient import TestClient
 
@@ -17,6 +19,7 @@ from tests.conftest import (
     ADMIN_TOKEN,
     OPERATOR_AUTH_HEADER,
     OPERATOR_TOKEN,
+    TEST_AREA_EXTERNAL_ID,
     TEST_PROJECT_EXTERNAL_ID,
     VIEWER_AUTH_HEADER,
 )
@@ -30,6 +33,13 @@ AREA_IN_SCOPE = {
     "area_sqm": 60.0,
     "total_units": 10,
 }
+# Phân khu (`/areas`) giờ đòi `admin` cho MỌI route ghi (xem docstring
+# `app/routers/areas.py`) — operator không còn tạo được nó nữa. Kiểm
+# "operator ghi trong/ngoài phạm vi" qua `/units` thay vì `/areas`: units vẫn
+# ở mức `pipeline_operator` (`app/routers/units.py`), và phân khu bootstrap
+# (`TEST_AREA_EXTERNAL_ID`, seed sẵn bằng SQL trong `crm_app`) cho operator một
+# nơi hợp lệ để gắn căn vào mà không cần admin tạo phân khu trước trong test.
+UNIT_IN_SCOPE = {"external_area_id": TEST_AREA_EXTERNAL_ID, "unit_code": "AUTH-U-1", "unit_status": "available"}
 
 
 def _client(headers: dict | None = None) -> TestClient:
@@ -84,26 +94,44 @@ def test_pipeline_operator_cannot_create_a_project(crm_app, backend):
     assert response.json()["detail"]["error_code"] == "INSUFFICIENT_ROLE"
 
 
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("patch", "/projects/P-0001", {"name": "not allowed"}),
+        ("delete", "/projects/P-0001", None),
+        ("patch", "/areas/A-0001", {"area_name": "not allowed"}),
+        ("delete", "/areas/A-0001", None),
+    ],
+)
+def test_pipeline_operator_cannot_update_or_delete_projects_or_areas(crm_app, backend, method, path, payload):
+    with _client(OPERATOR_AUTH_HEADER) as client:
+        response = getattr(client, method)(path, json=payload) if payload is not None else getattr(client, method)(path)
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "INSUFFICIENT_ROLE"
+
+
 # --- Phạm vi dự án ---------------------------------------------------------------
 
 
 def test_pipeline_operator_can_write_within_scope(crm_app, backend):
     with _client(OPERATOR_AUTH_HEADER) as client:
-        response = client.post("/areas", json=AREA_IN_SCOPE)
+        response = client.post("/units", json=UNIT_IN_SCOPE)
     assert response.status_code == 201
 
 
 def test_pipeline_operator_is_rejected_outside_scope(crm_app, backend):
-    """`admin` tạo một dự án THỨ HAI (P-0002) — operator không được cấp phạm vi
-    đó (`crm_app` chỉ cấu hình `[TEST_PROJECT_EXTERNAL_ID, "P-0001"]`)."""
+    """`admin` tạo một dự án THỨ HAI (P-0002) rồi một phân khu dưới nó (POST
+    `/areas` giờ đòi `admin` — xem docstring `app/routers/areas.py`), sau đó
+    operator thử tạo Unit dưới phân khu đó — operator không được cấp phạm vi
+    dự án thứ hai (`crm_app` chỉ cấu hình `[TEST_PROJECT_EXTERNAL_ID,
+    "P-0001"]`)."""
     with _client(ADMIN_AUTH_HEADER) as client:
         client.post("/projects", json=PROJECT)  # P-0001
         second = client.post("/projects", json={"name": "Auth E2E 2", "launch_date": "2026-07-01"})  # P-0002
         assert second.status_code == 201
         other_project_id = second.json()["record"]["external_id"]
 
-    with _client(OPERATOR_AUTH_HEADER) as client:
-        response = client.post(
+        other_area = client.post(
             "/areas",
             json={
                 "external_project_id": other_project_id,
@@ -113,6 +141,14 @@ def test_pipeline_operator_is_rejected_outside_scope(crm_app, backend):
                 "area_sqm": 80.0,
                 "total_units": 5,
             },
+        )
+        assert other_area.status_code == 201
+        other_area_id = other_area.json()["record"]["external_id"]
+
+    with _client(OPERATOR_AUTH_HEADER) as client:
+        response = client.post(
+            "/units",
+            json={"external_area_id": other_area_id, "unit_code": "AUTH-U-2", "unit_status": "available"},
         )
     assert response.status_code == 403
     assert response.json()["detail"]["error_code"] == "PROJECT_OUT_OF_SCOPE"
@@ -220,6 +256,14 @@ def test_unconfigured_auth_fails_closed(crm_app, backend, monkeypatch):
         "MINICRM_AUTH_ADMIN_TOKEN",
         "MINICRM_AUTH_PIPELINE_OPERATOR_TOKEN",
         "MINICRM_AUTH_BUSINESS_VIEWER_TOKEN",
+        # "Chưa cấu hình" phải nghĩa là chưa cấu hình đường NÀO — kể cả Keycloak.
+        # `minicrm/.env` thật (đọc mặc định khi test không cô lập) mang sẵn
+        # `MINICRM_OIDC_CLIENT_SECRET`/`MINICRM_SESSION_SECRET` hoạt động thật
+        # (khớp giá trị docker-compose dùng) từ sau migration Keycloak-only —
+        # thiếu dòng này, `oidc_configured()` âm thầm true và test nhận 401 (JWT
+        # rơi qua nhánh Keycloak) thay vì 503 AUTH_DISABLED mà nó định kiểm.
+        "MINICRM_OIDC_CLIENT_SECRET",
+        "MINICRM_SESSION_SECRET",
     ):
         monkeypatch.setenv(name, "")
     get_settings.cache_clear()
@@ -237,6 +281,11 @@ def test_unconfigured_auth_fails_closed(crm_app, backend, monkeypatch):
             "test isolation failure: expected zero configured static tokens, "
             f"found {configured_token_count}"
         )
+        from app import oidc as oidc_mod
+        from app import session as session_mod
+
+        assert oidc_mod.oidc_configured() is False, "test isolation failure: OIDC/Keycloak still configured"
+        assert session_mod.session_configured() is False, "test isolation failure: session secret still configured"
         with _client(ADMIN_AUTH_HEADER) as client:
             response = client.post("/areas", json=AREA_IN_SCOPE)
         assert response.status_code == 503

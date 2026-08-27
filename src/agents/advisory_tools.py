@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from src.models.tables import (
     ranking_scores,
     units,
 )
+from src.services import evidence_extraction, governance
 from src.services.ai import generate_content
 
 ALLOWED_ADVISORY_TOOLS = {
@@ -732,6 +734,186 @@ async def policy_snapshot(project_id: str | None = None, allowed_external_ids=No
         "approved_changes": payload.get("approved_changes", []),
         "note": "Policy is read-only in chat; any change must become a pending recommendation and pass human approval.",
     }
+
+
+# --- Governance evidence retrieval (§21.7-§21.8) ---------------------------------
+#
+# Separate from the sales-advisory flow above and NOT part of
+# ALLOWED_ADVISORY_TOOLS' deterministic tool plan: these back the
+# expert-governance "explain this weight change" reviewer panel (§21.9), a
+# different consumer entirely. They never compute a score or choose a weight
+# — same "agent synthesizes the explanation" role this file's other functions
+# play for ranking, applied here to one expert justification instead.
+
+
+async def get_feature_evidence(feature_justification_id: str) -> list[dict]:
+    """SQL-only lookup of which documents are linked to a justification —
+    embedding+search happens in `retrieve_and_validate`. Returns `[]`, never
+    raises, for an unlinked or malformed id — the caller (prompt assembly)
+    must render that as "no evidence uploaded", never omit the feature
+    silently (hard constraint 15, §12.2)."""
+    try:
+        justification_uuid = uuid.UUID(feature_justification_id)
+    except ValueError:
+        return []
+    return await governance.list_documents_for_justification(justification_uuid)
+
+
+async def validate_evidence(chunk: dict, claim_project_id: str, claim_cutoff: datetime) -> bool:
+    """Entity + time checks a justification-linked chunk can actually be
+    checked against (§12.5, narrowed per §21.5): the chunk's document must
+    belong to a proposal scoped to `claim_project_id`, and must have entered
+    the system at or before `claim_cutoff`. Numeric-consistency (comparing
+    prose to a specific SQL value) is deferred to the caller of the LLM
+    output — it needs the claim's own number, which this function doesn't have.
+
+    Takes the chunk ROW as returned by `evidence_extraction.search_similar_chunks`
+    (already carries `document_id`), not a bare chunk id — avoids a second
+    round trip for information the caller already has.
+    """
+    document = await evidence_extraction.get_document(chunk["document_id"])
+    if document is None:
+        return False
+    if document["proposal_id"] is None:
+        # Standalone upload, not linked to any proposal — cannot confirm it
+        # scopes to claim_project_id. Fail closed rather than guess.
+        return False
+    proposal = await governance.get_proposal(document["proposal_id"])
+    if str(proposal["project_id"]) != str(claim_project_id):
+        return False
+    if document["created_at"] > claim_cutoff:
+        return False
+    return True
+
+
+async def retrieve_and_validate(
+    feature_justification_id: str,
+    claim_project_id: str,
+    claim_cutoff: datetime,
+    top_k: int = 5,
+) -> list[dict]:
+    """§21.7. Vector search restricted to documents already linked to THIS
+    justification — never a corpus-wide query (R19, §21.11). Returns `[]`
+    when nothing survives validation; the caller must render that as
+    insufficient evidence, never a paraphrase (§12.5 "Sufficiency")."""
+    try:
+        justification_uuid = uuid.UUID(feature_justification_id)
+    except ValueError:
+        return []
+    justification = await governance.get_justification(justification_uuid)
+    if justification is None:
+        return []
+
+    document_ids = [doc["id"] for doc in await get_feature_evidence(feature_justification_id)]
+    if not document_ids:
+        return []
+
+    query_vector = evidence_extraction.embed_texts([justification["evidence_summary"]])[0]
+    # Over-fetch: validation below discards candidates that fail the checks.
+    candidates = await evidence_extraction.search_similar_chunks(document_ids, query_vector, top_k=top_k * 4)
+
+    validated: list[dict] = []
+    for chunk in candidates:
+        if await validate_evidence(chunk, claim_project_id, claim_cutoff):
+            validated.append(chunk)
+        if len(validated) >= top_k:
+            break
+    return validated
+
+
+_EXPLANATION_SYSTEM_PROMPT = (
+    "Bạn là trợ lý giải thích thay đổi trọng số xếp hạng. Bạn KHÔNG chọn trọng số, "
+    "KHÔNG tính điểm, KHÔNG phê duyệt — chuyên gia đã làm việc đó ở "
+    "ranking_feature_justifications; bạn chỉ diễn giải input đã có kèm bằng chứng "
+    "được cung cấp. Mỗi câu chứa một con số hoặc một khẳng định thực tế PHẢI có "
+    "đúng một trích dẫn ngay sau, dạng [J] cho justification hoặc [D#:p#] cho đoạn "
+    "trích tài liệu thứ # ở trang #. KHÔNG bịa trích dẫn, KHÔNG trích đoạn ngoài "
+    "danh sách bằng chứng đã được xác thực dưới đây. Nếu một feature không có bằng "
+    "chứng nào được xác thực, nói rõ 'KHÔNG ĐỦ DỮ LIỆU' cho feature đó — không diễn "
+    "giải khiên cưỡng thành có. Đây là bản GIẢI THÍCH một đề xuất đang CHỜ DUYỆT, "
+    "không phải một trọng số đã có hiệu lực. Trả lời DUY NHẤT một object JSON:\n"
+    '{"explanation": "<đoạn văn, mỗi câu số liệu có [J] hoặc [D#:p#]>", '
+    '"citations": [{"marker": "D1:p3", "document_id": "<uuid>", "page": 3, "quote": "<nguyên văn đoạn trích>"}], '
+    '"insufficient_evidence_features": ["<feature_key nếu có>"]}'
+)
+
+
+def _render_validated_chunks_block(chunks: list[dict], document_index: dict[str, int]) -> str:
+    lines = []
+    for chunk in chunks:
+        marker_index = document_index[str(chunk["document_id"])]
+        page = f":p{chunk['page_number']}" if chunk["page_number"] is not None else ""
+        lines.append(f"[D{marker_index}{page}] {chunk['content']}")
+    return "\n".join(lines)
+
+
+def _parse_explanation_output(text: str) -> dict | None:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:]
+    try:
+        payload = json.loads(cleaned.strip())
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+async def generate_justification_explanation(
+    feature_justification_id: str,
+    claim_project_id: str,
+    claim_cutoff: datetime,
+    *,
+    feature_key: str,
+    top_k: int = 5,
+) -> dict:
+    """§21.8. Synthesizes prose from the expert's own justification fields
+    plus retrieved-and-validated evidence chunks — never generates a number
+    or a citation outside that validated set. Returns
+    `insufficient_evidence_features=[feature_key]` (never a confident-sounding
+    paraphrase) when nothing survives `retrieve_and_validate`, matching the
+    same anti-fabrication discipline as `render_advisory_answer` below."""
+    try:
+        justification_uuid = uuid.UUID(feature_justification_id)
+    except ValueError:
+        return {"error": "INVALID_JUSTIFICATION_ID"}
+    justification = await governance.get_justification(justification_uuid)
+    if justification is None:
+        return {"error": "JUSTIFICATION_NOT_FOUND"}
+
+    validated_chunks = await retrieve_and_validate(
+        feature_justification_id, claim_project_id, claim_cutoff, top_k=top_k
+    )
+    if not validated_chunks:
+        return {"explanation": None, "citations": [], "insufficient_evidence_features": [feature_key]}
+
+    document_ids = sorted({str(chunk["document_id"]) for chunk in validated_chunks})
+    document_index = {doc_id: index + 1 for index, doc_id in enumerate(document_ids)}
+    chunks_block = _render_validated_chunks_block(validated_chunks, document_index)
+
+    user_prompt = (
+        f"Feature: {feature_key} | Trọng số đề xuất: {justification['proposed_weight']} "
+        f"(trước đó: {justification['previous_weight']})\n"
+        f"Rationale (chuyên gia viết): {justification['rationale']}\n"
+        f"Methodology: {justification['methodology']}\n"
+        f"Evidence summary (chuyên gia viết): {justification['evidence_summary']}\n"
+        f"Expected effect: {justification['expected_effect']} | Confidence: {justification['confidence']}\n"
+        f"Limitations: {justification['limitations']}\n\n"
+        "Bằng chứng đã xác thực (entity/date/geography/numeric-consistency đã qua §12.5):\n"
+        f"{chunks_block}"
+    )
+
+    text, _usage = await generate_content(f"{_EXPLANATION_SYSTEM_PROMPT}\n\n{user_prompt}")
+    payload = _parse_explanation_output(text)
+    if payload is None:
+        return {
+            "explanation": None,
+            "citations": [],
+            "insufficient_evidence_features": [feature_key],
+            "error": "LLM_OUTPUT_NOT_JSON",
+        }
+    return payload
 
 
 async def collect_advisory_context(message: str, project_id: str | None, allowed_external_ids=None):

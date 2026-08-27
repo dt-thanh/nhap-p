@@ -12,8 +12,11 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 
+from src.main import app
 from src.services import file_upload as file_upload_module
+from tests.conftest import DASHBOARD_ADMIN_TOKEN, DASHBOARD_OPERATOR_TOKEN, DASHBOARD_VIEWER_TOKEN
 
 UPLOAD_URL = "/api/v1/files/upload"
 LIST_URL = "/api/v1/files"
@@ -48,9 +51,19 @@ class FakeDb:
         self.errors: list[dict] = []
         self.deleted: list[str] = []
 
-    def add_file(self, file_id=FILE_ID, *, status="pending", rows_ok=0, rows_failed=0, filename="sales.csv"):
+    def add_file(
+        self,
+        file_id=FILE_ID,
+        *,
+        status="pending",
+        rows_ok=0,
+        rows_failed=0,
+        filename="sales.csv",
+        project_id=PROJECT_ID,
+    ):
         self.rows[file_id] = SimpleNamespace(
             id=uuid.UUID(file_id),
+            project_id=uuid.UUID(project_id) if project_id else None,
             filename=filename,
             status=status,
             rows_ok=rows_ok,
@@ -526,3 +539,230 @@ async def test_list_files_filters_by_transport_mode(client, db, monkeypatch):
 
     assert response.status_code == 200
     assert "transport_mode" in captured["sql"]
+
+
+# --- Auth/RBAC (đóng lỗ hổng MVP1: router này từng hoàn toàn không có xác thực) --
+
+
+class _ScopeControl:
+    """Điều khiển kết quả `resolve_scope_project_ids` không cần DB thật —
+    file test này chủ trương stub, xem docstring đầu file."""
+
+    def __init__(self):
+        self.value: str | list = "ALL"
+
+
+@pytest.fixture
+def scope_control(monkeypatch):
+    control = _ScopeControl()
+
+    async def fake_resolve(_session, _principal):
+        return control.value
+
+    monkeypatch.setattr("src.api.files.resolve_scope_project_ids", fake_resolve)
+    return control
+
+
+def _client_as(token: str | None = None) -> AsyncClient:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=headers)
+
+
+async def _try_upload(token: str | None, **form):
+    data = {"template": "sales", "project_id": PROJECT_ID, **form}
+    async with _client_as(token) as anon_or_role:
+        return await anon_or_role.post(UPLOAD_URL, files={"file": ("sales.csv", VALID_CSV, "text/csv")}, data=data)
+
+
+@pytest.mark.asyncio
+async def test_anonymous_upload_is_401(queue):
+    response = await _try_upload(None)
+    assert response.status_code == 401
+    assert queue.enqueued == []
+
+
+@pytest.mark.asyncio
+async def test_viewer_role_cannot_upload(queue):
+    """Viewer không đủ quyền GHI — chỉ operator/admin mới nạp được file."""
+    response = await _try_upload(DASHBOARD_VIEWER_TOKEN)
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "INSUFFICIENT_ROLE"
+    assert queue.enqueued == []
+
+
+@pytest.mark.asyncio
+async def test_operator_role_can_upload(queue):
+    response = await _try_upload(DASHBOARD_OPERATOR_TOKEN)
+    assert response.status_code == 202
+
+
+@pytest.mark.asyncio
+async def test_admin_role_can_upload(queue):
+    response = await _try_upload(DASHBOARD_ADMIN_TOKEN)
+    assert response.status_code == 202
+
+
+@pytest.mark.asyncio
+async def test_upload_rejects_operator_outside_project_scope(queue, scope_control):
+    scope_control.value = [uuid.UUID("99999999-9999-9999-9999-999999999999")]
+    response = await _try_upload(DASHBOARD_OPERATOR_TOKEN)
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "PROJECT_OUT_OF_SCOPE"
+    assert queue.enqueued == []
+
+
+@pytest.mark.asyncio
+async def test_upload_allows_operator_with_project_in_scope(queue, scope_control):
+    scope_control.value = [uuid.UUID(PROJECT_ID)]
+    response = await _try_upload(DASHBOARD_OPERATOR_TOKEN)
+    assert response.status_code == 202
+
+
+@pytest.mark.asyncio
+async def test_anonymous_status_is_401(db):
+    async with _client_as() as anon:
+        response = await anon.get(STATUS_URL.format(file_id=FILE_ID))
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_status_rejects_viewer_outside_project_scope(db, scope_control):
+    """File thuộc PROJECT_ID; token viewer có phạm vi KHÁC → 403, không lộ trạng thái."""
+    db.add_file(status="completed", project_id=PROJECT_ID)
+    scope_control.value = [uuid.UUID("99999999-9999-9999-9999-999999999999")]
+
+    async with _client_as(DASHBOARD_VIEWER_TOKEN) as viewer:
+        response = await viewer.get(STATUS_URL.format(file_id=FILE_ID))
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "PROJECT_OUT_OF_SCOPE"
+
+
+@pytest.mark.asyncio
+async def test_status_allows_viewer_with_project_in_scope(db, scope_control):
+    db.add_file(status="completed", project_id=PROJECT_ID)
+    scope_control.value = [uuid.UUID(PROJECT_ID)]
+
+    async with _client_as(DASHBOARD_VIEWER_TOKEN) as viewer:
+        response = await viewer.get(STATUS_URL.format(file_id=FILE_ID))
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_anonymous_errors_is_401(db):
+    async with _client_as() as anon:
+        response = await anon.get(ERRORS_URL.format(file_id=FILE_ID))
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_anonymous_errors_csv_is_401(db):
+    async with _client_as() as anon:
+        response = await anon.get(ERRORS_CSV_URL.format(file_id=FILE_ID))
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_viewer_cannot_download_errors_csv(db):
+    """CSV export cần pipeline_operator trở lên — cao hơn `/errors` (JSON)."""
+    db.add_file(status="completed", project_id=PROJECT_ID)
+    async with _client_as(DASHBOARD_VIEWER_TOKEN) as viewer:
+        response = await viewer.get(ERRORS_CSV_URL.format(file_id=FILE_ID))
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "INSUFFICIENT_ROLE"
+
+
+@pytest.mark.asyncio
+async def test_operator_can_download_errors_csv(db):
+    db.add_file(status="completed", project_id=PROJECT_ID, filename="ban-hang.csv")
+    async with _client_as(DASHBOARD_OPERATOR_TOKEN) as operator:
+        response = await operator.get(ERRORS_CSV_URL.format(file_id=FILE_ID))
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_errors_csv_rejects_operator_outside_project_scope(db, scope_control):
+    db.add_file(status="completed", project_id=PROJECT_ID, filename="ban-hang.csv")
+    scope_control.value = [uuid.UUID("99999999-9999-9999-9999-999999999999")]
+
+    async with _client_as(DASHBOARD_OPERATOR_TOKEN) as operator:
+        response = await operator.get(ERRORS_CSV_URL.format(file_id=FILE_ID))
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "PROJECT_OUT_OF_SCOPE"
+
+
+@pytest.mark.asyncio
+async def test_anonymous_list_files_is_401():
+    async with _client_as() as anon:
+        response = await anon.get(LIST_URL)
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_viewer_with_no_scope_narrows_the_list_query(monkeypatch):
+    """Viewer chưa được cấp phạm vi nào (rỗng, không phải ALL) → câu truy vấn
+    phải tự thu hẹp về "không dự án nào" (`sa.false()`), không trả về mọi dự án
+    rồi trông cậy client tự lọc — cùng nguyên tắc `list_sync_runs`. Stub session
+    ở đây không diễn giải `WHERE` thật, nên kiểm tra qua hình dạng câu SQL, giống
+    `test_list_files_filters_by_transport_mode`."""
+    captured = {}
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def execute(self, query, *_a, **_kw):
+            captured["sql"] = str(query)
+            return SimpleNamespace(all=lambda: [])
+
+    monkeypatch.setattr("src.api.files.get_session_factory", lambda: _Session)
+
+    async with _client_as(DASHBOARD_VIEWER_TOKEN) as viewer:
+        response = await viewer.get(LIST_URL)
+
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+    assert "false" in captured["sql"].lower()
+
+
+@pytest.mark.asyncio
+async def test_viewer_with_scope_narrows_the_list_query_to_its_projects(monkeypatch, scope_control):
+    scope_control.value = [uuid.UUID(PROJECT_ID)]
+    captured = {}
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def execute(self, query, *_a, **_kw):
+            captured["sql"] = str(query)
+            return SimpleNamespace(all=lambda: [_file_row()])
+
+    monkeypatch.setattr("src.api.files.get_session_factory", lambda: _Session)
+
+    async with _client_as(DASHBOARD_VIEWER_TOKEN) as viewer:
+        response = await viewer.get(LIST_URL)
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["file_id"] == FILE_ID
+    assert "project_id in" in captured["sql"].lower()
+
+
+@pytest.mark.asyncio
+async def test_list_files_project_filter_rejects_out_of_scope_project(scope_control):
+    scope_control.value = [uuid.UUID("99999999-9999-9999-9999-999999999999")]
+
+    async with _client_as(DASHBOARD_VIEWER_TOKEN) as viewer:
+        response = await viewer.get(f"{LIST_URL}?project_id={PROJECT_ID}")
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "PROJECT_OUT_OF_SCOPE"

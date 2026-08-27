@@ -173,8 +173,18 @@ async def two_projects(session_factory):
 # --- 401/403 cơ bản -----------------------------------------------------------
 
 
+async def _get_without_auth_header(client, url: str):
+    """`headers={}` KHÔNG xoá header mặc định của `client` (httpx MERGE, không
+    THAY THẾ, header rỗng không ghi đè gì) — request vẫn mang
+    `DASHBOARD_AUTH_HEADER` của fixture `client`. Xây request thủ công rồi xoá
+    hẳn `Authorization` là cách DUY NHẤT thật sự gửi request không có nó."""
+    request = client.build_request("GET", url)
+    del request.headers["authorization"]
+    return await client.send(request)
+
+
 async def test_no_token_is_401(client, two_projects):
-    response = await client.get("/api/v1/projects", headers={})
+    response = await _get_without_auth_header(client, "/api/v1/projects")
     assert response.status_code == 401
 
 
@@ -185,7 +195,7 @@ async def test_development_bypass_reads_real_projects_without_a_token(client, tw
     monkeypatch.setenv("DEV_AUTH_BYPASS", "true")
     get_settings.cache_clear()
     try:
-        response = await client.get("/api/v1/projects", headers={})
+        response = await _get_without_auth_header(client, "/api/v1/projects")
     finally:
         get_settings.cache_clear()
 

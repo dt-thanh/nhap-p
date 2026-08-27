@@ -412,8 +412,19 @@ async def test_errors_never_echo_sensitive_values_or_sql(client):
 
 
 async def test_csv_upload_route_still_exists(client):
-    """`POST /api/v1/files/upload` phải còn nguyên — S2 không đụng API cũ."""
-    response = await client.post("/api/v1/files/upload")
+    """`POST /api/v1/files/upload` phải còn nguyên — S2 không đụng API cũ.
+
+    Route này đòi vai trò `pipeline_operator` (dashboard token), KHÁC hẳn
+    `X-API-Key` mà `client` của module này mang sẵn (đó là khoá CRM cho
+    `/sync/{entity}`, không áp dụng ở đây) — gửi kèm token operator riêng cho
+    lời gọi này để phép thử vẫn đúng ý gốc: "route được đăng ký", không lẫn
+    với "route có xác thực".
+    """
+    from tests.conftest import DASHBOARD_OPERATOR_TOKEN
+
+    response = await client.post(
+        "/api/v1/files/upload", headers={"Authorization": f"Bearer {DASHBOARD_OPERATOR_TOKEN}"}
+    )
 
     # 422 vì thiếu form field, KHÔNG phải 404: route vẫn được đăng ký.
     assert response.status_code == 422

@@ -1,0 +1,8 @@
+file,rows,columns,duplicate_rows,null_cells,sentinel_cells,sha256
+crm_projects_import.csv,1,11,0,0,0,14658248bc2a0d50aaab5352a62a8a0e43cd7ef6faa9ee3c38e952a7579db088
+crm_areas_import.csv,24,15,0,0,0,de142d1ace3a792e8019e7d928095f1fd3619100391fbe4d9ceb44a8b4aa8e6b
+crm_units_import.csv,392,13,0,0,0,b246604fd9db9a81aa3280dabbdc2a1c12cae5228333e14355a44d65291fc990
+crm_deals_sold_import.csv,130,9,0,0,0,e029e19a6783296464d2f0448b486f5f6e0751c2ed9660f8e15338f38bdd27fc
+crm_deals_reserved_import.csv,63,8,0,0,0,4f50ecd6bd2f8918e7755b331b00cad7ba15f10b29089a1c3b02417ea6ab3744
+lapura_unit_attributes_import.csv,392,30,0,0,0,e28b20b29a63a1bd88ed9cc8e5ee3eff2559e7d327104f8f9217ed17926a38a2
+lapura_master_dataset_no_null.csv,392,70,0,0,1503,fb62f24ce903703ed25041f884ba1d03cbe9d0479321764189deafd8385d50a9

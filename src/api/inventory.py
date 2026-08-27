@@ -25,9 +25,12 @@ from src.models.schemas import (
     DealList,
     DealOut,
     InventoryAreaOut,
+    InventoryBootstrapOut,
     InventoryOut,
     InventoryUnitOut,
     ParallelRunOut,
+    AreaOut,
+    ProjectSummary,
 )
 from src.models.tables import areas as areas_table
 from src.models.tables import deals, projects, units
@@ -37,6 +40,7 @@ from src.services.domain_absorption import (
     DomainAbsorptionCalculatorService,
     ParallelRunComparator,
 )
+from src.services.inventory_bootstrap import InventoryBootstrapService
 
 router = APIRouter(tags=["inventory"])
 require_viewer = require_role("business_viewer")
@@ -164,9 +168,31 @@ async def inventory(
     require_project_in_scope(principal, project_external_id)
     await _require_project(project_uuid)
 
-    result = await DomainAbsorptionCalculatorService().compute(project_uuid)
-
     area_filter = await _resolve_area_scope(area_id, external_area_id)
+    return await _inventory_response(
+        project_uuid,
+        area_filter,
+        include_units=include_units,
+        unit_status=unit_status,
+        deal_status=deal_status,
+        include_deleted=include_deleted,
+        limit=limit,
+        offset=offset,
+    )
+
+
+async def _inventory_response(
+    project_uuid: uuid.UUID,
+    area_filter: uuid.UUID | None,
+    *,
+    include_units: bool,
+    unit_status: str | None,
+    deal_status: str | None,
+    include_deleted: bool,
+    limit: int,
+    offset: int,
+) -> InventoryOut:
+    result = await DomainAbsorptionCalculatorService().compute(project_uuid)
     rows = [row for row in result.inventory if area_filter is None or row.area_id == area_filter]
 
     totals = None
@@ -215,6 +241,67 @@ async def inventory(
         ],
         units=unit_rows,
         anomalies=result.anomalies,
+    )
+
+
+@router.post(
+    "/inventory/bootstrap-default",
+    response_model=InventoryBootstrapOut,
+    summary="Create or resolve the reserved development demo inventory",
+)
+async def bootstrap_default_inventory(
+    principal: DashboardPrincipal = Depends(require_viewer),
+) -> InventoryBootstrapOut:
+    if principal.project_scope != "ALL":
+        raise HTTPException(
+            status_code=403,
+            detail={"message": "Demo bootstrap requires ALL project scope", "error_code": "BOOTSTRAP_SCOPE_REQUIRED"},
+        )
+    try:
+        selection = await InventoryBootstrapService().ensure_default()
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail={"message": str(exc), "error_code": "BOOTSTRAP_DISABLED"},
+        ) from exc
+
+    inventory_payload = await _inventory_response(
+        selection.project["id"],
+        selection.area["id"],
+        include_units=True,
+        unit_status=None,
+        deal_status=None,
+        include_deleted=False,
+        limit=MAX_UNITS_PER_PAGE,
+        offset=0,
+    )
+    return InventoryBootstrapOut(
+        project=ProjectSummary(
+            project_id=str(selection.project["id"]),
+            name=selection.project["name"],
+            launch_date=selection.project["launch_date"],
+            status=selection.project["status"],
+            headline=selection.project["headline"],
+            introduce=selection.project["introduce"],
+            cover_image_url=selection.project["cover_image_url"],
+            external_id=selection.project["external_id"],
+            source_revision=selection.project["source_revision"],
+        ),
+        area=AreaOut(
+            area_id=str(selection.area["id"]),
+            area_name=selection.area["area_name"],
+            unit_type=selection.area["unit_type"],
+            bedrooms=selection.area["bedrooms"],
+            area_sqm=selection.area["area_sqm"],
+            total_units=selection.area["total_units"],
+            headline=selection.area["headline"],
+            introduce=selection.area["introduce"],
+            cover_image_url=selection.area["cover_image_url"],
+            external_id=selection.area["external_id"],
+            source_revision=selection.area["source_revision"],
+        ),
+        inventory=inventory_payload,
+        created=selection.created,
     )
 
 

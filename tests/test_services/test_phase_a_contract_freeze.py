@@ -52,9 +52,10 @@ AUTHZ_MATRIX = REPO_ROOT / "docs" / "crm" / "authorization_matrix.json"
 # xanh là đúng thứ phép canh này sinh ra để ngăn.
 V1_SHA256 = "e15fd9c5e685923fcf3f537c7dba4e900632ae7d6723df654e35b55efb49a92a"
 
-# Giá trị của v2 SAU bản sửa đổi (g). ĐỔI so với đợt (f) — đúng như mong đợi, vì
-# v2 còn là dự thảo, được phép sửa cho tới khi Phase D bật nó.
-V2_SHA256 = "9620614a46536515fabeae1e9ba1e032c30deb02a74656e11818b1951fe10efb"
+# Giá trị của v2 sau khi Phase D bật v2 (SUPPORTED_SCHEMA_VERSIONS={1,2}) và thêm
+# `listing_price` (2026-08-23, xem docs/crm/minicrm_absorpiq_canonical_sync_contract.md).
+# Tiêu đề cũng đổi DRAFT -> IMPLEMENTED để khớp thực tế mã nguồn.
+V2_SHA256 = "7d40ca322c2a435b40488884c9238b7051b2abe12df6a56dc3d1f1bfbc4f2dd4"
 
 # Fixture v2 THUỘC đợt (g). Bộ cũ (18–26 của đợt (f), mô hình đề xuất–duyệt) đã bị
 # XOÁ khỏi đĩa cùng lúc với việc thay thế mô hình sở hữu — không giữ song song hai

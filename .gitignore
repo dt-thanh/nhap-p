@@ -17,6 +17,10 @@ env/
 .env.local
 .env.production
 
+# Dev-only sync credential handoff (scripts/dev-reset.sh, docker-compose.yml
+# `secrets:` block) — never commit the plaintext key.
+.dev-secrets/
+
 # IDE
 .vscode/
 .idea/
@@ -82,15 +86,18 @@ backups/
 docs/.mini_crm_seed_state.json
 
 # Local AI tool overrides (per-machine, not shared)
+# Local AI tool overrides (per-machine, not shared)
 .codex\hooks.json
-<<<<<<< HEAD
+.claude/settings.local.json
+.claude/**/*.local.json
+.cursor/mcp.json
+
 .claude/settings.local.json
 .claude/**/*.local.json
 .cursor/mcp.json
 
 .git\hooks\pre-push
-=======
-.git\hooks\pre-push
+
 # Dữ liệu THẬT của khách hàng, đặt tay vào máy dev. Không phải fixture, không
 # tái tạo được từ repo, và không được rời khỏi máy — cùng lý do với `backups/`.
 data/Real_data/
@@ -102,4 +109,3 @@ data/state_store.db/
 # File khoá của LibreOffice/Excel khi một bảng tính đang mở. Rác của phiên làm
 # việc, và nó mang tên người + tên máy.
 .~lock.*#
->>>>>>> origin/staging-recovered

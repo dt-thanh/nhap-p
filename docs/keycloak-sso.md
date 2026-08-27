@@ -1,9 +1,12 @@
-# Keycloak SSO (dev local) — Runbook
+# Keycloak SSO — Runbook
 
-Keycloak là **OIDC Identity Provider mặc định cho môi trường dev local** của cả
-**Mini CRM** và **Product/AbsorbIQ**. Microsoft Entra **không bị xoá**: chỉ cần
-xoá các biến `OIDC_*` / `MINICRM_OIDC_*` trong `.env` là hai app quay lại đường
-Entra như cũ (xem [Chuyển về Entra](#chuyển-local-keycloak--microsoft-entra)).
+Keycloak là **nhà cung cấp danh tính DUY NHẤT ở runtime** của cả **Mini CRM**
+và **Product/AbsorbIQ**. Microsoft Entra ID đã bị gỡ khỏi mã nguồn (migration
+Keycloak-only — xem mục lịch sử trong `pipeline_status.md`); `AUTH_PROVIDER`/
+`MINICRM_AUTH_PROVIDER` chỉ chấp nhận giá trị `keycloak`, và biến môi trường
+`ENTRA_*`/`MINICRM_ENTRA_*` không còn được backend đọc — nếu chúng còn sót lại
+trong một `.env` cũ, chúng bị bỏ qua hoàn toàn, không kích hoạt bất kỳ đường
+xác thực nào.
 
 SSO **không** chia sẻ cookie/token giữa hai app. Mỗi app có phiên riêng
 (`minicrm_session`, `absorbiq_session`). Thứ dùng chung để SSO là **phiên đăng
@@ -115,20 +118,21 @@ docker compose up -d keycloak
 (Tên volume có tiền tố project `absorptionforecast_`; kiểm tra bằng
 `docker volume ls | grep keycloak`.)
 
-## Chuyển local Keycloak → Microsoft Entra
-
-Không cần sửa code. Trong `.env` (và `minicrm/.env`):
-
-1. Xoá/để trống toàn bộ `OIDC_*` (và `MINICRM_OIDC_*`).
-2. Điền `ENTRA_*` (và `MINICRM_ENTRA_*`) với tenant/client/secret thật.
-3. `docker compose up -d` lại api và minicrm.
-
-Khi `OIDC_*` trống, `oidc_active()` = False và backend dùng lại đúng đường Entra
-cũ (discovery Microsoft, issuer `sts.windows.net`/`v2.0`, roles top-level).
-
 ## An toàn bí mật
 
 - KHÔNG commit `.env` / `minicrm/.env` (đã nằm trong `.gitignore`).
 - File `*.env.example` chỉ chứa placeholder `CHANGE_ME_*`.
 - Với môi trường thật: client secret, session secret, admin password đều tạo
   mới và giữ ngoài git.
+
+## Lịch sử (retired)
+
+Microsoft Entra ID từng là nhà cung cấp SSO ban đầu (CP4/CP5) trước khi Keycloak
+được thêm vào làm IdP mặc định cho dev local, rồi trở thành nhà cung cấp DUY
+NHẤT sau migration Keycloak-only. Toàn bộ code đường Entra (`app/entra.py` bên
+Mini CRM, `src/services/entra_auth.py` bên Product), các biến `ENTRA_*`/
+`MINICRM_ENTRA_*`, và bộ test offline riêng cho Entra đã bị gỡ khỏi runtime;
+chi tiết migration nằm trong mục lịch sử của `pipeline_status.md`. Thiết kế vai
+trò/claim vẫn provider-neutral (không có gì Entra-specific còn lại trong
+`oidc.py`), nên thêm một IdP OIDC khác trong tương lai sẽ không cần đổi mô hình
+role/scope hiện có.

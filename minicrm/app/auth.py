@@ -27,7 +27,8 @@ import secrets
 from dataclasses import dataclass
 from typing import Literal
 
-from app import entra, session as session_mod
+from app import oidc
+from app import session as session_mod
 from app.config import get_settings
 from fastapi import Cookie, Header, HTTPException
 
@@ -102,11 +103,11 @@ async def authenticate(
     authorization: str | None,
     session_cookie: str | None = None,
 ) -> MiniCrmPrincipal:
-    """Ba lớp, theo ĐÚNG thứ tự này (CP4):
+    """Ba lớp, theo ĐÚNG thứ tự này:
 
     1. **Cookie phiên** (`minicrm_session`) — đường của người dùng trình duyệt
-       sau khi đã qua Entra. Rẻ nhất (HMAC) và phổ biến nhất, nên đứng đầu.
-    2. **`Authorization: Bearer <JWT Entra>`** — đường của client không phải
+       sau khi đã qua Keycloak. Rẻ nhất (HMAC) và phổ biến nhất, nên đứng đầu.
+    2. **`Authorization: Bearer <JWT Keycloak>`** — đường của client không phải
        trình duyệt (script, Product Backend gọi thay người dùng, test tích hợp).
        Xác minh RS256 + JWKS thật.
     3. **Token TĨNH D-14** — chỉ khi `MINICRM_LEGACY_TOKEN_AUTH_ENABLED=true`.
@@ -114,20 +115,20 @@ async def authenticate(
     503 khi KHÔNG lớp nào được cấu hình. 401 khi có lớp nhưng không lớp nào
     nhận — không phân biệt "thiếu" với "sai" trong thông báo.
     """
-    entra_on = entra.entra_configured() and session_mod.session_configured()
+    oidc_on = oidc.oidc_configured() and session_mod.session_configured()
 
-    if not entra_on and not auth_configured():
+    if not oidc_on and not auth_configured():
         raise HTTPException(
             status_code=503,
             detail={
-                "message": "Xác thực Mini CRM chưa được cấu hình (chưa có Entra, chưa có token vai trò).",
+                "message": "Xác thực Mini CRM chưa được cấu hình (chưa có Keycloak, chưa có token vai trò).",
                 "error_code": "AUTH_DISABLED",
             },
         )
 
     # --- Lớp 1: cookie phiên -------------------------------------------------
     if session_cookie and session_mod.session_configured():
-        claims = session_mod.read_session(session_cookie)
+        claims = await session_mod.read_session_verified(session_cookie)
         scope_raw = claims.get("scope", [])
         scope: ProjectScope = "ALL" if scope_raw == "ALL" else frozenset(scope_raw or [])
         return MiniCrmPrincipal(role=claims["role"], project_scope=scope)
@@ -140,12 +141,12 @@ async def authenticate(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # --- Lớp 2: JWT Entra ----------------------------------------------------
+    # --- Lớp 2: JWT Keycloak ---------------------------------------------------
     # Phân biệt bằng HÌNH DẠNG (JWT có ba đoạn ngăn bởi dấu chấm), không bằng
     # thử-rồi-bắt-lỗi: thử `verify_token` trên một token tĩnh sẽ tạo một lần gọi
     # JWKS vô ích cho mỗi request máy-với-máy.
-    if entra_on and token.count(".") == 2:
-        identity = entra.verify_token(token)
+    if oidc_on and token.count(".") == 2:
+        identity = oidc.verify_token(token)
         role = session_mod.resolve_role(identity)
         scope_value = session_mod.resolve_scope(identity, role)
         scope = "ALL" if scope_value == "ALL" else frozenset(scope_value)

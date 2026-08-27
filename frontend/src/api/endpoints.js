@@ -34,6 +34,12 @@ export const listInventoryScoped = (externalProjectId, params = {}) =>
     `${V1}/inventory?${new URLSearchParams({ external_project_id: externalProjectId, ...params })}`,
   );
 
+export const bootstrapInventoryDefault = () => api.post(`${V1}/inventory/bootstrap-default`);
+
+/** Live domain snapshot used by the project dashboard's operational metrics. */
+export const getMarketDashboard = (externalProjectId) =>
+  api.get(`${V1}/market/dashboard?${new URLSearchParams({ project_id: externalProjectId })}`);
+
 export const listDealsScoped = (externalProjectId, params = {}) =>
   api.get(`${V1}/deals?${new URLSearchParams({ external_project_id: externalProjectId, ...params })}`);
 
@@ -55,6 +61,23 @@ export const runRanking = (externalProjectId, params = {}) =>
 //
 // `ranking_configs` là TOÀN CỤC: một bộ trọng số áp cho mọi dự án. Vì thế không
 // endpoint nào ở đây nhận `external_project_id`.
+
+/** Suy TRỌNG SỐ từ so sánh cặp (AHP) — công thức xếp hạng V2.
+ *
+ *  Endpoint này KHÔNG ghi gì. Nó trả về trọng số + bằng chứng nhất quán (CR);
+ *  muốn áp dụng thì vẫn phải đi qua `createRankingConfigDraft` rồi
+ *  `publishRankingConfig` như mọi bộ trọng số khác — đúng vòng duyệt của người
+ *  mà AGENTS.md yêu cầu. Cần vai trò admin.
+ *
+ *  body -> { criteria: [key], judgments: [{a, b, value}], feature_specs: {...},
+ *            override?, override_reason? }
+ *  -> { formula_version, weights (sẵn sàng cho createRankingConfigDraft),
+ *       consistency_ratio, threshold, consistent, override_applied, hotspots, note }
+ *
+ *  422 kèm `detail.error_code` — CR_ABOVE_THRESHOLD / CR_HARD_LIMIT_EXCEEDED /
+ *  OVERRIDE_REASON_REQUIRED / ... và `detail.hotspots` chỉ ra cặp nào lệch nhất.
+ */
+export const computeAhpWeights = (body) => api.post(`${V1}/ranking/ahp/weights`, body);
 
 /** Toàn bộ lịch sử config, mới nhất trước. */
 export const listRankingConfigs = () => api.get(`${V1}/ranking/configs`);
@@ -121,11 +144,22 @@ export async function getAbsorption({
   return body.points ?? [];
 }
 
-/** Tổng hợp toàn dự án cho các thẻ số liệu. */
-export async function getAbsorptionSummary() {
-  const projectId = await activeProjectId();
-  return api.get(`${V1}/absorption/summary?project_id=${projectId}`);
+/** Tổng hợp toàn dự án cho các thẻ số liệu.
+ *  Không truyền `projectId` thì dùng dự án mặc định (cùng quy ước `listAreas`);
+ *  trang /overview quét nhiều dự án nên truyền tường minh từng dự án một. */
+export async function getAbsorptionSummary(projectId) {
+  const target = projectId ?? (await activeProjectId());
+  return api.get(`${V1}/absorption/summary?project_id=${target}`);
 }
+
+// ---------- Tổng quan DANH MỤC (/overview) ----------
+
+/** KPI ở phạm vi TOÀN DANH MỤC, đọc từ MỘT endpoint tổng hợp — không cộng dồn
+ *  từng dự án ở frontend (cộng dồn sẽ sai ngay khi fan-out chạm trần request,
+ *  và biến một con số danh mục thành hàm của trần hiển thị).
+ *  -> { project_count, area_count, unit_count, deal_count, booking_count,
+ *       selling_project_count, data_status } */
+export const getPortfolioSummary = () => api.get(`${V1}/portfolio/summary`);
 
 // ---------- Dashboard nghiệp vụ theo dự án (/projects/:externalId/dashboard) -
 //
@@ -488,6 +522,34 @@ export const listRecommendations = (projectId, limit = 20) =>
 
 export const executeRecommendation = (recommendationId, actor) =>
   api.post(`${V1}/agent/recommendations/${recommendationId}/execute`, { actor, confirmed: true });
+
+// ---------- Expert governance / evidence ---------------------------------
+
+export const registerExpert = (body) => api.post(`${V1}/governance/experts`, body);
+export const getExpert = (expertId) => api.get(`${V1}/governance/experts/${encodeURIComponent(expertId)}`);
+export const listGovernanceProposals = (params = {}) =>
+  api.get(`${V1}/governance/proposals?${new URLSearchParams(params)}`);
+export const createGovernanceProposal = (body) => api.post(`${V1}/governance/proposals`, body);
+export const getGovernanceProposal = (proposalId) =>
+  api.get(`${V1}/governance/proposals/${encodeURIComponent(proposalId)}`);
+export const setGovernanceProposalConfig = (proposalId, body) =>
+  api.patch(`${V1}/governance/proposals/${encodeURIComponent(proposalId)}/config`, body);
+export const submitGovernanceProposal = (proposalId, body) =>
+  api.post(`${V1}/governance/proposals/${encodeURIComponent(proposalId)}/submit`, body);
+export const listJustifications = (proposalId) =>
+  api.get(`${V1}/governance/proposals/${encodeURIComponent(proposalId)}/justifications`);
+export const upsertJustification = (proposalId, body) =>
+  api.post(`${V1}/governance/proposals/${encodeURIComponent(proposalId)}/justifications`, body);
+export const registerEvidence = (body) => api.post(`${V1}/governance/evidence`, body);
+export const linkEvidence = (body) => api.post(`${V1}/governance/evidence/link`, body);
+export const listEvidenceForJustification = (justificationId) =>
+  api.get(`${V1}/governance/justifications/${encodeURIComponent(justificationId)}/evidence`);
+export const requestEvidenceExtraction = (documentId) =>
+  api.post(`${V1}/governance/evidence/${encodeURIComponent(documentId)}/extract`);
+export const listEvidenceChunks = (documentId) =>
+  api.get(`${V1}/governance/evidence/${encodeURIComponent(documentId)}/chunks`);
+export const submitGovernanceReview = (proposalId, body) =>
+  api.post(`${V1}/governance/proposals/${encodeURIComponent(proposalId)}/reviews`, body);
 
 // ---------- Chọn ngữ cảnh nạp dữ liệu: Dự án → Phân khu ----------
 // Giải quyết xung đột merge: `listProjects` đã khai ở trên với hợp đồng thật của

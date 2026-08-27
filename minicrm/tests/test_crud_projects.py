@@ -46,10 +46,52 @@ def test_create_writes_the_local_row(crm_app):
     assert body["record"]["status"] == "active"
     assert body["record"]["source_revision"] == 1
     assert body["record"]["external_id"]
+    assert body["record"]["location"] is None
 
     rows = _rows(crm_app, "crm_projects")
     # Dòng seed BOOTSTRAP (conftest) + dòng vừa tạo.
     assert len(rows) == 2
+
+
+def test_create_and_update_expose_optional_location(crm_app):
+    with _client() as client:
+        created = client.post(
+            "/projects",
+            json={**PROJECT, "location": "  Xã Long Hưng, Văn Giang, Hưng Yên  "},
+        ).json()["record"]
+        assert created["location"] == "Xã Long Hưng, Văn Giang, Hưng Yên"
+
+        updated = client.patch(
+            f"/projects/{created['external_id']}",
+            json={"location": "Đường Đại Dương, Văn Giang, Hưng Yên"},
+        ).json()["record"]
+
+    assert updated["location"] == "Đường Đại Dương, Văn Giang, Hưng Yên"
+
+
+def test_location_is_optional_and_round_trips_through_create_update_read(crm_app):
+    with _client() as client:
+        created = client.post(
+            "/projects",
+            json={**PROJECT, "location": "Phường Tây Mỗ, Nam Từ Liêm, Hà Nội"},
+        ).json()["record"]
+        assert created["location"] == "Phường Tây Mỗ, Nam Từ Liêm, Hà Nội"
+
+        updated = client.patch(
+            f"/projects/{created['external_id']}",
+            json={"location": "Đường Đại lộ Thăng Long, Phường Mễ Trì, Hà Nội"},
+        ).json()["record"]
+        fetched = client.get(f"/projects/{created['external_id']}").json()
+
+    assert updated["location"] == "Đường Đại lộ Thăng Long, Phường Mễ Trì, Hà Nội"
+    assert fetched["location"] == updated["location"]
+    assert updated["source_revision"] == 2
+
+
+def test_location_may_be_null_for_legacy_compatible_create(crm_app):
+    with _client() as client:
+        record = client.post("/projects", json=PROJECT).json()["record"]
+    assert record["location"] is None
 
 
 def test_external_ids_come_from_a_sequence_and_are_zero_padded(crm_app):

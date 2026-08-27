@@ -14,7 +14,7 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from typing import Callable, Protocol
 from uuid import UUID, uuid4
 
 import jwt
@@ -32,7 +32,7 @@ from app.db import get_session_factory
 from app.models import crm_auth_invites, crm_auth_sessions, crm_password_reset_tokens, crm_users
 from argon2 import PasswordHasher, Type
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
-from fastapi import Header, HTTPException
+from fastapi import Cookie, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -77,23 +77,35 @@ def _safe_user(row: sa.RowMapping | dict) -> dict:
 
 
 class LoginRateLimiter:
-    """Small process-local boundary until shared rate limiting is approved."""
+    """Small process-local boundary until shared rate limiting is approved.
+
+    Defaults to the login rate-limit settings so existing callers (``login``,
+    password reset) are unaffected; pass ``max_attempts``/``window_seconds`` to
+    key a distinct budget off different settings fields (see
+    ``logout_rate_limiter`` below).
+    """
 
     MAX_KEYS = 10_000
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        max_attempts: Callable[[], int] | None = None,
+        window_seconds: Callable[[], float] | None = None,
+    ) -> None:
         self._lock = threading.Lock()
         self._attempts: dict[tuple[str, str], list[float]] = {}
+        self._max_attempts = max_attempts or (lambda: get_settings().login_rate_limit_attempts)
+        self._window_seconds = window_seconds or (lambda: get_settings().login_rate_limit_window_seconds)
 
     def allowed(self, key: tuple[str, str]) -> bool:
-        settings = get_settings()
-        cutoff = time.monotonic() - settings.login_rate_limit_window_seconds
+        cutoff = time.monotonic() - self._window_seconds()
         with self._lock:
             if key not in self._attempts and len(self._attempts) >= self.MAX_KEYS:
                 self._attempts.pop(next(iter(self._attempts)))
             attempts = [value for value in self._attempts.get(key, []) if value >= cutoff]
             self._attempts[key] = attempts
-            return len(attempts) < settings.login_rate_limit_attempts
+            return len(attempts) < self._max_attempts()
 
     def record_failure(self, key: tuple[str, str]) -> None:
         with self._lock:
@@ -112,6 +124,10 @@ class LoginRateLimiter:
 
 login_rate_limiter = LoginRateLimiter()
 password_reset_rate_limiter = LoginRateLimiter()
+logout_rate_limiter = LoginRateLimiter(
+    max_attempts=lambda: get_settings().logout_rate_limit_attempts,
+    window_seconds=lambda: get_settings().logout_rate_limit_window_seconds,
+)
 
 
 class PasswordResetDelivery(Protocol):
@@ -259,6 +275,7 @@ def require_human_role(minimum: CrmRole):
 
 async def require_resource_visibility(
     authorization: str | None = Header(default=None, alias="Authorization"),
+    minicrm_session: str | None = Cookie(default=None, alias="minicrm_session"),
 ) -> AuthenticatedHumanPrincipal | object:
     """Require explicit development global visibility for resource reads.
 
@@ -271,7 +288,7 @@ async def require_resource_visibility(
     from app.auth import authenticate
 
     try:
-        return await authenticate(authorization)
+        return await authenticate(authorization, minicrm_session)
     except HTTPException:
         principal = await require_human_principal(authorization)
         session = db_session()

@@ -355,6 +355,7 @@ def _project_record(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "external_id": row["external_id"],
         "name": row["name"],
+        "location": row["location"],
         "launch_date": row["launch_date"],
         "status": row["status"],
         "source_revision": row["source_revision"],
@@ -399,6 +400,7 @@ async def create_project(data: dict[str, Any]) -> dict[str, Any]:
                             id=uuid.uuid4(),
                             external_id=external_id,
                             name=data["name"],
+                            location=data.get("location"),
                             launch_date=data["launch_date"],
                             status="active",
                             source_revision=1,
@@ -899,6 +901,10 @@ def _unit_record(row: dict[str, Any]) -> dict[str, Any]:
         "unit_type": row["unit_type"],
         "unit_code": row["unit_code"],
         "unit_status": row["unit_status"],
+        # 0008. `build_unit_envelope` (v1) đọc field theo TÊN, không splat — an
+        # toàn để có mặt ở đây kể cả cho căn đi đường v1; chỉ `build_unit_envelope_v2`
+        # thực sự chở nó đi.
+        "listing_price": row.get("listing_price"),
         "source_revision": row["source_revision"],
     }
 
@@ -957,6 +963,9 @@ async def create_unit(data: dict[str, Any], *, client=None) -> tuple[dict[str, A
                                 unit_type=area["unit_type"],
                                 unit_code=data["unit_code"],
                                 unit_status=data["unit_status"],
+                                # 0008. `None` = chưa biết giá lúc tạo — hợp lệ, không
+                                # phải lỗi thiếu trường (khác `unit_code`/`unit_status`).
+                                listing_price=data.get("listing_price"),
                                 # Bản ghi mới bắt đầu ở 1, không phải 0: hợp đồng cho
                                 # phép `source_revision >= 0`, nhưng dùng 0 làm phiên
                                 # bản đầu khiến "chưa mirrored" (NULL/0) và "đã mirrored

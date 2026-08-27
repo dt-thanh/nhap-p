@@ -12,7 +12,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  getDashboardSummary, getDashboardTrend, getDashboardAreas, getDataQuality,
+  getDashboardSummary, getDashboardTrend, getDashboardAreas, getDataQuality, getMarketDashboard,
 } from "../../api/endpoints";
 import { useProjectScope } from "../../hooks/useProjectScope";
 import { useAsync } from "../../hooks/useAsync";
@@ -24,7 +24,7 @@ import OverviewDashboard from "./OverviewDashboard";
 const RANGE_DAYS = { "7d": 7, "30d": 30, "90d": 90, "12m": 365 };
 const iso = (d) => d.toISOString().slice(0, 10);
 
-export default function AbsorptionDashboard({ projectExternalId, standalone = false }) {
+export default function AbsorptionDashboard({ projectExternalId, standalone = false, preview = false }) {
   const { bp } = useBreakpoint();
   const navigate = useNavigate();
   const scope = useProjectScope({ projectExternalId });
@@ -84,6 +84,10 @@ export default function AbsorptionDashboard({ projectExternalId, standalone = fa
     () => getDashboardAreas({ externalProjectId: scope.projectExternalId }),
     [scope.projectExternalId],
   );
+  const market = useAsync(
+    () => scope.projectExternalId ? getMarketDashboard(scope.projectExternalId) : Promise.resolve(null),
+    [scope.projectExternalId],
+  );
   const dq = useAsync(
     () =>
       projectInternalId
@@ -92,8 +96,8 @@ export default function AbsorptionDashboard({ projectExternalId, standalone = fa
     [projectInternalId, scope.projectExternalId, from, to],
   );
 
-  const refreshing = summary.loading || trend.loading || areas.loading || dq.loading;
-  const refreshAll = () => { summary.reload(); trend.reload(); areas.reload(); dq.reload(); };
+  const refreshing = summary.loading || trend.loading || areas.loading || market.loading || dq.loading;
+  const refreshAll = () => { summary.reload(); trend.reload(); areas.reload(); market.reload(); dq.reload(); };
 
   const availableYears = summary.data?.available_years?.length ? summary.data.available_years : (trend.data?.availableYears || []);
 
@@ -132,6 +136,9 @@ export default function AbsorptionDashboard({ projectExternalId, standalone = fa
         summaryLoading={summary.loading}
         summaryError={summary.error}
         onSummaryRetry={summary.reload}
+        market={market.data}
+        marketLoading={market.loading}
+        marketError={market.error}
         trend={dateRangeReady ? trend.data?.points : []}
         trendLoading={trend.loading}
         trendError={trend.error}
@@ -167,6 +174,7 @@ export default function AbsorptionDashboard({ projectExternalId, standalone = fa
         onCustomTo={setCustomTo}
         onSelectArea={onSelectArea}
         isWide={bp === "desktop" || bp === "laptop"}
+        preview={preview}
       />
     </>
   );

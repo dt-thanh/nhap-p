@@ -54,8 +54,9 @@ pytestmark = pytest.mark.skipif(
 def _auth_headers() -> dict[str, str]:
     """Test tự động dùng đường token tĩnh (bật MINICRM_LEGACY_TOKEN_AUTH_ENABLED
     =true trong môi trường CI) — không thể tự động hoá vòng OIDC tương tác của
-    Microsoft trong một test không có trình duyệt. Vòng OIDC được kiểm riêng,
-    offline, ở tests/test_entra_auth.py; ở đây trọng tâm là LUỒNG DỮ LIỆU."""
+    Keycloak trong một test không có trình duyệt. Vòng OIDC được kiểm riêng,
+    offline, ở tests/auth/test_oidc_keycloak.py (live ở
+    tests/e2e/test_keycloak_two_stack_flow.py); ở đây trọng tâm là LUỒNG DỮ LIỆU."""
     if not ADMIN_TOKEN:
         pytest.skip("Cần E2E_MINICRM_ADMIN_TOKEN (đường token tĩnh cho test tự động).")
     return {"Authorization": f"Bearer {ADMIN_TOKEN}"}
