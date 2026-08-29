@@ -42,7 +42,7 @@ export async function fetchDashboard() {
     const openDeals = deals.filter((d) => d.stage !== "won" && d.stage !== "lost").length;
 
     const kpis: Kpi[] = [
-      { label: "Tổng sản phẩm", value: String(totalUnits) },
+      { label: "Tổng căn hộ", value: String(totalUnits) },
       { label: "Đã bán", value: String(soldUnits) },
       { label: "Giao dịch đang mở", value: String(openDeals) },
       { label: "Dự án", value: String(projects.length) },
@@ -103,7 +103,7 @@ export async function fetchProjectKpis(): Promise<Kpi[]> {
     return [
       { label: "Tổng dự án", value: String(projects.length) },
       { label: "Phân khu", value: String(areas.length) },
-      { label: "Tổng sản phẩm", value: String(units.length) },
+      { label: "Tổng căn hộ", value: String(units.length) },
       { label: "Giao dịch đang mở", value: String(deals.length) },
     ];
   } catch {
@@ -223,9 +223,9 @@ export async function fetchDealKpis(): Promise<Kpi[]> {
     const active = deals.filter((d) => d.deal_status !== "lost" && !d.deleted_at);
     const won = deals.filter((d) => d.deal_status === "sold");
     return [
-      { label: "GD đang mở", value: String(active.length) },
+      { label: "Giao dịch đang mở", value: String(active.length) },
       { label: "Đã chốt", value: String(won.length) },
-      { label: "Tổng GD", value: String(deals.length) },
+      { label: "Tổng giao dịch", value: String(deals.length) },
     ];
   } catch {
     return [];

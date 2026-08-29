@@ -9,8 +9,6 @@ import { ProjectDetail } from "./pages/ProjectDetail";
 import { Units } from "./pages/Units";
 import { Deals } from "./pages/Deals";
 import { DealDetail } from "./pages/DealDetail";
-import { SalesTeam } from "./pages/SalesTeam";
-import { ComingSoon } from "./pages/ComingSoon";
 
 export default function App() {
   return (
@@ -29,14 +27,6 @@ export default function App() {
               <Route path="units" element={<Units />} />
               <Route path="deals" element={<Deals />} />
               <Route path="deals/:dealId" element={<DealDetail />} />
-              <Route path="sales-team" element={<SalesTeam />} />
-
-              {/* Chưa có mockup — placeholder để nav hoạt động */}
-              <Route path="absorption" element={<ComingSoon title="Tỷ lệ hấp thụ" />} />
-              <Route path="forecast" element={<ComingSoon title="Dự báo" />} />
-              <Route path="ai-suggestions" element={<ComingSoon title="Gợi ý AI" />} />
-              <Route path="users" element={<ComingSoon title="Người dùng" />} />
-              <Route path="audit-logs" element={<ComingSoon title="Nhật ký hệ thống" />} />
             </Route>
           </Route>
 

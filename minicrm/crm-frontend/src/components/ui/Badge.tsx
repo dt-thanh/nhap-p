@@ -1,4 +1,4 @@
-type Tone = "green" | "amber" | "gray" | "blue" | "red" | "teal";
+type Tone = "green" | "amber" | "gray" | "blue" | "red" | "teal" | "indigo";
 const TONES: Record<Tone, string> = {
   green: "bg-status-greenbg text-status-green",
   amber: "bg-status-amberbg text-status-amber",
@@ -6,6 +6,7 @@ const TONES: Record<Tone, string> = {
   blue: "bg-status-bluebg text-status-blue",
   red: "bg-status-redbg text-status-red",
   teal: "bg-teal-soft text-teal-700",
+  indigo: "bg-status-indigobg text-status-indigo",
 };
 export function Badge({ tone, children, dot }: { tone: Tone; children: React.ReactNode; dot?: boolean }) {
   return (

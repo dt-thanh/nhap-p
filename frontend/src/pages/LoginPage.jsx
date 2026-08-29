@@ -1,13 +1,18 @@
 // frontend/src/pages/LoginPage.jsx
-// S01 — Đăng nhập bằng TOKEN VAI TRÒ (mô hình hiện tại của đội).
+// SSO Keycloak là luồng đăng nhập MẶC ĐỊNH cho AbsorbIQ (CP5/CP7).
 //
-// GHI CHÚ TÍCH HỢP (đọc kỹ trước khi đổi):
-// File này khớp hợp đồng trong `LoginPage.test.jsx` của đội: người dùng DÁN một
-// token vai trò → gọi `getMePermissions()` để xác thực token → vào app. KHÔNG
-// đổi sang luồng redirect Keycloak ở ĐÂY: bản redirect từng được thử đã làm hỏng
-// cả 4 test của đội. Khi bật SSO Keycloak thật cho Product frontend, điểm bám đúng là
-// một nút/hook RIÊNG (xem `src/api/auth.js::startLogin` và `src/hooks/useAuth.js`)
-// — thêm nút đó CẠNH ô token, không thay thế ô token, để hợp đồng test vẫn xanh.
+// GHI CHÚ TÍCH HỢP:
+// Nút "Đăng nhập SSO" chính gọi startLogin() → redirect sang Keycloak. Nếu user
+// đã đăng nhập ở Mini CRM (cùng realm p100), Keycloak nhận ra SSO session và cấp
+// code ngay — không hỏi lại mật khẩu. Đây là cơ chế SSO chuẩn OIDC.
+//
+// Form token (legacy) VẪN GIỮ sau flag VITE_ENABLE_LEGACY_TOKEN_LOGIN để hợp
+// đồng LoginPage.test.jsx của đội không bị phá. Mặc định tắt ở production.
+//
+// useEffect kiểm tra fetchMe() khi mount: nếu đã có cookie absorbiq_session hợp
+// lệ (user quay lại app hoặc SSO đã hoàn tất), redirect vào `from` ngay lập tức
+// mà không hiện trang login. Đây là điểm kết nối cho deep-link "Xem trong
+// AbsorbIQ" từ Mini CRM.
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Brand from "../components/Brand";
@@ -24,6 +29,7 @@ export default function LoginPage() {
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
 
   const from = location.state?.from?.pathname || "/overview";
 
@@ -41,6 +47,8 @@ export default function LoginPage() {
         if (!cancelled && me) navigate(from, { replace: true });
       } catch {
         /* chưa có phiên → ở lại trang login */
+      } finally {
+        if (!cancelled) setCheckingSession(false);
       }
     })();
     return () => {
@@ -72,6 +80,15 @@ export default function LoginPage() {
     }
   }
 
+  // Đang kiểm tra phiên SSO — tránh flash nội dung login
+  if (checkingSession) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: font.sans, color: color.muted }}>
+        Đang kiểm tra phiên đăng nhập…
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: "100vh", display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1.1fr 1fr", fontFamily: font.sans, background: color.surface }}>
       {!isNarrow && (
@@ -89,58 +106,60 @@ export default function LoginPage() {
       )}
 
       <div style={S.formWrap}>
-        <form style={S.form} onSubmit={handleSubmit}>
+        <div style={S.form}>
           {isNarrow && <div style={{ marginBottom: space(6) }}><Brand size={30} wordSize={18} withAI /></div>}
           <h1 style={S.h1}>Đăng nhập</h1>
           <p style={S.sub}>
-            Đăng nhập bằng tài khoản AbsorptionForecast. Nếu bạn đã đăng nhập ở
+            Đăng nhập qua tài khoản công ty. Nếu bạn đã đăng nhập ở
             Mini CRM, bước này sẽ không hỏi lại mật khẩu.
+          </p>
+
+          {/* Nút SSO chính — Keycloak redirect. Đây là đường CHÍNH cho người dùng cuối.
+              Nhãn "Đăng nhập SSO" khớp hợp đồng getByRole("button", { name: "Đăng nhập SSO" })
+              trong LoginPage.test.jsx của đội. */}
+          <button
+            type="button"
+            id="sso-login-btn"
+            onClick={() => startLogin(from)}
+            style={S.submit}
+            disabled={submitting}
+          >
+            Đăng nhập SSO
+          </button>
+
+          {error && <p style={{ ...S.error, marginTop: 12 }}>{error}</p>}
+
+          <p style={S.ssoHint}>
+            Bạn sẽ được chuyển sang trang đăng nhập an toàn của Keycloak.
+            Nếu đã đăng nhập ở Mini CRM, bước này sẽ không hỏi lại mật khẩu.
           </p>
 
           {/* Legacy token login — chỉ hiện khi bật cờ dev (§11). Vẫn tồn tại trong
               DOM khi bật, để hợp đồng LoginPage.test.jsx còn dùng được. Mặc định
-              người dùng cuối chỉ thấy nút SSO. */}
+              người dùng cuối chỉ thấy nút SSO ở trên. Nhãn nút "Đăng nhập bằng token"
+              CỐ Ý khác "Đăng nhập SSO" để test không bắt nhầm hai nút. */}
           {import.meta.env.VITE_ENABLE_LEGACY_TOKEN_LOGIN === "true" && (
             <>
-              <label style={S.label}>Token vai trò</label>
-              <input
-                type="password"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="Dán token vai trò được cấp"
-                style={S.input}
-              />
-              {error && <p style={S.error}>{error}</p>}
-              <button type="submit" style={{ ...S.submit, opacity: submitting ? 0.7 : 1 }} disabled={submitting}>
-                {submitting ? "Đang đăng nhập…" : "Đăng nhập bằng token"}
-              </button>
-              <div style={S.divider}><span style={S.dividerText}>hoặc</span></div>
+              <div style={S.divider}><span style={S.dividerText}>hoặc dùng token vai trò (dev)</span></div>
+              <form onSubmit={handleSubmit} style={{ marginTop: 0 }}>
+                <label style={S.label}>Token vai trò</label>
+                <input
+                  type="password"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  placeholder="Dán token vai trò được cấp"
+                  style={S.input}
+                />
+                {error && <p style={S.error}>{error}</p>}
+                <button type="submit" style={{ ...S.submitSecondary, opacity: submitting ? 0.7 : 1 }} disabled={submitting}>
+                  {submitting ? "Đang đăng nhập…" : "Đăng nhập bằng token"}
+                </button>
+              </form>
             </>
           )}
 
-          {error && <p style={S.error}>{error}</p>}
-
-          <button type="submit" style={{ ...S.submit, opacity: submitting ? 0.7 : 1 }} disabled={submitting}>
-            {submitting ? "Đang đăng nhập…" : "Đăng nhập"}
-          </button>
-
-          {/* CP5 — SSO Keycloak, ĐẶT CẠNH ô token chứ không thay thế nó.
-              Ô token vẫn là đường chính (hợp đồng LoginPage.test.jsx dựa vào nó);
-              nút này là đường thứ hai, chỉ hiện khi backend đã cấu hình Keycloak.
-              Nhãn nút CỐ Ý khác chuỗi "Đăng nhập" để `getByRole("button", { name:
-              "Đăng nhập" })` trong test không bắt nhầm hai nút. */}
-          <div style={S.ssoWrap}>
-            <button type="button" onClick={() => startLogin(from)} style={S.submit}>
-              Đăng nhập SSO
-            </button>
-            <p style={S.ssoHint}>
-              Đăng nhập/Đăng ký qua SSO. Nếu bạn đã đăng nhập ở Mini CRM, bước
-              này sẽ không hỏi lại mật khẩu.
-            </p>
-          </div>
-
           <p style={S.back} onClick={() => navigate("/")}>‹ Quay lại trang chủ</p>
-        </form>
+        </div>
       </div>
     </div>
   );
@@ -159,11 +178,11 @@ const S = {
   input: { width: "100%", border: `1px solid ${color.borderStrong}`, borderRadius: radius.sm, padding: "11px 14px", fontSize: size.small, color: color.ink, fontFamily: "inherit", marginBottom: 16, outline: "none" },
   error: { color: "#c0392b", fontSize: size.small, marginBottom: 14, marginTop: -4 },
   submit: { width: "100%", background: color.accent, color: "#fff", border: "none", borderRadius: radius.sm, padding: 13, fontSize: size.small, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 12px rgba(199,167,58,.24)" },
+  submitSecondary: { width: "100%", background: "#fff", color: color.ink, border: `1px solid ${color.borderStrong}`, borderRadius: radius.sm, padding: 12, fontSize: size.small, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
   link: { color: color.accent, fontWeight: 600, cursor: "pointer", fontSize: size.small },
   back: { fontSize: size.small, color: color.muted, textAlign: "center", marginTop: 18, cursor: "pointer" },
-  ssoWrap: { marginTop: 22 },
-  divider: { borderTop: `1px solid ${color.border}`, textAlign: "center", margin: "0 0 16px" },
+  ssoHint: { fontSize: size.tiny, color: color.muted, textAlign: "center", marginTop: 10, lineHeight: 1.5, marginBottom: 16 },
+  divider: { borderTop: `1px solid ${color.border}`, textAlign: "center", margin: "16px 0 16px" },
   dividerText: { position: "relative", top: -9, background: color.surface, padding: "0 10px", fontSize: size.tiny, color: color.muted },
   ssoBtn: { width: "100%", background: "#fff", color: color.ink, border: `1px solid ${color.borderStrong}`, borderRadius: radius.sm, padding: 12, fontSize: size.small, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
-  ssoHint: { fontSize: size.tiny, color: color.muted, textAlign: "center", marginTop: 10, lineHeight: 1.5 },
 };

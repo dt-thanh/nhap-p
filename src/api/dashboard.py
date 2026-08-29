@@ -48,9 +48,10 @@ from src.models.schemas import (
     MePermissionsOut,
     ProjectDetail,
     ProjectSummary,
+    PortfolioSummaryOut,
 )
 from src.models.tables import areas as areas_table
-from src.models.tables import projects, upload_files
+from src.models.tables import projects, upload_files, areas, units, deals
 from src.services.absorption import AreaService
 from src.services.dashboard_auth import (
     DashboardPrincipal,
@@ -233,6 +234,121 @@ async def _resolve_analytics_scope(
 async def me_permissions(principal: DashboardPrincipal = Depends(require_viewer)) -> MePermissionsOut:
     scope = "ALL" if principal.project_scope == "ALL" else sorted(principal.project_scope)
     return MePermissionsOut(role=principal.role, project_scope=scope)
+
+
+@router.get(
+    "/portfolio/summary",
+    response_model=PortfolioSummaryOut,
+    summary="Tổng quan KPI toàn bộ danh mục của người dùng",
+)
+async def get_portfolio_summary(
+    principal: DashboardPrincipal = Depends(require_viewer),
+) -> PortfolioSummaryOut:
+    async with get_session_factory()() as session:
+        scope_ids = await resolve_scope_project_ids(session, principal)
+        
+        if scope_ids != "ALL" and not scope_ids:
+            return PortfolioSummaryOut(
+                project_count=0,
+                area_count=0,
+                unit_count=0,
+                deal_count=0,
+                booking_count=0,
+                selling_project_count=0,
+                data_status="ready"
+            )
+
+        # 1. Project count
+        project_query = sa.select(sa.func.count(projects.c.id)).where(
+            projects.c.status == "active",
+            projects.c.external_id.isnot(None)
+        )
+        if scope_ids != "ALL":
+            project_query = project_query.where(projects.c.id.in_(scope_ids))
+        project_count = await session.scalar(project_query) or 0
+
+        # 2. Area count
+        area_query = sa.select(sa.func.count(areas.c.id)).select_from(
+            areas.join(projects, areas.c.project_id == projects.c.id)
+        ).where(
+            projects.c.status == "active",
+            projects.c.external_id.isnot(None),
+            areas.c.status == "active"
+        )
+        if scope_ids != "ALL":
+            area_query = area_query.where(projects.c.id.in_(scope_ids))
+        area_count = await session.scalar(area_query) or 0
+
+        # 3. Unit count
+        unit_query = sa.select(sa.func.count(units.c.id)).select_from(
+            units.join(areas, units.c.area_id == areas.c.id)
+            .join(projects, areas.c.project_id == projects.c.id)
+        ).where(
+            projects.c.status == "active",
+            projects.c.external_id.isnot(None),
+            areas.c.status == "active",
+            units.c.deleted_at.is_(None)
+        )
+        if scope_ids != "ALL":
+            unit_query = unit_query.where(projects.c.id.in_(scope_ids))
+        unit_count = await session.scalar(unit_query) or 0
+
+        # 4. Deal count
+        deal_query = sa.select(sa.func.count(deals.c.id)).select_from(
+            deals.join(units, deals.c.unit_id == units.c.id)
+            .join(areas, units.c.area_id == areas.c.id)
+            .join(projects, areas.c.project_id == projects.c.id)
+        ).where(
+            projects.c.status == "active",
+            projects.c.external_id.isnot(None),
+            areas.c.status == "active",
+            units.c.deleted_at.is_(None),
+            deals.c.deleted_at.is_(None)
+        )
+        if scope_ids != "ALL":
+            deal_query = deal_query.where(projects.c.id.in_(scope_ids))
+        deal_count = await session.scalar(deal_query) or 0
+
+        # 5. Booking count
+        booking_query = sa.select(sa.func.count(deals.c.id)).select_from(
+            deals.join(units, deals.c.unit_id == units.c.id)
+            .join(areas, units.c.area_id == areas.c.id)
+            .join(projects, areas.c.project_id == projects.c.id)
+        ).where(
+            projects.c.status == "active",
+            projects.c.external_id.isnot(None),
+            areas.c.status == "active",
+            units.c.deleted_at.is_(None),
+            deals.c.deleted_at.is_(None),
+            deals.c.status == "reserved"
+        )
+        if scope_ids != "ALL":
+            booking_query = booking_query.where(projects.c.id.in_(scope_ids))
+        booking_count = await session.scalar(booking_query) or 0
+
+        # 6. Selling project count
+        selling_project_query = sa.select(sa.func.count(sa.distinct(projects.c.id))).select_from(
+            projects.join(areas, areas.c.project_id == projects.c.id)
+            .join(units, units.c.area_id == areas.c.id)
+        ).where(
+            projects.c.status == "active",
+            projects.c.external_id.isnot(None),
+            areas.c.status == "active",
+            units.c.deleted_at.is_(None)
+        )
+        if scope_ids != "ALL":
+            selling_project_query = selling_project_query.where(projects.c.id.in_(scope_ids))
+        selling_project_count = await session.scalar(selling_project_query) or 0
+
+    return PortfolioSummaryOut(
+        project_count=project_count,
+        area_count=area_count,
+        unit_count=unit_count,
+        deal_count=deal_count,
+        booking_count=booking_count,
+        selling_project_count=selling_project_count,
+        data_status="ready"
+    )
 
 
 @router.get("/projects", response_model=list[ProjectSummary], summary="Danh sách dự án")

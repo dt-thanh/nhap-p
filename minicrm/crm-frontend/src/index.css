@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&family=Playfair+Display:wght@500;600;700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -6,15 +6,125 @@
 
 @layer base {
   html, body, #root { height: 100%; }
-  body { @apply bg-surface-page text-ink font-body antialiased; }
-  ::selection { @apply bg-teal/20 text-ink; }
+  html { scroll-behavior: smooth; }
+  body {
+    @apply bg-surface-page text-ink font-body antialiased;
+    background-image:
+      radial-gradient(circle at 12% 0%, rgb(37 99 235 / 0.045), transparent 30rem),
+      radial-gradient(circle at 92% 8%, rgb(14 165 233 / 0.035), transparent 26rem);
+  }
+  button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 2px solid rgb(37 99 235 / 0.55);
+    outline-offset: 2px;
+  }
+  ::selection { background-color: rgb(37 99 235 / 0.2); color: #0F172A; }
 }
 
 @layer components {
-  .stat-card { @apply rounded-card border border-line bg-surface-card p-5 shadow-card; }
-  .btn-teal { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-teal px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-600; }
-  .btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-lg border border-line-strong bg-white px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:bg-surface-page; }
-  .input { @apply w-full rounded-lg border border-line-strong bg-white px-3.5 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-teal focus:outline-none focus:ring-2 focus:ring-teal/20; }
+  .page-shell { @apply mx-auto w-full max-w-[1680px] px-4 py-5 sm:px-6 sm:py-6 xl:px-8; }
+  .page-heading { @apply font-display text-2xl font-bold tracking-[-0.025em] text-ink sm:text-[28px]; }
+  .page-description { @apply mt-1 text-sm leading-6 text-ink-muted; }
+  .stat-card {
+    @apply rounded-card border border-line bg-surface-card p-5 shadow-card;
+  }
+  .btn-teal {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-teal px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-600;
+  }
+  .surface-card { @apply overflow-hidden rounded-card border border-line bg-surface-card shadow-card; }
+  .section-heading { @apply font-display text-base font-bold tracking-[-0.015em] text-ink; }
+  .btn-primary {
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-primary px-4 text-sm font-semibold text-white shadow-sm transition duration-150 hover:-translate-y-px hover:bg-primary-600;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-line-strong bg-white px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:bg-surface-page;
+  }
+  .btn-danger {
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-status-red px-4 text-sm font-semibold text-white shadow-sm transition duration-150 hover:-translate-y-px hover:opacity-90;
+  }
+  .icon-button {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent text-ink-faint transition duration-150 hover:border-line hover:bg-white hover:text-ink hover:shadow-sm;
+  }
+  /* Ring color+opacity đặt bằng CSS var thuần (`--tw-ring-color`) thay vì
+     `@apply focus:ring-primary/15`: modifier opacity không parse được bên
+     trong @apply ở bản Tailwind này. */
+  .input {
+    @apply w-full rounded-lg border border-line-strong bg-white px-3.5 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-teal focus:outline-none focus:ring-2;
+  }
+  .input:focus { --tw-ring-color: rgb(23 151 110 / 0.2); }
+  .field-label { @apply mb-1.5 block text-sm font-semibold text-ink; }
+  .table-wrap { @apply w-full overflow-x-auto; }
   .th-cell { @apply px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-faint; }
   .td-cell { @apply px-4 py-3.5 text-sm text-ink; }
+  .table-row { @apply transition-colors duration-150 hover:bg-primary-soft; }
+  .toolbar { @apply flex flex-wrap items-center gap-3 border-b border-line bg-surface-raised p-4; }
+  .feedback-error {
+    @apply mb-4 flex items-center gap-2 rounded-xl border bg-status-redbg px-4 py-3 text-sm font-medium text-status-red;
+    border-color: rgb(220 38 38 / 0.15);
+  }
+  .modal-backdrop { @apply fixed inset-0 z-50 flex items-center justify-center bg-navy-900/55 p-4 backdrop-blur-sm; }
+  .modal-panel { @apply w-full overflow-hidden rounded-[20px] border border-white/60 bg-white shadow-panel; }
+  .modal-header { @apply flex items-center justify-between border-b border-line bg-surface-raised px-6 py-5; }
+  .modal-body { @apply space-y-4 px-6 py-5; }
+  .modal-footer { @apply flex justify-end gap-3 border-t border-line bg-surface-raised px-6 py-4; }
+}
+
+/* Phần nội dung bên phải giữ typography và nền của giao diện CRM nguyên bản.
+   Sidebar nằm ngoài <main>, nên Manrope và toàn bộ hiệu ứng sidebar không đổi. */
+main {
+  background-color: #F6F7F9;
+  background-image: none;
+}
+main .font-display {
+  font-family: "Playfair Display", Georgia, serif;
+}
+
+* { scrollbar-width: thin; scrollbar-color: #D0D5DD transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: #D0D5DD; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background: #98A2B3; background-clip: padding-box; }
+
+@keyframes sidebar-hologram-float {
+  0%, 100% { transform: translate3d(-50%, -50%, 0) scale(1); opacity: .75; }
+  50% { transform: translate3d(-50%, calc(-50% - 6px), 0) scale(1.08); opacity: 1; }
+}
+@keyframes sidebar-orbit-spin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+@keyframes sidebar-orbit-spin-reverse {
+  from { transform: translate(-50%, -50%) rotate(360deg); }
+  to { transform: translate(-50%, -50%) rotate(0deg); }
+}
+@keyframes sidebar-building-scan {
+  0% { transform: translateY(0); opacity: 0; }
+  15%, 80% { opacity: .8; }
+  100% { transform: translateY(122px); opacity: 0; }
+}
+@keyframes sidebar-building-breathe {
+  0%, 100% { transform: scale(1.01); opacity: .63; filter: saturate(.88) contrast(1.04); }
+  50% { transform: scale(1.035); opacity: .76; filter: saturate(1) contrast(1.1); }
+}
+@keyframes sidebar-data-flow {
+  from { transform: translateX(-130%); }
+  to { transform: translateX(330%); }
+}
+.sidebar-hologram-glow { animation: sidebar-hologram-float 5.5s ease-in-out infinite; }
+.sidebar-orbit { animation: sidebar-orbit-spin 18s linear infinite; }
+.sidebar-orbit-reverse { animation: sidebar-orbit-spin-reverse 24s linear infinite; }
+.sidebar-building-photo {
+  -webkit-mask-image: linear-gradient(to bottom, rgb(0 0 0 / .78) 0%, #000 10%, #000 72%, transparent 100%);
+  mask-image: linear-gradient(to bottom, rgb(0 0 0 / .78) 0%, #000 10%, #000 72%, transparent 100%);
+  animation: sidebar-building-breathe 8s ease-in-out infinite;
+}
+.sidebar-building-scan { animation: sidebar-building-scan 3.8s ease-in-out infinite; }
+.sidebar-data-line { animation: sidebar-data-flow 4.5s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-hologram-glow,
+  .sidebar-orbit,
+  .sidebar-orbit-reverse,
+  .sidebar-building-photo,
+  .sidebar-building-scan,
+  .sidebar-data-line { animation: none; }
 }

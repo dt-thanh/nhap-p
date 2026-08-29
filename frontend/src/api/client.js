@@ -15,7 +15,9 @@ import { mockFetch } from "./mock";
 // Đặt lại true khi cần phát triển giao diện mà không dựng Docker.
 export const USE_MOCK = false;
 
-const BASE = "/api";
+const API_URL = import.meta.env.VITE_API_URL || "";
+const BASE = API_URL ? `${API_URL.replace(/\/$/, "")}/api` : "/api";
+
 // Access token giữ trong bộ nhớ (không localStorage) — SRS NFR-S11
 let _accessToken = null;
 export function setAccessToken(t) { _accessToken = t; }

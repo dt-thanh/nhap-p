@@ -29,6 +29,7 @@ interface AuthState {
   /** Điều hướng sang Keycloak. Không nhận email/password — Mini CRM không bao
    *  giờ nhìn thấy mật khẩu người dùng nữa; Keycloak giữ phần đó. */
   login: (returnTo?: string) => void;
+  loginWithToken: (token: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   /** Quyền tối thiểu — dùng để ẩn nút. KHÔNG phải ranh giới bảo mật: backend
@@ -107,9 +108,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     startLogin(returnTo ?? window.location.pathname);
   }, []);
 
+  const loginWithToken = useCallback(async (token: string) => {
+    localStorage.setItem("minicrm_access_token", token);
+    try {
+      const me = await apiGet<MeResponse>("/auth/me");
+      setUser({
+        id: me.id ?? "unknown",
+        name: me.name ?? me.email ?? "Người dùng",
+        email: me.email ?? "",
+        role: me.role,
+        projectScope: me.project_scope,
+      });
+    } catch (err) {
+      localStorage.removeItem("minicrm_access_token");
+      setUser(null);
+      throw err;
+    }
+  }, []);
+
   const logout = useCallback(async () => {
     setUser(null);
     clearLegacyAuthStorage();
+    localStorage.removeItem("minicrm_access_token");
     try {
       sessionStorage.setItem(LOGOUT_FLAG_KEY, "single");
     } catch {
@@ -125,7 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, refresh, hasRole }}>
+    <AuthContext.Provider value={{ user, loading, login, loginWithToken, logout, refresh, hasRole }}>
       {children}
     </AuthContext.Provider>
   );

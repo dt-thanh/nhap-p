@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { SyncBadge } from "../components/ui/SyncBadge";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
 import { fetchUnits, createUnit, updateUnit, deleteUnit } from "../services";
@@ -11,9 +12,12 @@ import { unitStatus as unitStatusMap } from "../lib/status";
 import type { Unit } from "../types";
 
 export function Units() {
+  // Đọc sẵn `?q=` khi được điều hướng tới từ ô tìm kiếm trên Topbar — chỉ lấy
+  // giá trị lúc mount, không đồng bộ 2 chiều với URL sau đó.
+  const [searchParams] = useSearchParams();
   const [units, setUnits] = useState<Unit[]>([]);
   const [areas, setAreas] = useState<{ id: string; name: string; type: string }[]>([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
   const [modalUnit, setModalUnit] = useState<Unit | null | undefined>(undefined); // undefined=closed, null=create, Unit=edit
   const [deleting, setDeleting] = useState<Unit | null>(null);

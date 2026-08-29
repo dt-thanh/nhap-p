@@ -13,7 +13,10 @@
 // CRM, và là lý do `setAccessToken()` cũ không còn cần cho luồng người dùng.
 // ---------------------------------------------------------------------------
 
-const AUTH_BASE = "/api/v1/auth";
+const API_URL = import.meta.env.VITE_API_URL || "";
+const AUTH_BASE = API_URL 
+  ? `${API_URL.replace(/\/$/, "")}/api/v1/auth` 
+  : "/api/v1/auth";
 
 /** Điều hướng CẢ TRANG sang backend để bắt đầu vòng OIDC. Không dùng fetch:
  *  bước kế tiếp là 302 sang Keycloak, và người dùng phải thấy thanh địa chỉ
@@ -22,6 +25,7 @@ export function startLogin(returnTo) {
   const rt = returnTo ?? window.location.pathname;
   window.location.href = `${AUTH_BASE}/login?return_to=${encodeURIComponent(rt)}`;
 }
+
 
 /** Danh tính hiện tại, hoặc null nếu chưa đăng nhập. Vì token ở cookie HttpOnly,
  *  JS không tự đọc được — phải hỏi backend. 401 = chưa đăng nhập (bình thường

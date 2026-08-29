@@ -1,0 +1,224 @@
+{
+  "realm": "p100",
+  "enabled": true,
+  "displayName": "AbsorptionForecast",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "verifyEmail": false,
+  "rememberMe": true,
+  "sslRequired": "external",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "attributes": {
+    "frontendUrl": "https://keycloak-production-aadc.up.railway.app"
+  },
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "Full access (AbsorbIQ + Mini CRM)."
+      },
+      {
+        "name": "pipeline_operator",
+        "description": "Operator: pipeline actions."
+      },
+      {
+        "name": "business_viewer",
+        "description": "Read-only business viewer (default for self-registered users)."
+      },
+      {
+        "name": "CRM.CEO",
+        "description": "Canonical Entra/Keycloak App Role -> internal 'admin'. See src/services/entra_auth.py::CANONICAL_APP_ROLES and minicrm/app/session.py::CANONICAL_APP_ROLES — this exact name is what those fixed maps look for, NOT a plain 'ceo' role."
+      },
+      {
+        "name": "CRM.ADVISOR",
+        "description": "Canonical Entra/Keycloak App Role -> internal 'business_viewer'."
+      },
+      {
+        "name": "CRM.SALES",
+        "description": "Canonical Entra/Keycloak App Role -> internal 'pipeline_operator'."
+      }
+    ]
+  },
+  "groups": [
+    {
+      "name": "new-users",
+      "path": "/new-users",
+      "realmRoles": [
+        "business_viewer"
+      ]
+    }
+  ],
+  "defaultGroups": [
+    "/new-users"
+  ],
+  "requiredCredentials": [
+    "password"
+  ],
+  "users": [
+    {
+      "username": "demo",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "demo@example.com",
+      "firstName": "Demo",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo12345",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "admin"
+      ]
+    },
+    {
+      "username": "e2e.ceo",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "e2e.ceo@example.test",
+      "firstName": "E2E",
+      "lastName": "CEO",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "pemxOLDH9a9oKeBNLYv4sCcZ",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CRM.CEO"
+      ]
+    },
+    {
+      "username": "e2e.advisor",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "e2e.advisor@example.test",
+      "firstName": "E2E",
+      "lastName": "Advisor",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "-QQ_IceKOoHWw7kL80B1xkbv",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CRM.ADVISOR"
+      ]
+    },
+    {
+      "username": "e2e.sales",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "e2e.sales@example.test",
+      "firstName": "E2E",
+      "lastName": "Sales",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "VM_AC3KOACar6kbw30tOlPXu",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CRM.SALES"
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "minicrm-client",
+      "name": "Mini CRM",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "local-dev-minicrm-secret",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "https://test-deploy-minicrm-frontend.pages.dev/*"
+      ],
+      "webOrigins": [
+        "https://test-deploy-minicrm-frontend.pages.dev",
+        "+"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://test-deploy-minicrm-frontend.pages.dev/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm-roles-to-all-tokens",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "absorbiq-client",
+      "name": "AbsorbIQ / Product",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "local-dev-absorbiq-secret",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "https://test-deploy-p100.pages.dev/*"
+      ],
+      "webOrigins": [
+        "https://test-deploy-p100.pages.dev",
+        "+"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://test-deploy-p100.pages.dev/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm-roles-to-all-tokens",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+  "displayNameHtml": "<span>AbsorptionForecast</span>",
+  "loginTheme": "absorptionforecast",
+  "internationalizationEnabled": true,
+  "supportedLocales": [
+    "vi",
+    "en"
+  ],
+  "defaultLocale": "vi"
+}

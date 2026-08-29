@@ -1,11 +1,11 @@
 import type { UnitStatus, ProjectStatus, DealStage, StaffStatus, AreaStatus } from "../types";
 
-type Tone = "green" | "amber" | "gray" | "blue" | "red" | "teal";
+type Tone = "green" | "amber" | "gray" | "blue" | "red" | "teal" | "indigo";
 
 export const unitStatus: Record<UnitStatus, { label: string; tone: Tone }> = {
-  available: { label: "Còn trống", tone: "teal" },
+  available: { label: "Còn trống", tone: "indigo" },
   reserved: { label: "Đã đặt chỗ", tone: "amber" },
-  sold: { label: "Đã bán", tone: "gray" },
+  sold: { label: "Đã bán", tone: "green" },
 };
 export const projectStatus: Record<ProjectStatus, { label: string; tone: Tone }> = {
   active: { label: "Đang mở bán", tone: "green" },
@@ -27,6 +27,6 @@ export const dealStage: Record<DealStage, { label: string; color: string }> = {
   qualified: { label: "Tiềm năng", color: "#17976E" },
   viewing: { label: "Xem nhà", color: "#C6982F" },
   booking: { label: "Đặt chỗ", color: "#8B5CF6" },
-  won: { label: "Chốt thành công", color: "#1F9D57" },
+  won: { label: "Chốt thành công", color: "#16A34A" },
   lost: { label: "Thất bại", color: "#D0483C" },
 };

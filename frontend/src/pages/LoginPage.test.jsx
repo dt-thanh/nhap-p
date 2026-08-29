@@ -46,14 +46,19 @@ describe("LoginPage", () => {
   it("starts Keycloak SSO for the originally requested route", async () => {
     renderAt("/login", { from: "/ranking" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Đăng nhập SSO" }));
+    // Dùng findByRole (async) để chờ loading state (checkingSession) resolve xong
+    // trước khi nút SSO xuất hiện trong DOM.
+    const btn = await screen.findByRole("button", { name: "Đăng nhập SSO" });
+    fireEvent.click(btn);
 
     expect(startLogin).toHaveBeenCalledWith("/ranking");
   });
 
-  it("does not render the legacy token form by default", () => {
+  it("does not render the legacy token form by default", async () => {
     renderAt();
 
+    // Chờ loading state resolve (nút SSO xuất hiện) trước khi assert form token vắng mặt.
+    await screen.findByRole("button", { name: "Đăng nhập SSO" });
     expect(screen.queryByPlaceholderText("Dán token vai trò được cấp")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Đăng nhập SSO" })).toBeInTheDocument();
   });

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Building2, Handshake, Layers, Trash2 } from "lucide-react";
+import { Plus, Search, Building2, Handshake, Layers, Pencil, Archive } from "lucide-react";
 import { fetchProjects, fetchProjectKpis, createProject, updateProject, deleteProject } from "../services";
 import { StatCard } from "../components/ui/StatCard";
 import { Badge } from "../components/ui/Badge";
@@ -112,9 +112,11 @@ export function Projects() {
                 </td>
                 <td className="td-cell">
                   <div className="flex gap-1">
-                    <button onClick={(e) => { e.stopPropagation(); setEditing(p); }} className="rounded p-1 text-ink-faint hover:bg-surface-page hover:text-ink" title="Sửa">✏️</button>
-                    <button onClick={(e) => { e.stopPropagation(); setDeleting(p); }} className="rounded p-1 text-ink-faint hover:bg-status-redbg hover:text-status-red" title="Lưu trữ">
-                      <Trash2 className="h-4 w-4" />
+                    <button onClick={(e) => { e.stopPropagation(); setEditing(p); }} className="rounded p-1 text-ink-faint hover:bg-surface-page hover:text-ink" title="Sửa">
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); setDeleting(p); }} className="rounded p-1 text-ink-faint hover:bg-status-amberbg hover:text-status-amber" title="Lưu trữ">
+                      <Archive className="h-4 w-4" />
                     </button>
                   </div>
                 </td>

@@ -219,6 +219,18 @@ class MePermissionsOut(BaseModel):
     project_scope: str | list[str] = Field(..., description="'ALL' hoặc danh sách external_id các dự án được cấp")
 
 
+class PortfolioSummaryOut(BaseModel):
+    """Tổng quan danh mục — số liệu gộp của toàn bộ các dự án."""
+
+    project_count: int = Field(..., description="Tổng số dự án")
+    area_count: int = Field(..., description="Tổng số phân khu")
+    unit_count: int = Field(..., description="Tổng số căn")
+    deal_count: int = Field(..., description="Tổng số deals (giao dịch)")
+    booking_count: int = Field(..., description="Số căn đang booking/giữ chỗ")
+    selling_project_count: int = Field(..., description="Số dự án đang mở bán")
+    data_status: str = Field(default="ready", description="Trạng thái dữ liệu")
+
+
 class ProjectSummary(BaseModel):
     """Một dự án — frontend cần để chọn phạm vi upload và dashboard."""
 

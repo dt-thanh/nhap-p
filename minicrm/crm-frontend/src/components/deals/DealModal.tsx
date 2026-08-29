@@ -35,9 +35,9 @@ export function DealModal({ deal, units, onClose, onSave }: Props) {
   function submit() {
     if (!unitId) return setError("Vui lòng chọn căn hộ");
     if (status === "reserved" && !reservedAt)
-      return setError("Trạng thái 'Đặt chỗ' yêu cầu ngày reserved_at");
+      return setError("Trạng thái 'Đặt chỗ' yêu cầu Ngày đặt cọc");
     if (status === "sold" && !soldAt)
-      return setError("Trạng thái 'Đã bán' yêu cầu ngày sold_at");
+      return setError("Trạng thái 'Đã bán' yêu cầu Ngày chốt bán");
 
     onSave({
       external_unit_id: unitId,
@@ -79,15 +79,15 @@ export function DealModal({ deal, units, onClose, onSave }: Props) {
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-ink">reserved_at</label>
+              <label className="mb-1.5 block text-sm font-medium text-ink">Ngày đặt cọc</label>
               <input type="datetime-local" className="input text-xs" value={reservedAt} onChange={(e) => setReservedAt(e.target.value)} />
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-ink">sold_at</label>
+              <label className="mb-1.5 block text-sm font-medium text-ink">Ngày chốt bán</label>
               <input type="datetime-local" className="input text-xs" value={soldAt} onChange={(e) => setSoldAt(e.target.value)} />
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-ink">lost_at</label>
+              <label className="mb-1.5 block text-sm font-medium text-ink">Ngày huỷ giao dịch</label>
               <input type="datetime-local" className="input text-xs" value={lostAt} onChange={(e) => setLostAt(e.target.value)} />
             </div>
           </div>

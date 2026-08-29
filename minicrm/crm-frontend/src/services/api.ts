@@ -84,6 +84,11 @@ export async function apiFetch<T = unknown>(
     headers["Content-Type"] = "application/json";
   }
 
+  const token = localStorage.getItem("minicrm_access_token");
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   // `credentials: "include"` là thứ khiến cookie phiên `HttpOnly` được gửi kèm.
   // Thiếu nó, MỌI request đều 401 dù đã đăng nhập thành công.
   const res = await fetch(`${BASE}${path}`, { ...opts, headers, credentials: "include" });
