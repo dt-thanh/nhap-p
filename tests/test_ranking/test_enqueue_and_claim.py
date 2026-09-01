@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from src.models.tables import ranking_runs
 from src.ranking.service import RankingError, enqueue_ranking, run_ranking
 from tests.conftest import db_skip_reason
-from tests.test_agent_e2e import PROJECT_ID, _insert_config, _insert_dataset
+from tests.ranking_fixture import PROJECT_ID, _insert_config, _insert_dataset
 
 _SKIP = db_skip_reason()
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(bool(_SKIP), reason=_SKIP or "")]

@@ -149,7 +149,7 @@ export default function UploadPage() {
       <header style={S.head}>
         <h1 style={S.h1}>Nạp dữ liệu</h1>
         <p style={S.sub}>
-          Tải file bán hàng &amp; tồn kho cho <b>{project.name} · {zone.name}</b>.
+          Tải file bán hàng cho <b>{project.name} · {zone.name}</b>.
           Hệ thống kiểm tra từng dòng trước khi ghi vào cơ sở dữ liệu.
         </p>
       </header>
@@ -164,7 +164,6 @@ export default function UploadPage() {
             style={{ marginLeft: space(2), padding: space(1), fontSize: size.small }}
           >
             <option value="sales">Bán hàng</option>
-            <option value="inventory">Tồn kho</option>
             <option value="areas">Danh mục phân khu</option>
           </select>
         </label>

@@ -148,9 +148,19 @@ def test_same_area_different_day_is_allowed(upgraded):
         ).scalar() == 2
 
 
-def test_the_core_projection_matches_the_migrated_columns(upgraded):
-    from src.models.tables import unit_inventory_daily
-
+# This test must not import the current-head Core declaration because
+# unit_inventory_daily was intentionally retired by 0036_remove_historical_ranking.
+# Historical migration tests verify the schema at the migration revision, not
+# whether retired tables remain mapped at current head.
+def test_the_migrated_columns_match_0031s_own_create_table(upgraded):
+    """Expected shape is hardcoded from `0031_unit_inventory_daily.py`'s own
+    `create_table()` call (`alembic/versions/0031_unit_inventory_daily.py:60-78`,
+    every column `nullable=False`) — a historical fact about this one
+    migration, not a projection of whatever `src/models/tables.py` currently
+    declares. `0036_remove_historical_ranking.py:38` drops this table from
+    HEAD (predating PR-1 by six revisions); the fixture above upgrades only
+    through `0031` on a scratch database, so the table still genuinely exists
+    at the point this test inspects it."""
     with upgraded["engine"].connect() as conn:
         rows = conn.execute(
             sa.text(
@@ -159,5 +169,14 @@ def test_the_core_projection_matches_the_migrated_columns(upgraded):
             )
         ).all()
     actual = {name: (is_nullable == "YES") for name, is_nullable in rows}
-    expected = {c.name: c.nullable for c in unit_inventory_daily.columns}
+    expected = {
+        "id": False,
+        "area_id": False,
+        "stat_date": False,
+        "sellable_units": False,
+        "blocked_units": False,
+        "live_reserved_units": False,
+        "live_sold_units": False,
+        "rebuilt_from_log_at": False,
+    }
     assert actual == expected

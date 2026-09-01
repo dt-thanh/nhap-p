@@ -68,15 +68,24 @@ from src.models.tables import (
     ranking_feature_lineage,
     ranking_feature_snapshots,
     ranking_feature_values,
+    ranking_proposal_reviews,
     ranking_runs,
     ranking_scores,
     ranking_weight_proposals,
     units,
 )
 from src.ranking.bands import DISCLAIMER, as_percent, band_for
-from src.ranking.engine import FeatureWeight, UnitFeatureInput, UnitScore, rank_scores, score_unit
+from src.ranking.engine import (
+    FeatureWeight,
+    UnitFeatureInput,
+    UnitScore,
+    effective_rank_scores,
+    rank_scores,
+    score_unit,
+)
 from src.services import governance
 from src.services.ranking_config import GRAIN_WEIGHT_KEYS, HierarchicalConfigError, validate_hierarchical_weights
+from src.services.ranking_dispatch import dispatch_ranking_run
 
 log = get_logger("src.ranking.service")
 
@@ -160,6 +169,27 @@ AREA_COMPARABILITY_WARNING = (
     "Area eligibility/coverage differs across areas in this project's run — "
     "scores in different areas are not directly comparable (T18, §24.4.4)."
 )
+
+# PR-6: D27's HIGH_RISK gate. Legal is a single Project-scope CATEGORICAL
+# value assertion (`project_legal_status`) — reusing PR-2's value-mode
+# governance path unchanged (CEO approval, evidence, self-approval ban) and
+# PR-3/PR-4's snapshot-copy pattern unchanged (own scope_type, own snapshot
+# row, get-or-create idempotent per run). Its ONLY consumer is this gate: it
+# is never a key in any `hierarchical_weights` grain map and never reaches
+# `engine.score_unit()`'s weighted inputs (§24.4.5 — "outside the weighted
+# mean", not a smaller weight).
+LEGAL_FEATURE_KEY = "project_legal_status"
+LEGAL_SCOPE_TYPE = "legal"
+LEGAL_FEATURE_SET_VERSION = "hierarchical-legal-v1"
+# D40 (broader vocabulary/cadence) stays PENDING — this is deliberately only
+# the minimal set the gate itself needs (per the owner instruction not to
+# fabricate D40's resolution): HIGH_RISK gates, NOT_HIGH_RISK does not,
+# UNKNOWN does not (and is disclosed as unverified, never treated as a
+# NOT_HIGH_RISK clearance).
+LEGAL_HIGH_RISK = "HIGH_RISK"
+LEGAL_NOT_HIGH_RISK = "NOT_HIGH_RISK"
+LEGAL_UNKNOWN = "UNKNOWN"
+LEGAL_NO_PUBLISHED_ASSERTION = "NO_PUBLISHED_LEGAL_ASSERTION"
 
 
 class RankingError(RuntimeError):
@@ -389,6 +419,126 @@ async def enqueue_ranking(
     return row[0], bool(row[1])
 
 
+async def enqueue_ahp_application_run_in_session(
+    session: AsyncSession,
+    *,
+    project_id: uuid.UUID,
+    proposal_id: uuid.UUID,
+    config_version_id: uuid.UUID,
+    status: str = "queued",
+) -> uuid.UUID:
+    """Insert the one immutable, proposal-bound AHP application run.
+
+    Normal triggers intentionally coalesce queued work and bind the active
+    config when a worker claims it. An approved AHP proposal cannot share that
+    behavior: its frozen config must remain traceable to one specific run.
+    The caller owns the transaction that publishes the config and links the
+    proposal, so this function never commits.
+    """
+    if status not in {"queued", "deferred"}:
+        raise RankingError("AHP_APPLICATION_RUN_STATUS_INVALID", "AHP run intent phải là queued hoặc deferred")
+
+    run_id = uuid.uuid4()
+    await session.execute(
+        sa.insert(ranking_runs).values(
+            id=run_id,
+            project_id=project_id,
+            sync_run_id=None,
+            trigger="config_change",
+            scope_type="project",
+            scope_ids={},
+            config_version_id=config_version_id,
+            ahp_proposal_id=proposal_id,
+            status=status,
+            attempt=0,
+            enqueued_at=datetime.now(UTC),
+        )
+    )
+    return run_id
+
+
+async def dispatch_persisted_ranking_run(
+    *,
+    project_id: uuid.UUID | str,
+    run_id: uuid.UUID | str,
+    trigger: str,
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
+) -> bool:
+    """Dispatch a committed queued intent and persist its RQ identity/result.
+
+    Redis cannot join the SQL transaction that creates a run.  A dispatch
+    failure therefore leaves the intent queued with a structured error for an
+    auditable re-dispatch/reconciliation path rather than incorrectly marking
+    the AHP application complete.
+    """
+    project_text, run_text = str(project_id), str(run_id)
+    result = dispatch_ranking_run(project_id=project_text, run_id=run_text, trigger=trigger)
+    factory = session_factory or get_session_factory()
+    async with factory() as session:
+        values: dict[str, object]
+        if result.enqueued:
+            values = {"rq_job_id": result.job_id, "error_summary": {}}
+        else:
+            values = {
+                "rq_job_id": None,
+                "error_summary": {"code": result.error_code or "RQ_DISPATCH_FAILED", "retryable": True},
+            }
+        await session.execute(
+            sa.update(ranking_runs)
+            .where(ranking_runs.c.id == uuid.UUID(run_text), ranking_runs.c.status == "queued")
+            .values(**values)
+        )
+        await session.commit()
+    return result.enqueued
+
+
+async def promote_next_deferred_ranking_run(
+    project_id: uuid.UUID | str,
+    *,
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
+) -> dict | None:
+    """Promote one durable AHP deferred intent after all current work ends.
+
+    The lock and open-run check make this safe to call from every terminal run
+    path.  It never changes a healthy queued/running row and is idempotent:
+    once promoted, the selected row is no longer ``deferred``.
+    """
+    factory = session_factory or get_session_factory()
+    project_uuid = uuid.UUID(str(project_id))
+    async with factory() as session:
+        candidate = (
+            await session.execute(
+                sa.select(ranking_runs)
+                .where(ranking_runs.c.project_id == project_uuid, ranking_runs.c.status == "deferred")
+                .order_by(ranking_runs.c.enqueued_at, ranking_runs.c.id)
+                .with_for_update(skip_locked=True)
+                .limit(1)
+            )
+        ).mappings().first()
+        if candidate is None:
+            await session.rollback()
+            return None
+        open_run = await session.scalar(
+            sa.select(ranking_runs.c.id)
+            .where(
+                ranking_runs.c.project_id == project_uuid,
+                ranking_runs.c.status.in_(("queued", "running")),
+            )
+            .with_for_update()
+            .limit(1)
+        )
+        if open_run is not None:
+            await session.rollback()
+            return None
+        await session.execute(
+            sa.update(ranking_runs)
+            .where(ranking_runs.c.id == candidate["id"], ranking_runs.c.status == "deferred")
+            .values(status="queued", error_summary={})
+        )
+        await session.commit()
+        return dict(candidate) | {"status": "queued"}
+
+
 async def run_ranking(
     project_id: uuid.UUID | str,
     area_id: uuid.UUID | str | None = None,
@@ -422,7 +572,34 @@ async def run_ranking(
         if project_exists is None:
             raise RankingError("PROJECT_NOT_FOUND", f"Dự án {project_uuid} không tồn tại")
 
-        config_id, config_version, weights, min_coverage = await _active_config(session)
+        queued_config_id = None
+        if run_id is not None:
+            queued_config_id = await session.scalar(
+                sa.select(ranking_runs.c.config_version_id).where(ranking_runs.c.id == run_id)
+            )
+        if queued_config_id is None:
+            config_id, config_version, weights, min_coverage = await _active_config(session)
+        else:
+            config_row = (
+                await session.execute(
+                    sa.select(ranking_configs).where(ranking_configs.c.id == queued_config_id)
+                )
+            ).mappings().first()
+            if config_row is None:
+                raise RankingError("CONFIG_NOT_FOUND", f"Không có ranking_configs {queued_config_id} đã gắn với run {run_id}")
+            config_id = config_row["id"]
+            config_version = config_row["version"]
+            weights = [
+                FeatureWeight(
+                    key=key,
+                    weight=Decimal(str(spec["weight"])),
+                    direction=spec["direction"],
+                    missing_value_policy=spec["missing_value_policy"],
+                    min_confidence=Decimal(str(spec.get("min_confidence", 0))),
+                )
+                for key, spec in config_row["weights"].items()
+            ]
+            min_coverage = Decimal(str(config_row["min_weight_coverage"]))
 
         started_at = datetime.now(UTC)
         if run_id is None:
@@ -453,10 +630,9 @@ async def run_ranking(
                     status="running",
                     started_at=started_at,
                     finished_at=None,
-                    # `config_version_id` được gán LẠI lúc chiếm, không giữ giá
-                    # trị lúc xếp hàng: config có thể đã được publish lại trong
-                    # lúc job nằm chờ, và điểm sinh ra phải trỏ về đúng bộ trọng
-                    # số ĐÃ DÙNG để tính nó.
+                    # A normal queued run binds the active config above.  An
+                    # AHP application run already has its proposal-derived
+                    # config and preserves that binding across claim/retry.
                     config_version_id=config_id,
                     attempt=ranking_runs.c.attempt + 1,
                 )
@@ -468,6 +644,9 @@ async def run_ranking(
                     f"Run {run_id} không ở trạng thái nhận được (queued/failed) — worker khác đã nhận",
                 )
         await session.commit()
+        # No-op for ordinary runs.  A bound AHP proposal becomes ``running``
+        # only after the row was successfully claimed by a worker.
+        await governance.mark_ahp_application_run_running(run_id=run_id)
 
         try:
             unit_rows = await _project_units(session, project_uuid)
@@ -512,6 +691,15 @@ async def run_ranking(
                 .values(status="failed", error_summary={"message": str(exc)}, finished_at=datetime.now(UTC))
             )
             await session.commit()
+            await governance.finalize_ahp_application_run(run_id=run_id, succeeded=False)
+            promoted = await promote_next_deferred_ranking_run(project_uuid, session_factory=factory)
+            if promoted is not None:
+                await dispatch_persisted_ranking_run(
+                    project_id=project_uuid,
+                    run_id=promoted["id"],
+                    trigger=promoted["trigger"],
+                    session_factory=factory,
+                )
             raise
 
         # PR-1 hierarchical step — post-run, feature-flagged, STRICTLY after the
@@ -521,9 +709,21 @@ async def run_ranking(
         # `rank_in_area`/`rank_in_project`/legacy `contributions`.
         if get_settings().hierarchical_ranking_enabled:
             try:
-                await compute_hierarchical_scores_for_run(
+                hier_result = await compute_hierarchical_scores_for_run(
                     project_uuid, run_id, config_id, session_factory=factory
                 )
+                # Ranking v3 — same best-effort, non-raising discipline as the
+                # hierarchical step above: a re-rank failure must never mark
+                # this already-completed legacy run as 'failed', and must
+                # never block `finalize_ahp_application_run` below. Nested
+                # inside this same try/except (not a second, parallel one):
+                # attempting a v3 re-rank only makes sense once the
+                # hierarchical step above actually produced `hier_result`.
+                reranked = await _apply_v3_composite_ranks(
+                    factory, project_id=project_uuid, run_id=run_id, ranked=ranked, hier_result=hier_result
+                )
+                if reranked is not None:
+                    ranked = reranked
             except Exception as exc:  # noqa: BLE001 - best-effort, legacy result already committed
                 log.error(
                     "ranking.hierarchical.step_failed",
@@ -531,6 +731,16 @@ async def run_ranking(
                     project_id=str(project_uuid),
                     error=str(exc),
                 )
+
+        await governance.finalize_ahp_application_run(run_id=run_id, succeeded=True)
+        promoted = await promote_next_deferred_ranking_run(project_uuid, session_factory=factory)
+        if promoted is not None:
+            await dispatch_persisted_ranking_run(
+                project_id=project_uuid,
+                run_id=promoted["id"],
+                trigger=promoted["trigger"],
+                session_factory=factory,
+            )
 
         summary_context = _build_summary_context(project_uuid, area_uuid, ranked, config_version)
         return RankingRunResult(
@@ -685,15 +895,24 @@ def _parse_grain_feature_weights(grain_weights: dict) -> list[FeatureWeight]:
     ]
 
 
-def _legal_status_for_project(project_id: uuid.UUID) -> str:
-    """D27's HIGH_RISK gate (§24.4.5) — no legal-status source or seam exists
-    anywhere in this repository yet (verified: no `legal_status`/`HIGH_RISK`
-    reference outside `docs/`). This stub keeps the gate's *shape* in
-    `compute_hierarchical_scores_for_run` ready for a real source, without
-    fabricating one — it always returns `NOT_AVAILABLE`, never `HIGH_RISK`,
-    so the legal-gate branch below is structurally present but unreachable in
-    PR-1 (T-legal-gate is a documented, skipped test — see test suite)."""
-    return "NOT_AVAILABLE"
+@dataclass
+class LegalFeatureSnapshot:
+    """Result of `copy_published_legal_assertion_to_run_snapshot()` — one
+    project's pinned, immutable Legal status for one ranking run. `status`
+    is always one of `LEGAL_HIGH_RISK`/`LEGAL_NOT_HIGH_RISK`/`LEGAL_UNKNOWN`
+    — `LEGAL_UNKNOWN` covers BOTH "no eligible assertion was ever published"
+    (`feature_value_id is None`) and "an expert explicitly asserted
+    UNKNOWN" (`feature_value_id` set, a real snapshot-bound value) — the two
+    are distinguished by `feature_value_id`, never by a different status
+    string (§24.4.5: legal status is read only from the immutable snapshot,
+    never inferred)."""
+
+    snapshot_id: uuid.UUID
+    status: str
+    feature_value_id: str | None
+    feature_justification_id: str | None
+    reviewer_expert_id: str | None
+    candidate_count: int
 
 
 @dataclass
@@ -1224,7 +1443,20 @@ async def materialize_published_feature_value(
     proposal = validated["proposal"]
     feature = validated["feature_definition"]
 
-    if proposal["scope_type"] != expected_scope_type:
+    # `expected_scope_type` is the FEATURE-STORE scope (what gets written to
+    # `ranking_feature_snapshots`/`ranking_feature_values.scope_type`) — for
+    # Project/Market/Area this is identical to the GOVERNANCE proposal's own
+    # `scope_type` (both vocabularies happen to share those three values by
+    # convention). Legal is the one deliberate exception (PR-6): its feature
+    # definition is `grain='project'`, so `_check_grain_scope_compatibility()`
+    # only ever lets it be authored under a `scope_type='project'` proposal
+    # (there is no `scope_type='legal'` at the governance layer at all,
+    # by design — see `governance.VALUE_SCOPE_TYPES`), while its feature-store
+    # rows deliberately use `scope_type='legal'` for structural isolation from
+    # Project's own numeric factors (`0042`'s docstring). This is the one
+    # place that divergence must be reconciled.
+    expected_proposal_scope_type = "project" if expected_scope_type == LEGAL_SCOPE_TYPE else expected_scope_type
+    if proposal["scope_type"] != expected_proposal_scope_type:
         raise RankingError(
             "UNEXPECTED_SCOPE_TYPE",
             f"assertion {feature_justification_id} có scope_type='{proposal['scope_type']}', "
@@ -1239,12 +1471,13 @@ async def materialize_published_feature_value(
             AREA_SCOPE_PROJECT_MISMATCH,
             f"assertion {feature_justification_id} thuộc phân khu khác {area_id}",
         )
-    if feature["value_type"] != "numeric":
+    if feature["value_type"] not in ("numeric", "categorical"):
         raise RankingError(
             "VALUE_TYPE_NOT_SUPPORTED",
             f"feature_definition {feature['id']} có value_type='{feature['value_type']}' — "
-            f"chỉ materialize giá trị numeric cho grain '{expected_scope_type}'",
+            f"chỉ materialize giá trị numeric/categorical cho grain '{expected_scope_type}'",
         )
+    is_categorical = feature["value_type"] == "categorical"
 
     existing = (
         await session.execute(
@@ -1261,6 +1494,7 @@ async def materialize_published_feature_value(
         return {
             "feature_value_id": existing["id"],
             "normalized_numeric": existing["normalized_numeric"],
+            "categorical_value": existing["categorical_value"],
             "reused": True,
         }
 
@@ -1278,11 +1512,11 @@ async def materialize_published_feature_value(
                     scope_type=expected_scope_type,
                     area_id=area_id,
                     unit_id=None,
-                    value_kind="numeric",
-                    raw_numeric=justification["raw_numeric"],
-                    normalized_numeric=justification["normalized_numeric"],
+                    value_kind="categorical" if is_categorical else "numeric",
+                    raw_numeric=None if is_categorical else justification["raw_numeric"],
+                    normalized_numeric=None if is_categorical else justification["normalized_numeric"],
                     boolean_value=None,
-                    categorical_value=None,
+                    categorical_value=justification["categorical_value"] if is_categorical else None,
                     missing_reason=None,
                     confidence=None,
                     sample_count=None,
@@ -1324,10 +1558,16 @@ async def materialize_published_feature_value(
         return {
             "feature_value_id": existing["id"],
             "normalized_numeric": existing["normalized_numeric"],
+            "categorical_value": existing["categorical_value"],
             "reused": True,
         }
 
-    return {"feature_value_id": value_id, "normalized_numeric": justification["normalized_numeric"], "reused": False}
+    return {
+        "feature_value_id": value_id,
+        "normalized_numeric": None if is_categorical else justification["normalized_numeric"],
+        "categorical_value": justification["categorical_value"] if is_categorical else None,
+        "reused": False,
+    }
 
 
 @dataclass
@@ -1604,6 +1844,203 @@ async def copy_published_area_assertions_to_run_snapshot(
     )
 
 
+async def _select_eligible_legal_justification(
+    session: AsyncSession, project_id: uuid.UUID, cutoff_at: datetime
+) -> dict | None:
+    """Deterministic single-winner selection for the one Legal value
+    assertion (`project_legal_status`), Project-scope. Same 4-stage
+    eligibility shape as `_select_eligible_project_justifications()`
+    (published/effective/not-expired), narrowed to this one feature key by a
+    dedicated query rather than reusing Project's shared selector — Legal
+    must never be swept into Project's own M/P snapshot/weighted values (its
+    only consumer is the gate, never `engine.score_unit()`'s inputs).
+
+    Unlike Project/Market/Area (which may have zero-to-many configured
+    feature keys resolved in parallel), Legal has exactly one feature key, so
+    this returns at most one row (`LIMIT 1`), not a per-feature-key dict.
+    """
+    stmt = (
+        sa.select(
+            ranking_feature_justifications.c.id.label("justification_id"),
+            ranking_feature_justifications.c.proposal_id,
+            ranking_feature_justifications.c.feature_definition_id,
+        )
+        .select_from(
+            ranking_feature_justifications.join(
+                ranking_weight_proposals,
+                ranking_weight_proposals.c.id == ranking_feature_justifications.c.proposal_id,
+            ).join(
+                ranking_feature_definitions,
+                ranking_feature_definitions.c.id == ranking_feature_justifications.c.feature_definition_id,
+            )
+        )
+        .where(
+            ranking_feature_justifications.c.assertion_kind == "value",
+            ranking_weight_proposals.c.assertion_kind == "value",
+            ranking_weight_proposals.c.scope_type == "project",
+            ranking_weight_proposals.c.project_id == project_id,
+            ranking_feature_definitions.c.feature_key == LEGAL_FEATURE_KEY,
+            ranking_weight_proposals.c.status == "published",
+            ranking_weight_proposals.c.published_at.is_not(None),
+            ranking_weight_proposals.c.published_at <= cutoff_at,
+            sa.or_(
+                ranking_feature_justifications.c.effective_at.is_(None),
+                ranking_feature_justifications.c.effective_at <= cutoff_at,
+            ),
+            sa.or_(
+                ranking_feature_justifications.c.expires_at.is_(None),
+                ranking_feature_justifications.c.expires_at > cutoff_at,
+            ),
+        )
+        .order_by(
+            sa.desc(ranking_feature_justifications.c.effective_at),
+            sa.desc(ranking_weight_proposals.c.published_at),
+            ranking_feature_justifications.c.id,
+        )
+        .limit(1)
+    )
+    row = (await session.execute(stmt)).mappings().first()
+    return dict(row) if row is not None else None
+
+
+async def _legal_reviewer_expert_id(session: AsyncSession, justification_id: uuid.UUID) -> uuid.UUID | None:
+    """The CEO reviewer who approved this Legal assertion — a non-PII, ID-only
+    audit reference (`reviewer_expert_id`, not the OIDC `reviewer_subject`
+    string) for `hierarchical_contributions.legal_gate`, consistent with
+    every other reference this file's contributions already disclose
+    (`snapshot_id`/`feature_value_id`/`feature_justification_ids` — always
+    IDs, never a raw identity)."""
+    return await session.scalar(
+        sa.select(ranking_proposal_reviews.c.reviewer_expert_id)
+        .select_from(
+            ranking_proposal_reviews.join(
+                ranking_feature_justifications,
+                ranking_feature_justifications.c.proposal_id == ranking_proposal_reviews.c.proposal_id,
+            )
+        )
+        .where(
+            ranking_feature_justifications.c.id == justification_id,
+            ranking_proposal_reviews.c.decision == "approved",
+        )
+        .order_by(ranking_proposal_reviews.c.decided_at.desc())
+        .limit(1)
+    )
+
+
+async def copy_published_legal_assertion_to_run_snapshot(
+    ranking_run_id: uuid.UUID,
+    project_id: uuid.UUID,
+    cutoff_at: datetime,
+    session: AsyncSession,
+) -> LegalFeatureSnapshot:
+    """PR-6's Legal snapshot builder — the sole writer of
+    `ranking_feature_snapshots`/`ranking_feature_values`/`ranking_feature_lineage`
+    for `scope_type='legal'`. Same get-or-create/idempotency contract as
+    Project/Market (`uq_rfs_run_project_scope_no_area` already covers ANY
+    scope_type with a NULL `area_id` — no new index needed, see `0042`'s
+    docstring): a pre-existing snapshot for this `(ranking_run_id,
+    project_id, scope_type='legal')` is read back unchanged, never
+    re-selected from governance — this is what makes a past run's legal gate
+    outcome immune to a LATER Legal publish (§24.4.5/§24.12.2's snapshot-only
+    consumption rule).
+
+    No eligible published assertion -> `LegalFeatureSnapshot(status=
+    LEGAL_UNKNOWN, feature_value_id=None, ...)` — "missing Legal assertion
+    remains UNKNOWN at scoring time without creating a record" (a snapshot
+    ROW is still written, exactly like Project/Market's own
+    `quality_status='insufficient_data'` case, so idempotent replay still
+    works; no `ranking_feature_values` row is written when there is nothing
+    to materialize).
+    """
+    existing = (
+        await session.execute(
+            sa.select(ranking_feature_snapshots.c.id).where(
+                ranking_feature_snapshots.c.ranking_run_id == ranking_run_id,
+                ranking_feature_snapshots.c.project_id == project_id,
+                ranking_feature_snapshots.c.scope_type == LEGAL_SCOPE_TYPE,
+                ranking_feature_snapshots.c.area_id.is_(None),
+            )
+        )
+    ).first()
+
+    if existing is not None:
+        snapshot_id = existing[0]
+        value_row = (
+            await session.execute(
+                sa.select(
+                    ranking_feature_values.c.id,
+                    ranking_feature_values.c.categorical_value,
+                    ranking_feature_values.c.source_justification_id,
+                ).where(ranking_feature_values.c.snapshot_id == snapshot_id)
+            )
+        ).mappings().first()
+        if value_row is None:
+            return LegalFeatureSnapshot(snapshot_id, LEGAL_UNKNOWN, None, None, None, 0)
+        reviewer_expert_id = await _legal_reviewer_expert_id(session, value_row["source_justification_id"])
+        return LegalFeatureSnapshot(
+            snapshot_id,
+            value_row["categorical_value"],
+            str(value_row["id"]),
+            str(value_row["source_justification_id"]),
+            str(reviewer_expert_id) if reviewer_expert_id else None,
+            1,
+        )
+
+    candidate = await _select_eligible_legal_justification(session, project_id, cutoff_at)
+
+    now = datetime.now(UTC)
+    snapshot_id = uuid.uuid4()
+    await session.execute(
+        sa.insert(ranking_feature_snapshots).values(
+            id=snapshot_id,
+            ranking_run_id=ranking_run_id,
+            project_id=project_id,
+            scope_type=LEGAL_SCOPE_TYPE,
+            area_id=None,
+            cutoff_at=cutoff_at,
+            computed_at=now,
+            feature_set_version=LEGAL_FEATURE_SET_VERSION,
+            quality_status="ok" if candidate else "insufficient_data",
+            quality_summary={"candidate_count": 1 if candidate else 0},
+            created_at=now,
+        )
+    )
+
+    if candidate is None:
+        return LegalFeatureSnapshot(snapshot_id, LEGAL_UNKNOWN, None, None, None, 0)
+
+    try:
+        result = await materialize_published_feature_value(
+            feature_justification_id=candidate["justification_id"],
+            ranking_run_id=ranking_run_id,
+            project_id=project_id,
+            snapshot_id=snapshot_id,
+            cutoff_at=cutoff_at,
+            session=session,
+            expected_scope_type=LEGAL_SCOPE_TYPE,
+            area_id=None,
+        )
+    except governance.GovernanceError as exc:
+        log.warning(
+            "ranking.hierarchical.legal_value_excluded",
+            justification_id=str(candidate["justification_id"]),
+            error_code=exc.code,
+            project_id=str(project_id),
+            ranking_run_id=str(ranking_run_id),
+        )
+        return LegalFeatureSnapshot(snapshot_id, LEGAL_UNKNOWN, None, None, None, 1)
+
+    reviewer_expert_id = await _legal_reviewer_expert_id(session, candidate["justification_id"])
+    return LegalFeatureSnapshot(
+        snapshot_id,
+        result["categorical_value"],
+        str(result["feature_value_id"]),
+        str(candidate["justification_id"]),
+        str(reviewer_expert_id) if reviewer_expert_id else None,
+        1,
+    )
+
+
 def _parse_feature_weight_spec_map(spec_map: dict) -> list[FeatureWeight]:
     """A grain's OWN feature weights (`hierarchical_weights["project"]`, same
     shape `validate_hierarchical_weights()`/`_validate_hierarchical_grain_features()`
@@ -1633,6 +2070,7 @@ def _build_hierarchical_contributions(
     market_grain: dict | None = None,
     area_grain: dict | None = None,
     comparability_warning: str | None = None,
+    legal_gate: dict,
 ) -> dict:
     """D37's disclosure contract (§24.6's `hierarchical_contributions` table) —
     relabels `f_unit.contributions`/`f_unit.coverage` (`engine.score_unit()`'s
@@ -1712,25 +2150,36 @@ def _build_hierarchical_contributions(
         "snapshot_id": None,
         "config_version_id": str(config_version_id),
         "cutoff_at": cutoff_at.isoformat(),
-        "legal_gate": {"status": None, "gated": False},
+        "legal_gate": legal_gate,
         "comparability_warning": comparability_warning,
         "disclosure": disclosure,
     }
 
 
-def _build_legal_gated_contributions(config_version_id: uuid.UUID, configured_grain_weights: dict) -> dict:
+def _build_legal_gated_contributions(
+    config_version_id: uuid.UUID, configured_grain_weights: dict, legal_gate: dict
+) -> dict:
+    """D27's HIGH_RISK gate short-circuit — `hierarchical_score = NULL` and no
+    grain is ever composed, regardless of how many parents were eligible
+    (§24.4.5: the gate is evaluated BEFORE any weighted-mean math, not a
+    grain that lost a tiebreak). `legal_gate` is the caller's already-built
+    disclosure dict (see `compute_hierarchical_scores_for_run()`), so this
+    function stays a pure JSON-shape builder, same role as
+    `_build_hierarchical_contributions()`."""
     return {
         "schema_version": 1,
         "score_mode": "legal_gated",
+        "hierarchical_score": None,
         "configured_grain_weights": configured_grain_weights,
         "effective_grain_weights": {},
         "top_level_weight_coverage": None,
         "eligible_grains": [],
-        "excluded_grains": {},
+        "excluded_grains": {grain: {"reason": "LEGAL_GATE"} for grain in (*HIERARCHICAL_PARENT_GRAINS, "unit")},
         "grains": {},
         "snapshot_id": None,
         "config_version_id": str(config_version_id),
-        "legal_gate": {"status": "HIGH_RISK", "gated": True},
+        "cutoff_at": legal_gate["cutoff_at"],
+        "legal_gate": legal_gate,
         "comparability_warning": None,
         "disclosure": "Not ranked — project is under a HIGH_RISK legal gate (§24.4.5).",
     }
@@ -1828,7 +2277,36 @@ async def compute_hierarchical_scores_for_run(
     legacy_by_unit = {row["unit_id"]: row for row in legacy_rows}
 
     result = HierarchicalRunResult(run_id, project_id, config_id, hierarchical_weights_present=True)
-    legal_status = _legal_status_for_project(project_id)
+
+    # PR-6/D27: the Legal gate, read ONLY from this run's own immutable
+    # snapshot (never a live governance query) — built once per project per
+    # run, exactly like Project/Market above and Area below.
+    async with factory() as session:
+        legal_snapshot = await copy_published_legal_assertion_to_run_snapshot(run_id, project_id, cutoff_at, session)
+        await session.commit()
+
+    legal_gate: dict = {
+        "status": legal_snapshot.status,
+        "gated": legal_snapshot.status == LEGAL_HIGH_RISK,
+        "source": "snapshot",
+        "snapshot_id": str(legal_snapshot.snapshot_id),
+        "feature_value_id": legal_snapshot.feature_value_id,
+        "source_justification_id": legal_snapshot.feature_justification_id,
+        # `reviewer_subject` (the OIDC subject string) is deliberately never
+        # placed here — PII-in-score-response is not authorized by any
+        # existing output contract. `reviewer_expert_id` is the same kind of
+        # ID-only reference every other grain's contributions already use.
+        "reviewer_subject": None,
+        "reviewer_expert_id": legal_snapshot.reviewer_expert_id,
+        "cutoff_at": cutoff_at.isoformat(),
+    }
+    if legal_snapshot.status == LEGAL_UNKNOWN and legal_snapshot.feature_value_id is None:
+        legal_gate["reason"] = LEGAL_NO_PUBLISHED_ASSERTION
+    elif legal_snapshot.status == LEGAL_NOT_HIGH_RISK:
+        legal_gate["note"] = (
+            "A CEO-approved, published NOT_HIGH_RISK legal assertion was used at this cutoff — "
+            "this discloses reviewed status only, not a legal guarantee."
+        )
 
     # PR-3: build/read the Project-grain snapshot ONCE per project per run —
     # every unit in this project shares the same P, not one snapshot lookup
@@ -2012,9 +2490,9 @@ async def compute_hierarchical_scores_for_run(
 
             result.attempted += 1
 
-            if legal_status == "HIGH_RISK":
+            if legal_gate["gated"]:
                 hierarchical_score = None
-                contributions = _build_legal_gated_contributions(config_id, configured_grain_weights)
+                contributions = _build_legal_gated_contributions(config_id, configured_grain_weights, legal_gate)
             else:
                 # Market/Project: PR-4/PR-3's real snapshot results, computed
                 # once above, shared by every unit in this project. Area:
@@ -2055,6 +2533,7 @@ async def compute_hierarchical_scores_for_run(
                     exclusion_reasons=exclusion_reasons,
                     unit_coverage=legacy_row["weight_coverage"],
                     cutoff_at=cutoff_at,
+                    legal_gate=legal_gate,
                     project_grain=project_grain_meta if project_score_unit is not None else None,
                     market_grain=market_grain_meta if market_score_unit is not None else None,
                     area_grain=area_entry["meta"],
@@ -2090,6 +2569,76 @@ async def compute_hierarchical_scores_for_run(
         **log_ctx,
     )
     return result
+
+
+async def _apply_v3_composite_ranks(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    project_id: uuid.UUID,
+    run_id: uuid.UUID,
+    ranked: list[UnitScore],
+    hier_result: HierarchicalRunResult,
+) -> list[UnitScore] | None:
+    """Ranking v3 (`settings.ranking_v3_composite_enabled`, default off):
+    when this run's bound config has `hierarchical_weights` AND at least one
+    unit actually got a real (non-null) `hierarchical_score` this run,
+    re-derive `rank_in_project`/`rank_in_area` from the hierarchical
+    composite (falling back per-unit to the legacy score — `effective_rank_scores`)
+    instead of the legacy score alone, and persist ONLY those two columns for
+    this run's rows. `ranking_scores.score` is never touched.
+
+    Eligibility is checked by fetching this run's actual non-null
+    `hierarchical_score` rows, NOT by trusting `hier_result.written` alone —
+    `written` counts successful UPDATEs regardless of the value written, and
+    a project-wide legal gate deliberately writes `hierarchical_score=NULL`
+    for every unit while still incrementing `written` (see
+    `compute_hierarchical_scores_for_run`'s `legal_gate["gated"]` branch).
+    An empty fetch here (flag off is checked before even trying; no
+    `hierarchical_weights`; or every value this run is null) means: return
+    `None`, and the caller keeps using the legacy-only `ranked`/`rank_in_*` —
+    behavior byte-identical to before this feature existed.
+    """
+    if not get_settings().ranking_v3_composite_enabled or not hier_result.hierarchical_weights_present:
+        return None
+
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                sa.select(ranking_scores.c.unit_id, ranking_scores.c.hierarchical_score).where(
+                    ranking_scores.c.ranking_run_id == run_id,
+                    ranking_scores.c.hierarchical_score.is_not(None),
+                )
+            )
+        ).all()
+        await session.rollback()
+    if not rows:
+        return None
+
+    hierarchical_by_unit = {str(unit_id): score for unit_id, score in rows}
+    new_ranks = effective_rank_scores(ranked, hierarchical_by_unit)
+
+    async with session_factory() as session:
+        for unit_id_str, (rank_in_project, rank_in_area) in new_ranks.items():
+            await session.execute(
+                sa.update(ranking_scores)
+                .where(
+                    ranking_scores.c.ranking_run_id == run_id,
+                    ranking_scores.c.unit_id == uuid.UUID(unit_id_str),
+                )
+                .values(rank_in_project=rank_in_project, rank_in_area=rank_in_area)
+            )
+        await session.commit()
+
+    log.info(
+        "ranking.v3_composite.applied",
+        run_id=str(run_id),
+        project_id=str(project_id),
+        units_reranked=len(hierarchical_by_unit),
+    )
+    return [
+        UnitScore(**{**s.__dict__, "rank_in_project": new_ranks[s.unit_id][0], "rank_in_area": new_ranks[s.unit_id][1]})
+        for s in ranked
+    ]
 
 
 def _build_summary_context(

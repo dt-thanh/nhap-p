@@ -101,8 +101,8 @@ BEGIN
         RAISE EXCEPTION 'refusing AbsorpIQ reset; alembic_version is not singular';
     END IF;
     SELECT version_num INTO current_revision FROM alembic_version;
-    IF current_revision <> '0036_remove_historical_ranking' THEN
-        RAISE EXCEPTION 'refusing AbsorpIQ reset; expected revision 0036_remove_historical_ranking, got %', current_revision;
+    IF current_revision <> '0042_legal_assertion_gate' THEN
+        RAISE EXCEPTION 'refusing AbsorpIQ reset; expected revision 0042_legal_assertion_gate, got %', current_revision;
     END IF;
 END;
 $$;

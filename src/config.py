@@ -1,6 +1,7 @@
 import json
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,6 +33,10 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, ge=1, le=65535)
     app_host: str = "0.0.0.0"
     cors_origins: str = "http://localhost:3000"
+    # Canonical browser origin for redirects back into the AbsorpIQ SPA.  This
+    # is deliberately separate from CORS_ORIGINS: CORS can contain several
+    # callers, whereas the OIDC callback must have exactly one safe target.
+    frontend_base_url: str = "http://localhost:5173"
     # Development-only local access for the dashboard while real local auth is pending.
     dev_auth_bypass: bool = False
 
@@ -42,11 +47,12 @@ class Settings(BaseSettings):
 
     # LLM — SecretStr để repr(settings) không lộ key
     llm_api_key: SecretStr = SecretStr("")
-    llm_model: str = "gpt-4o-mini"
-    openai_api_key: SecretStr = SecretStr("")  # fallback tương thích ngược
-    model_name: str = ""  # fallback tương thích ngược
+    llm_model: str = "deepseek/deepseek-v4-flash"
+    llm_base_url: str = "https://api.xkiro.com/v1"
+    embedding_api_key: SecretStr = SecretStr("")
+    embedding_base_url: str = "https://api.openai.com/v1"
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    llm_provider: str = "openai"
+    llm_provider: str = "deepseek"
 
     # Database
     database_url: SecretStr = SecretStr("postgresql+asyncpg://app:app@db:5432/absorption")
@@ -55,6 +61,15 @@ class Settings(BaseSettings):
     redis_url: SecretStr = SecretStr("redis://redis:6379/0")
     forecast_cron: str = "0 2 * * *"  # 02:00 hằng ngày (SRS §2.4)
     scheduler_timezone: str = "Asia/Ho_Chi_Minh"
+    # A queued run without a live RQ job is not failed merely because it is
+    # old: dispatch and scheduler outages are recoverable.  This threshold is
+    # used only by the explicit service-layer reconciliation path to classify a
+    # demonstrably orphaned intent, never by a request/read path.
+    ranking_run_stale_seconds: int = Field(default=900, ge=60, le=86400)
+    # Evidence attempts are append-only; a pending row older than this window
+    # is considered orphaned and may be superseded by an explicit extract
+    # request. Fresh pending attempts remain idempotent no-ops.
+    evidence_pending_stale_seconds: int = Field(default=900, ge=60, le=86400)
 
     # Kiểm lineage miền (Phase 8A). Hằng giờ: cửa sổ sự cố giữa COMMIT và enqueue
     # hiếm khi xảy ra, nhưng khi xảy ra thì độ trễ phát hiện chính là khoảng thời
@@ -76,7 +91,28 @@ class Settings(BaseSettings):
     # §24). MẶC ĐỊNH TẮT: cột mới nullable và an toàn khi tắt, nhưng bước tính
     # bổ sung này chưa có Market/Project/Area/Legal nguồn thật (PR-1) — bật cờ
     # chỉ nên làm khi có `ranking_configs.hierarchical_weights` hợp lệ để đọc.
-    hierarchical_ranking_enabled: bool = False
+    hierarchical_ranking_enabled: bool = True
+
+    # PR-7: the READ-surface kill switch, independent of the flag above.
+    # `hierarchical_ranking_enabled` controls whether the post-run COMPUTE
+    # step ever writes `ranking_scores.hierarchical_score`/`.contributions`;
+    # this one controls whether `GET /ranking` DISCLOSES that already-written
+    # data to API/UI callers at all. Separate flags let compute run quietly
+    # in production (verify the data looks right) before the read surface is
+    # switched on — and let the read surface be switched OFF instantly (no
+    # migration, no touching stored scores) if something looks wrong post-launch.
+    # MẶC ĐỊNH TẮT: same reasoning as `hierarchical_ranking_enabled` above.
+    hierarchical_read_enabled: bool = False
+
+    # Ranking v3: lets the already-computed `hierarchical_score` actually
+    # DRIVE `rank_in_project`/`rank_in_area` (the columns every real consumer
+    # — main dashboard, Hot Units, `GET /market/units` — already reads),
+    # instead of staying a parallel, mostly-decorative column. Deliberately
+    # independent of `hierarchical_ranking_enabled`/`hierarchical_read_enabled`
+    # above (which are already `true`/`true` in some environments) — flipping
+    # THIS flag is its own explicit rollout step, never piggybacked on those.
+    # MẶC ĐỊNH TẮT: byte-identical legacy behavior until turned on deliberately.
+    ranking_v3_composite_enabled: bool = True
 
     # Endpoint vận hành. RỖNG = endpoint tắt (503), không phải mở: dữ liệu lạc hậu
     # kèm project_id là thông tin nội bộ, mặc định phải là đóng.
@@ -188,6 +224,47 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _validate_frontend_base_url(self) -> "Settings":
+        """Keep auth redirects pinned to one absolute SPA origin.
+
+        Paths, queries, and fragments belong to the per-request relative
+        return target, never to deployment configuration.  Rejecting them here
+        prevents a malformed deployment value from silently creating a broken
+        or open redirect surface.
+        """
+        oidc_is_configured = bool(
+            self.oidc_issuer
+            and self.oidc_client_id
+            and self.oidc_client_secret.get_secret_value()
+            and self.oidc_redirect_uri
+            and self.session_secret.get_secret_value()
+        )
+        if (
+            self.app_env in {"production", "staging"}
+            and oidc_is_configured
+            and "frontend_base_url" not in self.model_fields_set
+        ):
+            raise ValueError(
+                "FRONTEND_BASE_URL bắt buộc khi OIDC được bật ở staging/production; "
+                "không được suy diễn đích redirect từ CORS_ORIGINS."
+            )
+
+        parsed = urlparse(self.frontend_base_url)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.path not in {"", "/"}
+            or parsed.params
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError(
+                "FRONTEND_BASE_URL phải là origin http(s) tuyệt đối, không kèm path, query hoặc fragment."
+            )
+        self.frontend_base_url = self.frontend_base_url.rstrip("/")
+        return self
+
+    @model_validator(mode="after")
     def _reject_conflicting_canonical_role_map(self) -> "Settings":
         """CRM.CEO/CRM.ADVISOR/CRM.SALES là vai trò nghiệp vụ chuẩn, dùng chung
         với Mini CRM (`oidc.py::CANONICAL_APP_ROLES`) — cố định trong code.
@@ -216,11 +293,11 @@ class Settings(BaseSettings):
 
     @property
     def resolved_llm_api_key(self) -> str:
-        return self.llm_api_key.get_secret_value() or self.openai_api_key.get_secret_value()
+        return self.llm_api_key.get_secret_value()
 
     @property
     def resolved_llm_model(self) -> str:
-        return self.llm_model or self.model_name or "gpt-4o-mini"
+        return self.llm_model or "deepseek/deepseek-v4-flash"
 
     @property
     def cloudinary_configured(self) -> bool:

@@ -10,10 +10,9 @@ import { useProjectScope } from "./useProjectScope";
 vi.mock("../api/endpoints", () => ({
   listProjects: vi.fn(),
   listAreasScoped: vi.fn(),
-  bootstrapInventoryDefault: vi.fn(),
 }));
 
-import { bootstrapInventoryDefault, listProjects, listAreasScoped } from "../api/endpoints";
+import { listProjects, listAreasScoped } from "../api/endpoints";
 
 function wrapper(initialEntries) {
   // eslint-disable-next-line react/display-name
@@ -23,10 +22,6 @@ function wrapper(initialEntries) {
 describe("useProjectScope", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    bootstrapInventoryDefault.mockResolvedValue({
-      project: { external_id: "inventory-demo-v1", project_id: "demo-project", name: "AbsorptionIQ Demo Project" },
-      area: { external_id: "inventory-demo-v1-area-default", area_id: "demo-area", area_name: "Default Area" },
-    });
   });
 
   it("only shows what /v1/projects returns (backend already scoped it — no FE re-filtering)", async () => {
@@ -137,17 +132,26 @@ describe("useProjectScope", () => {
     expect(result.current.areas.map((area) => area.external_id)).toEqual(["A-0002"]);
   });
 
-  it("bootstraps the isolated demo scope when the API returns no projects", async () => {
+  it("never auto-bootstraps the demo scope when the API returns no projects — projects come from MiniCRM sync only", async () => {
     listProjects.mockResolvedValue([]);
-    listAreasScoped.mockResolvedValue([
-      { external_id: "inventory-demo-v1-area-default", area_name: "Default Area", area_id: "demo-area" },
-    ]);
 
     const { result } = renderHook(() => useProjectScope(), { wrapper: wrapper(["/projects"]) });
 
-    await waitFor(() => expect(bootstrapInventoryDefault).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(result.current.projectExternalId).toBe("inventory-demo-v1"));
-    expect(result.current.areaExternalId).toBe("inventory-demo-v1-area-default");
+    await waitFor(() => expect(result.current.loadingProjects).toBe(false));
+    expect(result.current.projects).toEqual([]);
+    expect(result.current.projectExternalId).toBe(null);
+  });
+
+  it("never auto-bootstraps when a real project simply has zero areas yet", async () => {
+    listProjects.mockResolvedValue([{ external_id: "P-0001", name: "A", project_id: "u1" }]);
+    listAreasScoped.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useProjectScope(), { wrapper: wrapper(["/projects"]) });
+
+    await waitFor(() => expect(result.current.loadingProjects).toBe(false));
+    await waitFor(() => expect(result.current.areasStatus).toBe("ok"));
+    expect(result.current.projectExternalId).toBe("P-0001");
+    expect(result.current.areas).toEqual([]);
   });
 
   it("marks projectsStatus as unauthorized on a 401/403 (ProjectSelector reads this to show a safe message)", async () => {

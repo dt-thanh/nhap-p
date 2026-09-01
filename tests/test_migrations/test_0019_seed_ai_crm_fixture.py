@@ -1,20 +1,23 @@
 """Migration 0019 — DEV-only AI/CRM fixture derived from `crm_real_data.json`.
 
-Bốn thứ được canh kỹ nhất:
+`upgrade()` is now a no-op (2026-08-28) — Alembic must never auto-seed
+business/domain data on a fresh database. What's verified here:
 
-1. **Idempotent.** Chạy hai lần không nhân đôi bất kỳ bảng nào — id tất định +
-   `ON CONFLICT DO UPDATE`.
-2. **Downgrade CHỈ xoá đúng dòng mang danh tính fixture**
-   (`source_system='crm_real_data_fixture'`, `source_instance_id='ai-dev-fixture'`),
-   không đụng dữ liệu KHÔNG phải của fixture — kể cả dữ liệu chèn TRƯỚC khi
-   upgrade chạy.
-3. **Không chạm bốn bảng xếp hạng** (`ranking_configs`/`ranking_runs`/
-   `ranking_scores`/`feature_snapshots`) hay `deals` — đúng ranh giới đã tài
-   liệu hoá trong docstring migration.
-4. **Khoá ngoại/khoá duy nhất còn nguyên** — 1991 unit thật, không đơn vị nào
-   bị rơi thầm lặng qua `ON CONFLICT`.
+1. **`upgrade()` writes nothing.** A brand-new database running through this
+   revision (as part of `alembic upgrade head`) ends with zero rows in every
+   table this fixture used to populate.
+2. **`build_upserts()`/`build_downgrade_statements()` (the reusable core the
+   explicit CLI now drives) are unchanged and still idempotent** — calling
+   the upsert plan twice does not duplicate rows.
+3. **`downgrade()` is UNCHANGED and still correctly scoped** — proven against
+   a database that has this fixture's real rows (simulating an EXISTING
+   database that already applied the OLD version of this revision, before
+   this change): it deletes only fixture-identity rows, never a
+   non-fixture row, even one inserted before `downgrade()` runs.
+4. Ranking/deal tables are still never touched by this revision.
 
-Chạy trên DATABASE DÙNG MỘT LẦN (`mig19_<hex>_test`), tạo và huỷ trong từng test.
+Runs on a DATABASE DÙNG MỘT LẦN (`mig19_<hex>_test`), created and destroyed
+per test.
 """
 
 from __future__ import annotations
@@ -144,20 +147,34 @@ def _counts(conn) -> dict[str, int]:
     return out
 
 
-# --- 1. Upgrade creates exactly the expected fixture rows -------------------
+def _apply_upserts_directly(engine) -> None:
+    """Simulates an EXISTING database that already applied the OLD version of
+    this revision — bypasses the now-neutered `upgrade()` and instead calls
+    the still-unchanged, still-reusable core module directly, exactly like
+    `python -m scripts.seed_legacy_fixture --confirm-seed` does."""
+    from scripts._seed_ai_crm_fixture_core import build_upserts, load_seed
+
+    plan = build_upserts(load_seed())
+    with engine.begin() as conn:
+        for _table_name, stmt in plan.statements:
+            conn.execute(stmt)
 
 
-def test_upgrade_creates_expected_row_counts(upgraded):
+# --- 1. upgrade() is now a no-op ---------------------------------------------
+
+
+def test_upgrade_writes_zero_rows_on_a_fresh_database(upgraded):
     with upgraded["engine"].connect() as conn:
         counts = _counts(conn)
-    assert counts == FIXTURE_TABLE_COUNTS
+    assert counts == dict.fromkeys(FIXTURE_TABLE_COUNTS, 0), (
+        "upgrade() must be a no-op — Alembic must never auto-seed business/domain data"
+    )
 
 
 def test_upgrade_does_not_touch_ranking_or_deal_tables(upgraded):
     with upgraded["engine"].connect() as conn:
         # `ranking_configs` KHÔNG rỗng: 0014_ranking_foundation TỰ NÓ seed đúng
         # MỘT config v1 vận hành — đó là dữ liệu của 0014, không phải của 0019.
-        # 0019 không được cộng thêm dòng nào vào đây.
         ranking_configs_count = conn.execute(sa.text("SELECT count(*) FROM ranking_configs")).scalar_one()
         assert ranking_configs_count == 1, "0019 không được thêm/xoá dòng nào trong ranking_configs (config v1 của 0014)"
         for table in ("ranking_runs", "ranking_scores", "feature_snapshots", "deals"):
@@ -165,38 +182,58 @@ def test_upgrade_does_not_touch_ranking_or_deal_tables(upgraded):
             assert n == 0, f"{table} phải rỗng — migration 0019 không được ghi vào bảng này"
 
 
-def test_fixture_units_are_scoped_to_fixture_source_instance(upgraded):
+def test_upgrade_does_not_disturb_a_preexisting_control_row(upgraded):
+    """The `upgraded` fixture already carries a `mini_crm` control project —
+    proves the no-op doesn't touch pre-existing data of any kind."""
     with upgraded["engine"].connect() as conn:
+        n = conn.execute(
+            sa.text("SELECT count(*) FROM projects WHERE id = :i"), {"i": upgraded["control_project_id"]}
+        ).scalar_one()
+    assert n == 1
+
+
+# --- 2. The reusable core is unchanged and still idempotent -----------------
+
+
+def test_build_upserts_is_idempotent_when_run_directly(baseline):
+    """Calls `build_upserts()` twice directly against the same DB (mirroring
+    two `--confirm-seed` invocations, or one invocation on a DB that already
+    has this fixture) — proves the underlying upsert logic the explicit CLI
+    now drives is unchanged and still idempotent, independent of Alembic."""
+    _apply_upserts_directly(baseline["engine"])
+    with baseline["engine"].connect() as conn:
+        first = _counts(conn)
+    assert first == FIXTURE_TABLE_COUNTS
+
+    _apply_upserts_directly(baseline["engine"])
+    with baseline["engine"].connect() as conn:
+        second = _counts(conn)
+    assert second == FIXTURE_TABLE_COUNTS, "chạy lại upsert không được đổi số dòng"
+
+
+def test_fixture_units_are_scoped_to_fixture_source_instance(baseline):
+    _apply_upserts_directly(baseline["engine"])
+    with baseline["engine"].connect() as conn:
         distinct = conn.execute(sa.text("SELECT DISTINCT source_system, source_instance_id FROM units")).all()
     assert distinct == [(SOURCE_SYSTEM, SOURCE_INSTANCE_ID)]
 
 
-# --- 2. Idempotent: running the upsert logic twice does not duplicate -------
+# --- 3. downgrade() is UNCHANGED — proven against a database that already has
+# this fixture's real rows (simulating an EXISTING pre-change database). -----
 
 
-def test_running_upserts_twice_does_not_duplicate(upgraded):
-    """Gọi lại TRỰC TIẾP `build_upserts` một lần nữa trên CÙNG DB (mô phỏng
-    upgrade() chạy hai lần) — Alembic tự nó không cho chạy lại revision đã áp
-    dụng, nên đây là cách kiểm tính idempotent THẬT của các câu lệnh SQL."""
-    from scripts._seed_ai_crm_fixture_core import build_upserts, load_seed
-
-    data = load_seed()
-    plan = build_upserts(data)
-    with upgraded["engine"].begin() as conn:
-        for _table_name, stmt in plan.statements:
-            conn.execute(stmt)
-
-    with upgraded["engine"].connect() as conn:
-        counts = _counts(conn)
-    assert counts == FIXTURE_TABLE_COUNTS, "chạy lại upsert không được đổi số dòng"
-
-
-# --- 3. Downgrade scoping -----------------------------------------------------
-
-
-def test_downgrade_removes_only_fixture_rows(upgraded):
+def test_downgrade_removes_only_fixture_rows_from_an_existing_database(upgraded):
+    """`upgraded` starts with zero fixture rows (upgrade() is a no-op) — apply
+    the core module's upserts directly first to simulate a database that
+    already had this fixture BEFORE this change, then prove `downgrade()`
+    (unchanged) still scopes correctly against real data, never touching the
+    pre-existing control row."""
     control_project_id = upgraded["control_project_id"]
     control_area_id = upgraded["control_area_id"]
+    _apply_upserts_directly(upgraded["engine"])
+    with upgraded["engine"].connect() as conn:
+        assert _counts(conn) == FIXTURE_TABLE_COUNTS
+
     upgraded["engine"].dispose()
     _alembic(upgraded["url"], "downgrade", PREVIOUS_REVISION)
 
@@ -226,6 +263,7 @@ def test_downgrade_removes_only_fixture_rows(upgraded):
 
 
 def test_downgrade_removes_absorption_and_upload_rows_scoped_via_fk(upgraded):
+    _apply_upserts_directly(upgraded["engine"])
     upgraded["engine"].dispose()
     _alembic(upgraded["url"], "downgrade", PREVIOUS_REVISION)
 

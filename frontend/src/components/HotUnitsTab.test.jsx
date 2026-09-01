@@ -309,4 +309,39 @@ describe("HotUnitsTab", () => {
       expect.objectContaining({ offset: 50, limit: 50 }),
     ));
   });
+
+  it("shows no v3 badge and no pending hint for a legacy-only ranking (no new fields present)", async () => {
+    renderTab();
+    await screen.findAllByText("A-101");
+    expect(screen.queryByText("Đã áp dụng AHP (v3)")).not.toBeInTheDocument();
+    expect(screen.queryByText("Đang chờ áp dụng AHP")).not.toBeInTheDocument();
+    expect(await screen.findByText("84.0%")).toBeInTheDocument();
+  });
+
+  it("shows the v3 badge and prefers effective_score_percent when ranking_formula is v3_hierarchical", async () => {
+    const v3Ranking = {
+      ...ranking,
+      ranking_formula: "v3_hierarchical",
+      items: [{ ...ranking.items[0], effective_score: "0.9500", effective_score_percent: 95 }],
+    };
+    runRanking.mockResolvedValue(v3Ranking);
+    getRanking.mockResolvedValue(v3Ranking);
+
+    renderTab();
+
+    expect(await screen.findByText("Đã áp dụng AHP (v3)")).toBeInTheDocument();
+    expect(await screen.findByText("95.0%")).toBeInTheDocument();
+    expect(screen.queryByText("84.0%")).not.toBeInTheDocument();
+  });
+
+  it("shows the pending-AHP hint when ahp_pending_status is set", async () => {
+    const pendingRanking = { ...ranking, ahp_pending_status: "queued" };
+    runRanking.mockResolvedValue(pendingRanking);
+    getRanking.mockResolvedValue(pendingRanking);
+
+    renderTab();
+
+    expect(await screen.findByText("Đang chờ áp dụng AHP")).toBeInTheDocument();
+    expect(screen.queryByText("Đã áp dụng AHP (v3)")).not.toBeInTheDocument();
+  });
 });

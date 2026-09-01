@@ -1,0 +1,2442 @@
+{
+  "area-la-pura-a-0001": {
+    "external_id": "A-0001",
+    "kind": "area"
+  },
+  "area-la-pura-a-0002": {
+    "external_id": "A-0002",
+    "kind": "area"
+  },
+  "area-la-pura-a-0003": {
+    "external_id": "A-0003",
+    "kind": "area"
+  },
+  "area-la-pura-a-0004": {
+    "external_id": "A-0004",
+    "kind": "area"
+  },
+  "area-la-pura-a-0005": {
+    "external_id": "A-0005",
+    "kind": "area"
+  },
+  "area-la-pura-a-0006": {
+    "external_id": "A-0006",
+    "kind": "area"
+  },
+  "area-la-pura-a-0007": {
+    "external_id": "A-0007",
+    "kind": "area"
+  },
+  "area-la-pura-a-0008": {
+    "external_id": "A-0008",
+    "kind": "area"
+  },
+  "area-la-pura-a-0009": {
+    "external_id": "A-0009",
+    "kind": "area"
+  },
+  "area-la-pura-a-0010": {
+    "external_id": "A-0010",
+    "kind": "area"
+  },
+  "area-la-pura-a-0011": {
+    "external_id": "A-0011",
+    "kind": "area"
+  },
+  "area-la-pura-a-0012": {
+    "external_id": "A-0012",
+    "kind": "area"
+  },
+  "area-la-pura-a-0013": {
+    "external_id": "A-0013",
+    "kind": "area"
+  },
+  "area-la-pura-a-0014": {
+    "external_id": "A-0014",
+    "kind": "area"
+  },
+  "area-la-pura-a-0015": {
+    "external_id": "A-0015",
+    "kind": "area"
+  },
+  "area-la-pura-a-0016": {
+    "external_id": "A-0016",
+    "kind": "area"
+  },
+  "area-la-pura-a-0017": {
+    "external_id": "A-0017",
+    "kind": "area"
+  },
+  "area-la-pura-a-0018": {
+    "external_id": "A-0018",
+    "kind": "area"
+  },
+  "area-la-pura-a-0019": {
+    "external_id": "A-0019",
+    "kind": "area"
+  },
+  "area-la-pura-a-0020": {
+    "external_id": "A-0020",
+    "kind": "area"
+  },
+  "area-la-pura-a-0021": {
+    "external_id": "A-0021",
+    "kind": "area"
+  },
+  "area-la-pura-a-0022": {
+    "external_id": "A-0022",
+    "kind": "area"
+  },
+  "area-la-pura-a-0023": {
+    "external_id": "A-0023",
+    "kind": "area"
+  },
+  "area-la-pura-a-0024": {
+    "external_id": "A-0024",
+    "kind": "area"
+  },
+  "deal-la-pura-d-0001": {
+    "external_id": "D-0001",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0002": {
+    "external_id": "D-0131",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0003": {
+    "external_id": "D-0002",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0004": {
+    "external_id": "D-0003",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0005": {
+    "external_id": "D-0004",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0006": {
+    "external_id": "D-0005",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0007": {
+    "external_id": "D-0006",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0008": {
+    "external_id": "D-0007",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0009": {
+    "external_id": "D-0132",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0010": {
+    "external_id": "D-0008",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0011": {
+    "external_id": "D-0009",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0012": {
+    "external_id": "D-0133",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0013": {
+    "external_id": "D-0010",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0014": {
+    "external_id": "D-0134",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0015": {
+    "external_id": "D-0135",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0016": {
+    "external_id": "D-0011",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0017": {
+    "external_id": "D-0012",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0018": {
+    "external_id": "D-0136",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0019": {
+    "external_id": "D-0137",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0020": {
+    "external_id": "D-0013",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0021": {
+    "external_id": "D-0014",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0022": {
+    "external_id": "D-0015",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0023": {
+    "external_id": "D-0138",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0024": {
+    "external_id": "D-0016",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0025": {
+    "external_id": "D-0017",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0026": {
+    "external_id": "D-0139",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0027": {
+    "external_id": "D-0140",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0028": {
+    "external_id": "D-0141",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0029": {
+    "external_id": "D-0142",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0030": {
+    "external_id": "D-0018",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0031": {
+    "external_id": "D-0143",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0032": {
+    "external_id": "D-0144",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0033": {
+    "external_id": "D-0019",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0034": {
+    "external_id": "D-0145",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0035": {
+    "external_id": "D-0146",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0036": {
+    "external_id": "D-0020",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0037": {
+    "external_id": "D-0021",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0038": {
+    "external_id": "D-0022",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0039": {
+    "external_id": "D-0023",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0040": {
+    "external_id": "D-0024",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0041": {
+    "external_id": "D-0147",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0042": {
+    "external_id": "D-0025",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0043": {
+    "external_id": "D-0148",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0044": {
+    "external_id": "D-0026",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0045": {
+    "external_id": "D-0027",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0046": {
+    "external_id": "D-0149",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0047": {
+    "external_id": "D-0028",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0048": {
+    "external_id": "D-0029",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0049": {
+    "external_id": "D-0030",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0050": {
+    "external_id": "D-0150",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0051": {
+    "external_id": "D-0031",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0052": {
+    "external_id": "D-0151",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0053": {
+    "external_id": "D-0032",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0054": {
+    "external_id": "D-0152",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0055": {
+    "external_id": "D-0033",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0056": {
+    "external_id": "D-0034",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0057": {
+    "external_id": "D-0035",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0058": {
+    "external_id": "D-0036",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0059": {
+    "external_id": "D-0153",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0060": {
+    "external_id": "D-0037",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0061": {
+    "external_id": "D-0154",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0062": {
+    "external_id": "D-0038",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0063": {
+    "external_id": "D-0039",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0064": {
+    "external_id": "D-0040",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0065": {
+    "external_id": "D-0155",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0066": {
+    "external_id": "D-0156",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0067": {
+    "external_id": "D-0157",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0068": {
+    "external_id": "D-0041",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0069": {
+    "external_id": "D-0042",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0070": {
+    "external_id": "D-0043",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0071": {
+    "external_id": "D-0044",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0072": {
+    "external_id": "D-0158",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0073": {
+    "external_id": "D-0045",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0074": {
+    "external_id": "D-0046",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0075": {
+    "external_id": "D-0047",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0076": {
+    "external_id": "D-0048",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0077": {
+    "external_id": "D-0049",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0078": {
+    "external_id": "D-0050",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0079": {
+    "external_id": "D-0051",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0080": {
+    "external_id": "D-0052",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0081": {
+    "external_id": "D-0053",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0082": {
+    "external_id": "D-0054",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0083": {
+    "external_id": "D-0159",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0084": {
+    "external_id": "D-0055",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0085": {
+    "external_id": "D-0160",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0086": {
+    "external_id": "D-0056",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0087": {
+    "external_id": "D-0161",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0088": {
+    "external_id": "D-0162",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0089": {
+    "external_id": "D-0163",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0090": {
+    "external_id": "D-0057",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0091": {
+    "external_id": "D-0164",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0092": {
+    "external_id": "D-0058",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0093": {
+    "external_id": "D-0165",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0094": {
+    "external_id": "D-0059",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0095": {
+    "external_id": "D-0060",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0096": {
+    "external_id": "D-0166",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0097": {
+    "external_id": "D-0061",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0098": {
+    "external_id": "D-0167",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0099": {
+    "external_id": "D-0062",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0100": {
+    "external_id": "D-0168",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0101": {
+    "external_id": "D-0063",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0102": {
+    "external_id": "D-0064",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0103": {
+    "external_id": "D-0065",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0104": {
+    "external_id": "D-0066",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0105": {
+    "external_id": "D-0067",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0106": {
+    "external_id": "D-0068",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0107": {
+    "external_id": "D-0069",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0108": {
+    "external_id": "D-0070",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0109": {
+    "external_id": "D-0071",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0110": {
+    "external_id": "D-0169",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0111": {
+    "external_id": "D-0170",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0112": {
+    "external_id": "D-0171",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0113": {
+    "external_id": "D-0172",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0114": {
+    "external_id": "D-0072",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0115": {
+    "external_id": "D-0073",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0116": {
+    "external_id": "D-0173",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0117": {
+    "external_id": "D-0074",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0118": {
+    "external_id": "D-0075",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0119": {
+    "external_id": "D-0076",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0120": {
+    "external_id": "D-0077",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0121": {
+    "external_id": "D-0078",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0122": {
+    "external_id": "D-0079",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0123": {
+    "external_id": "D-0080",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0124": {
+    "external_id": "D-0081",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0125": {
+    "external_id": "D-0082",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0126": {
+    "external_id": "D-0083",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0127": {
+    "external_id": "D-0174",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0128": {
+    "external_id": "D-0084",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0129": {
+    "external_id": "D-0085",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0130": {
+    "external_id": "D-0175",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0131": {
+    "external_id": "D-0176",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0132": {
+    "external_id": "D-0086",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0133": {
+    "external_id": "D-0087",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0134": {
+    "external_id": "D-0177",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0135": {
+    "external_id": "D-0178",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0136": {
+    "external_id": "D-0088",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0137": {
+    "external_id": "D-0179",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0138": {
+    "external_id": "D-0180",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0139": {
+    "external_id": "D-0089",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0140": {
+    "external_id": "D-0090",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0141": {
+    "external_id": "D-0091",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0142": {
+    "external_id": "D-0092",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0143": {
+    "external_id": "D-0093",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0144": {
+    "external_id": "D-0094",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0145": {
+    "external_id": "D-0095",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0146": {
+    "external_id": "D-0096",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0147": {
+    "external_id": "D-0181",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0148": {
+    "external_id": "D-0097",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0149": {
+    "external_id": "D-0098",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0150": {
+    "external_id": "D-0099",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0151": {
+    "external_id": "D-0100",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0152": {
+    "external_id": "D-0101",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0153": {
+    "external_id": "D-0102",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0154": {
+    "external_id": "D-0182",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0155": {
+    "external_id": "D-0103",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0156": {
+    "external_id": "D-0183",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0157": {
+    "external_id": "D-0184",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0158": {
+    "external_id": "D-0104",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0159": {
+    "external_id": "D-0185",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0160": {
+    "external_id": "D-0105",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0161": {
+    "external_id": "D-0106",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0162": {
+    "external_id": "D-0107",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0163": {
+    "external_id": "D-0108",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0164": {
+    "external_id": "D-0109",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0165": {
+    "external_id": "D-0186",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0166": {
+    "external_id": "D-0187",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0167": {
+    "external_id": "D-0110",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0168": {
+    "external_id": "D-0111",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0169": {
+    "external_id": "D-0112",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0170": {
+    "external_id": "D-0113",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0171": {
+    "external_id": "D-0188",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0172": {
+    "external_id": "D-0114",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0173": {
+    "external_id": "D-0189",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0174": {
+    "external_id": "D-0115",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0175": {
+    "external_id": "D-0116",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0176": {
+    "external_id": "D-0117",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0177": {
+    "external_id": "D-0190",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0178": {
+    "external_id": "D-0118",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0179": {
+    "external_id": "D-0119",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0180": {
+    "external_id": "D-0120",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0181": {
+    "external_id": "D-0121",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0182": {
+    "external_id": "D-0122",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0183": {
+    "external_id": "D-0191",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0184": {
+    "external_id": "D-0123",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0185": {
+    "external_id": "D-0124",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0186": {
+    "external_id": "D-0192",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0187": {
+    "external_id": "D-0125",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0188": {
+    "external_id": "D-0126",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0189": {
+    "external_id": "D-0127",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0190": {
+    "external_id": "D-0128",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0191": {
+    "external_id": "D-0193",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0192": {
+    "external_id": "D-0129",
+    "kind": "deal"
+  },
+  "deal-la-pura-d-0193": {
+    "external_id": "D-0130",
+    "kind": "deal"
+  },
+  "prj-la-pura": {
+    "external_id": "P-0001",
+    "kind": "project"
+  },
+  "unit-la-pura-u-0001": {
+    "external_id": "U-0001",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0002": {
+    "external_id": "U-0002",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0003": {
+    "external_id": "U-0003",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0004": {
+    "external_id": "U-0004",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0005": {
+    "external_id": "U-0005",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0006": {
+    "external_id": "U-0006",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0007": {
+    "external_id": "U-0007",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0008": {
+    "external_id": "U-0008",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0009": {
+    "external_id": "U-0009",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0010": {
+    "external_id": "U-0010",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0011": {
+    "external_id": "U-0011",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0012": {
+    "external_id": "U-0012",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0013": {
+    "external_id": "U-0013",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0014": {
+    "external_id": "U-0014",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0015": {
+    "external_id": "U-0015",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0016": {
+    "external_id": "U-0016",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0017": {
+    "external_id": "U-0017",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0018": {
+    "external_id": "U-0018",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0019": {
+    "external_id": "U-0019",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0020": {
+    "external_id": "U-0020",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0021": {
+    "external_id": "U-0021",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0022": {
+    "external_id": "U-0022",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0023": {
+    "external_id": "U-0023",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0024": {
+    "external_id": "U-0024",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0025": {
+    "external_id": "U-0025",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0026": {
+    "external_id": "U-0026",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0027": {
+    "external_id": "U-0027",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0028": {
+    "external_id": "U-0028",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0029": {
+    "external_id": "U-0029",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0030": {
+    "external_id": "U-0030",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0031": {
+    "external_id": "U-0031",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0032": {
+    "external_id": "U-0032",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0033": {
+    "external_id": "U-0033",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0034": {
+    "external_id": "U-0034",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0035": {
+    "external_id": "U-0035",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0036": {
+    "external_id": "U-0036",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0037": {
+    "external_id": "U-0037",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0038": {
+    "external_id": "U-0038",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0039": {
+    "external_id": "U-0039",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0040": {
+    "external_id": "U-0040",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0041": {
+    "external_id": "U-0041",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0042": {
+    "external_id": "U-0042",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0043": {
+    "external_id": "U-0043",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0044": {
+    "external_id": "U-0044",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0045": {
+    "external_id": "U-0045",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0046": {
+    "external_id": "U-0046",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0047": {
+    "external_id": "U-0047",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0048": {
+    "external_id": "U-0048",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0049": {
+    "external_id": "U-0049",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0050": {
+    "external_id": "U-0050",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0051": {
+    "external_id": "U-0051",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0052": {
+    "external_id": "U-0052",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0053": {
+    "external_id": "U-0053",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0054": {
+    "external_id": "U-0054",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0055": {
+    "external_id": "U-0055",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0056": {
+    "external_id": "U-0056",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0057": {
+    "external_id": "U-0057",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0058": {
+    "external_id": "U-0058",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0059": {
+    "external_id": "U-0059",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0060": {
+    "external_id": "U-0060",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0061": {
+    "external_id": "U-0061",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0062": {
+    "external_id": "U-0062",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0063": {
+    "external_id": "U-0063",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0064": {
+    "external_id": "U-0064",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0065": {
+    "external_id": "U-0065",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0066": {
+    "external_id": "U-0066",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0067": {
+    "external_id": "U-0067",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0068": {
+    "external_id": "U-0068",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0069": {
+    "external_id": "U-0069",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0070": {
+    "external_id": "U-0070",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0071": {
+    "external_id": "U-0071",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0072": {
+    "external_id": "U-0072",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0073": {
+    "external_id": "U-0073",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0074": {
+    "external_id": "U-0074",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0075": {
+    "external_id": "U-0075",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0076": {
+    "external_id": "U-0076",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0077": {
+    "external_id": "U-0077",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0078": {
+    "external_id": "U-0078",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0079": {
+    "external_id": "U-0079",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0080": {
+    "external_id": "U-0080",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0081": {
+    "external_id": "U-0081",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0082": {
+    "external_id": "U-0082",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0083": {
+    "external_id": "U-0083",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0084": {
+    "external_id": "U-0084",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0085": {
+    "external_id": "U-0085",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0086": {
+    "external_id": "U-0086",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0087": {
+    "external_id": "U-0087",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0088": {
+    "external_id": "U-0088",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0089": {
+    "external_id": "U-0089",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0090": {
+    "external_id": "U-0090",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0091": {
+    "external_id": "U-0091",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0092": {
+    "external_id": "U-0092",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0093": {
+    "external_id": "U-0093",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0094": {
+    "external_id": "U-0094",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0095": {
+    "external_id": "U-0095",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0096": {
+    "external_id": "U-0096",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0097": {
+    "external_id": "U-0097",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0098": {
+    "external_id": "U-0098",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0099": {
+    "external_id": "U-0099",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0100": {
+    "external_id": "U-0100",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0101": {
+    "external_id": "U-0101",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0102": {
+    "external_id": "U-0102",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0103": {
+    "external_id": "U-0103",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0104": {
+    "external_id": "U-0104",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0105": {
+    "external_id": "U-0105",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0106": {
+    "external_id": "U-0106",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0107": {
+    "external_id": "U-0107",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0108": {
+    "external_id": "U-0108",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0109": {
+    "external_id": "U-0109",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0110": {
+    "external_id": "U-0110",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0111": {
+    "external_id": "U-0111",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0112": {
+    "external_id": "U-0112",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0113": {
+    "external_id": "U-0113",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0114": {
+    "external_id": "U-0114",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0115": {
+    "external_id": "U-0115",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0116": {
+    "external_id": "U-0116",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0117": {
+    "external_id": "U-0117",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0118": {
+    "external_id": "U-0118",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0119": {
+    "external_id": "U-0119",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0120": {
+    "external_id": "U-0120",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0121": {
+    "external_id": "U-0121",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0122": {
+    "external_id": "U-0122",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0123": {
+    "external_id": "U-0123",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0124": {
+    "external_id": "U-0124",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0125": {
+    "external_id": "U-0125",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0126": {
+    "external_id": "U-0126",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0127": {
+    "external_id": "U-0127",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0128": {
+    "external_id": "U-0128",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0129": {
+    "external_id": "U-0129",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0130": {
+    "external_id": "U-0130",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0131": {
+    "external_id": "U-0131",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0132": {
+    "external_id": "U-0132",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0133": {
+    "external_id": "U-0133",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0134": {
+    "external_id": "U-0134",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0135": {
+    "external_id": "U-0135",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0136": {
+    "external_id": "U-0136",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0137": {
+    "external_id": "U-0137",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0138": {
+    "external_id": "U-0138",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0139": {
+    "external_id": "U-0139",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0140": {
+    "external_id": "U-0140",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0141": {
+    "external_id": "U-0141",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0142": {
+    "external_id": "U-0142",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0143": {
+    "external_id": "U-0143",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0144": {
+    "external_id": "U-0144",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0145": {
+    "external_id": "U-0145",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0146": {
+    "external_id": "U-0146",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0147": {
+    "external_id": "U-0147",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0148": {
+    "external_id": "U-0148",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0149": {
+    "external_id": "U-0149",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0150": {
+    "external_id": "U-0150",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0151": {
+    "external_id": "U-0151",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0152": {
+    "external_id": "U-0152",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0153": {
+    "external_id": "U-0153",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0154": {
+    "external_id": "U-0154",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0155": {
+    "external_id": "U-0155",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0156": {
+    "external_id": "U-0156",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0157": {
+    "external_id": "U-0157",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0158": {
+    "external_id": "U-0158",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0159": {
+    "external_id": "U-0159",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0160": {
+    "external_id": "U-0160",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0161": {
+    "external_id": "U-0161",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0162": {
+    "external_id": "U-0162",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0163": {
+    "external_id": "U-0163",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0164": {
+    "external_id": "U-0164",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0165": {
+    "external_id": "U-0165",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0166": {
+    "external_id": "U-0166",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0167": {
+    "external_id": "U-0167",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0168": {
+    "external_id": "U-0168",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0169": {
+    "external_id": "U-0169",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0170": {
+    "external_id": "U-0170",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0171": {
+    "external_id": "U-0171",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0172": {
+    "external_id": "U-0172",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0173": {
+    "external_id": "U-0173",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0174": {
+    "external_id": "U-0174",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0175": {
+    "external_id": "U-0175",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0176": {
+    "external_id": "U-0176",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0177": {
+    "external_id": "U-0177",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0178": {
+    "external_id": "U-0178",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0179": {
+    "external_id": "U-0179",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0180": {
+    "external_id": "U-0180",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0181": {
+    "external_id": "U-0181",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0182": {
+    "external_id": "U-0182",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0183": {
+    "external_id": "U-0183",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0184": {
+    "external_id": "U-0184",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0185": {
+    "external_id": "U-0185",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0186": {
+    "external_id": "U-0186",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0187": {
+    "external_id": "U-0187",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0188": {
+    "external_id": "U-0188",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0189": {
+    "external_id": "U-0189",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0190": {
+    "external_id": "U-0190",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0191": {
+    "external_id": "U-0191",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0192": {
+    "external_id": "U-0192",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0193": {
+    "external_id": "U-0193",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0194": {
+    "external_id": "U-0194",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0195": {
+    "external_id": "U-0195",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0196": {
+    "external_id": "U-0196",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0197": {
+    "external_id": "U-0197",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0198": {
+    "external_id": "U-0198",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0199": {
+    "external_id": "U-0199",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0200": {
+    "external_id": "U-0200",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0201": {
+    "external_id": "U-0201",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0202": {
+    "external_id": "U-0202",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0203": {
+    "external_id": "U-0203",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0204": {
+    "external_id": "U-0204",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0205": {
+    "external_id": "U-0205",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0206": {
+    "external_id": "U-0206",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0207": {
+    "external_id": "U-0207",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0208": {
+    "external_id": "U-0208",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0209": {
+    "external_id": "U-0209",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0210": {
+    "external_id": "U-0210",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0211": {
+    "external_id": "U-0211",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0212": {
+    "external_id": "U-0212",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0213": {
+    "external_id": "U-0213",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0214": {
+    "external_id": "U-0214",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0215": {
+    "external_id": "U-0215",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0216": {
+    "external_id": "U-0216",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0217": {
+    "external_id": "U-0217",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0218": {
+    "external_id": "U-0218",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0219": {
+    "external_id": "U-0219",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0220": {
+    "external_id": "U-0220",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0221": {
+    "external_id": "U-0221",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0222": {
+    "external_id": "U-0222",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0223": {
+    "external_id": "U-0223",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0224": {
+    "external_id": "U-0224",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0225": {
+    "external_id": "U-0225",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0226": {
+    "external_id": "U-0226",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0227": {
+    "external_id": "U-0227",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0228": {
+    "external_id": "U-0228",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0229": {
+    "external_id": "U-0229",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0230": {
+    "external_id": "U-0230",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0231": {
+    "external_id": "U-0231",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0232": {
+    "external_id": "U-0232",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0233": {
+    "external_id": "U-0233",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0234": {
+    "external_id": "U-0234",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0235": {
+    "external_id": "U-0235",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0236": {
+    "external_id": "U-0236",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0237": {
+    "external_id": "U-0237",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0238": {
+    "external_id": "U-0238",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0239": {
+    "external_id": "U-0239",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0240": {
+    "external_id": "U-0240",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0241": {
+    "external_id": "U-0241",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0242": {
+    "external_id": "U-0242",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0243": {
+    "external_id": "U-0243",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0244": {
+    "external_id": "U-0244",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0245": {
+    "external_id": "U-0245",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0246": {
+    "external_id": "U-0246",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0247": {
+    "external_id": "U-0247",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0248": {
+    "external_id": "U-0248",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0249": {
+    "external_id": "U-0249",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0250": {
+    "external_id": "U-0250",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0251": {
+    "external_id": "U-0251",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0252": {
+    "external_id": "U-0252",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0253": {
+    "external_id": "U-0253",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0254": {
+    "external_id": "U-0254",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0255": {
+    "external_id": "U-0255",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0256": {
+    "external_id": "U-0256",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0257": {
+    "external_id": "U-0257",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0258": {
+    "external_id": "U-0258",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0259": {
+    "external_id": "U-0259",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0260": {
+    "external_id": "U-0260",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0261": {
+    "external_id": "U-0261",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0262": {
+    "external_id": "U-0262",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0263": {
+    "external_id": "U-0263",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0264": {
+    "external_id": "U-0264",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0265": {
+    "external_id": "U-0265",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0266": {
+    "external_id": "U-0266",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0267": {
+    "external_id": "U-0267",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0268": {
+    "external_id": "U-0268",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0269": {
+    "external_id": "U-0269",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0270": {
+    "external_id": "U-0270",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0271": {
+    "external_id": "U-0271",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0272": {
+    "external_id": "U-0272",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0273": {
+    "external_id": "U-0273",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0274": {
+    "external_id": "U-0274",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0275": {
+    "external_id": "U-0275",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0276": {
+    "external_id": "U-0276",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0277": {
+    "external_id": "U-0277",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0278": {
+    "external_id": "U-0278",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0279": {
+    "external_id": "U-0279",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0280": {
+    "external_id": "U-0280",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0281": {
+    "external_id": "U-0281",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0282": {
+    "external_id": "U-0282",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0283": {
+    "external_id": "U-0283",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0284": {
+    "external_id": "U-0284",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0285": {
+    "external_id": "U-0285",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0286": {
+    "external_id": "U-0286",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0287": {
+    "external_id": "U-0287",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0288": {
+    "external_id": "U-0288",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0289": {
+    "external_id": "U-0289",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0290": {
+    "external_id": "U-0290",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0291": {
+    "external_id": "U-0291",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0292": {
+    "external_id": "U-0292",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0293": {
+    "external_id": "U-0293",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0294": {
+    "external_id": "U-0294",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0295": {
+    "external_id": "U-0295",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0296": {
+    "external_id": "U-0296",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0297": {
+    "external_id": "U-0297",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0298": {
+    "external_id": "U-0298",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0299": {
+    "external_id": "U-0299",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0300": {
+    "external_id": "U-0300",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0301": {
+    "external_id": "U-0301",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0302": {
+    "external_id": "U-0302",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0303": {
+    "external_id": "U-0303",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0304": {
+    "external_id": "U-0304",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0305": {
+    "external_id": "U-0305",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0306": {
+    "external_id": "U-0306",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0307": {
+    "external_id": "U-0307",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0308": {
+    "external_id": "U-0308",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0309": {
+    "external_id": "U-0309",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0310": {
+    "external_id": "U-0310",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0311": {
+    "external_id": "U-0311",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0312": {
+    "external_id": "U-0312",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0313": {
+    "external_id": "U-0313",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0314": {
+    "external_id": "U-0314",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0315": {
+    "external_id": "U-0315",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0316": {
+    "external_id": "U-0316",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0317": {
+    "external_id": "U-0317",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0318": {
+    "external_id": "U-0318",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0319": {
+    "external_id": "U-0319",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0320": {
+    "external_id": "U-0320",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0321": {
+    "external_id": "U-0321",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0322": {
+    "external_id": "U-0322",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0323": {
+    "external_id": "U-0323",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0324": {
+    "external_id": "U-0324",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0325": {
+    "external_id": "U-0325",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0326": {
+    "external_id": "U-0326",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0327": {
+    "external_id": "U-0327",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0328": {
+    "external_id": "U-0328",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0329": {
+    "external_id": "U-0329",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0330": {
+    "external_id": "U-0330",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0331": {
+    "external_id": "U-0331",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0332": {
+    "external_id": "U-0332",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0333": {
+    "external_id": "U-0333",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0334": {
+    "external_id": "U-0334",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0335": {
+    "external_id": "U-0335",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0336": {
+    "external_id": "U-0336",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0337": {
+    "external_id": "U-0337",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0338": {
+    "external_id": "U-0338",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0339": {
+    "external_id": "U-0339",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0340": {
+    "external_id": "U-0340",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0341": {
+    "external_id": "U-0341",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0342": {
+    "external_id": "U-0342",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0343": {
+    "external_id": "U-0343",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0344": {
+    "external_id": "U-0344",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0345": {
+    "external_id": "U-0345",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0346": {
+    "external_id": "U-0346",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0347": {
+    "external_id": "U-0347",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0348": {
+    "external_id": "U-0348",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0349": {
+    "external_id": "U-0349",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0350": {
+    "external_id": "U-0350",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0351": {
+    "external_id": "U-0351",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0352": {
+    "external_id": "U-0352",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0353": {
+    "external_id": "U-0353",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0354": {
+    "external_id": "U-0354",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0355": {
+    "external_id": "U-0355",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0356": {
+    "external_id": "U-0356",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0357": {
+    "external_id": "U-0357",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0358": {
+    "external_id": "U-0358",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0359": {
+    "external_id": "U-0359",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0360": {
+    "external_id": "U-0360",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0361": {
+    "external_id": "U-0361",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0362": {
+    "external_id": "U-0362",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0363": {
+    "external_id": "U-0363",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0364": {
+    "external_id": "U-0364",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0365": {
+    "external_id": "U-0365",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0366": {
+    "external_id": "U-0366",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0367": {
+    "external_id": "U-0367",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0368": {
+    "external_id": "U-0368",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0369": {
+    "external_id": "U-0369",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0370": {
+    "external_id": "U-0370",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0371": {
+    "external_id": "U-0371",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0372": {
+    "external_id": "U-0372",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0373": {
+    "external_id": "U-0373",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0374": {
+    "external_id": "U-0374",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0375": {
+    "external_id": "U-0375",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0376": {
+    "external_id": "U-0376",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0377": {
+    "external_id": "U-0377",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0378": {
+    "external_id": "U-0378",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0379": {
+    "external_id": "U-0379",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0380": {
+    "external_id": "U-0380",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0381": {
+    "external_id": "U-0381",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0382": {
+    "external_id": "U-0382",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0383": {
+    "external_id": "U-0383",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0384": {
+    "external_id": "U-0384",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0385": {
+    "external_id": "U-0385",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0386": {
+    "external_id": "U-0386",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0387": {
+    "external_id": "U-0387",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0388": {
+    "external_id": "U-0388",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0389": {
+    "external_id": "U-0389",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0390": {
+    "external_id": "U-0390",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0391": {
+    "external_id": "U-0391",
+    "kind": "unit"
+  },
+  "unit-la-pura-u-0392": {
+    "external_id": "U-0392",
+    "kind": "unit"
+  }
+}

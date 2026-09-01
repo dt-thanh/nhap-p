@@ -351,7 +351,7 @@ def test_the_dashboard_principal_now_has_a_project_scope():
     """
     from src.services.dashboard_auth import DashboardPrincipal
 
-    assert set(DashboardPrincipal.__dataclass_fields__) == {"role", "project_scope"}
+    assert set(DashboardPrincipal.__dataclass_fields__) == {"role", "project_scope", "subject", "is_ceo", "oidc_roles"}
     assert DashboardPrincipal(role="business_viewer").project_scope == frozenset(), (
         "phạm vi mặc định phải RỖNG (fail-closed) khi không truyền tường minh"
     )

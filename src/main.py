@@ -14,7 +14,7 @@ from src.api.ops import router as ops_router
 from src.api.parallel_run import router as parallel_run_router
 from src.api.ranking import router as ranking_router
 from src.api.reconciliation import router as reconciliation_router
-from src.api.routes import router
+from src.api.routes import router as market_router
 from src.api.sync import router as sync_router
 from src.config import get_settings
 from src.logging_config import configure_logging, get_logger, new_error_id, request_id_var
@@ -33,8 +33,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="AI20K Agent",
-    description="AI Agent built with LangGraph",
+    title="AbsorpIQ",
+    description="Real-estate inventory and ranking platform",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -50,18 +50,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router, prefix="/api/v1")
 app.include_router(files_router, prefix="/api/v1")
+app.include_router(governance_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(sync_router, prefix="/api/v1")
 app.include_router(inventory_router, prefix="/api/v1")
 app.include_router(reconciliation_router, prefix="/api/v1")
+app.include_router(market_router, prefix="/api/v1")
 app.include_router(ops_router, prefix="/api/v1")
 app.include_router(parallel_run_router, prefix="/api/v1")
-app.include_router(agent_router, prefix="/api/v1")
 app.include_router(ranking_router, prefix="/api/v1")
 app.include_router(ahp_router, prefix="/api/v1")
-app.include_router(governance_router, prefix="/api/v1")
+app.include_router(agent_router, prefix="/api/v1")
 
 # SSO qua Keycloak (realm p100, cùng chung với Mini CRM).
 from src.api.auth import router as auth_router  # noqa: E402

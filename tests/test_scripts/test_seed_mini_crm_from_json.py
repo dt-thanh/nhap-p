@@ -34,7 +34,9 @@ from scripts.seed_mini_crm_from_json import (
     MiniCrmSeeder,
     OutboxRow,
     OutboxTracker,
+    SeedError,
     _await_delivery,
+    _load_seed,
     resend_guidance,
 )
 
@@ -780,3 +782,24 @@ def test_dependency_error_names_child_and_missing_parent_before_any_http_call(tm
     assert err.fixture_key == "unit-sim-1"
     assert err.parent_fixture_key == "area-sim-a"
     assert "area_name" in err.expected_identity
+
+
+# --- --fixture: a dedicated seed file, never the default docs/mini_crm_seed.json ---
+
+
+def test_load_seed_reads_a_custom_fixture_path_not_the_default(tmp_path):
+    custom = tmp_path / "lapura_normalized_seed_v1.json"
+    custom.write_text(
+        json.dumps({"projects": [{"external_key": "prj-la-pura", "operation": "upsert", "name": "La Pura", "launch_date": "2025-06-08"}], "areas": []}),
+        encoding="utf-8",
+    )
+    identity = IdentityMap(tmp_path / "state.json")
+    data = _load_seed(identity, custom)
+    assert data["projects"][0]["external_key"] == "prj-la-pura"
+
+
+def test_load_seed_missing_custom_fixture_names_that_path_not_the_default(tmp_path):
+    missing = tmp_path / "does_not_exist.json"
+    identity = IdentityMap(tmp_path / "state.json")
+    with pytest.raises(SeedError, match="does_not_exist.json"):
+        _load_seed(identity, missing)

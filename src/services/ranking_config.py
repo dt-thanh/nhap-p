@@ -37,7 +37,8 @@ import sqlalchemy as sa
 
 from src.db import get_session_factory
 from src.logging_config import get_logger
-from src.models.tables import feature_snapshots, ranking_configs
+from src.models.tables import feature_snapshots, ranking_configs, ranking_weight_proposals
+from src.ranking.enrichment_guard import ENRICHMENT_SOURCED_FEATURE_KEYS
 
 log = get_logger("src.services.ranking_config")
 
@@ -118,6 +119,11 @@ def validate_weights(weights: dict) -> None:
 # `create_draft()`/`publish()` below calls this function or touches this column.
 HIERARCHICAL_GRAIN_KEYS = ("market", "project", "area")
 GRAIN_WEIGHT_KEYS = ("market", "project", "area", "unit")
+# Legal classification is a pre-composition eligibility gate in
+# `src.ranking.service`, never a weighted feature.  Keep this structural
+# backstop here because direct config creation does not pass through the
+# Advisor feature registry.
+LEGAL_GATE_FEATURE_KEYS = frozenset({"project_legal_status"})
 
 
 class HierarchicalConfigError(RuntimeError):
@@ -154,16 +160,31 @@ def validate_hierarchical_weights(hierarchical_weights: dict) -> None:
             "HIERARCHICAL_WEIGHTS_KEY_MISSING", f"hierarchical_weights thiếu khoá bắt buộc: {missing_top}"
         )
 
-    for grain in HIERARCHICAL_GRAIN_KEYS:
-        _validate_hierarchical_grain_features(grain, hierarchical_weights[grain])
-
     _validate_grain_weights(hierarchical_weights["grain_weights"])
 
+    # Validate the parent composition first.  A parent grain with exactly zero
+    # composition weight is intentionally allowed to have no feature vector:
+    # it cannot contribute to the resulting score.  Any grain that contributes
+    # a positive amount remains required to have a complete, normalized vector.
+    for grain in HIERARCHICAL_GRAIN_KEYS:
+        _validate_hierarchical_grain_features(
+            grain,
+            hierarchical_weights[grain],
+            grain_weight=float(hierarchical_weights["grain_weights"][grain]["weight"]),
+        )
 
-def _validate_hierarchical_grain_features(grain: str, spec_map: dict) -> None:
-    if not isinstance(spec_map, dict) or not spec_map:
+
+def _validate_hierarchical_grain_features(grain: str, spec_map: dict, *, grain_weight: float) -> None:
+    if not isinstance(spec_map, dict):
         raise HierarchicalConfigError(
             "HIERARCHICAL_GRAIN_EMPTY", f"hierarchical_weights['{grain}'] không được rỗng"
+        )
+    if not spec_map:
+        if grain_weight == 0.0:
+            return
+        raise HierarchicalConfigError(
+            "HIERARCHICAL_GRAIN_EMPTY",
+            f"hierarchical_weights['{grain}'] không được rỗng khi trọng số grain lớn hơn 0",
         )
     total = 0.0
     for key, spec in spec_map.items():
@@ -180,6 +201,26 @@ def _validate_hierarchical_grain_features(grain: str, spec_map: dict) -> None:
         if weight < 0:
             raise HierarchicalConfigError(
                 "HIERARCHICAL_WEIGHT_NEGATIVE", f"hierarchical_weights['{grain}']['{key}'].weight không được âm"
+            )
+        if key in ENRICHMENT_SOURCED_FEATURE_KEYS:
+            # Rule 3 (contextual-attribute guard): a name that only exists because
+            # `unit_enrichment_attributes` (0043) happens to have a column of that
+            # name is NOT a governed feature. Unlike flat `validate_weights()` —
+            # which is safe by construction via its KNOWN_FEATURES allowlist —
+            # this hierarchical validator has no allowlist, so it must reject these
+            # names explicitly. No governed promotion path (feature registration +
+            # evidence-backed assertion + CEO approval) exists yet for any of them.
+            raise HierarchicalConfigError(
+                "CONTEXTUAL_FEATURE_NOT_WEIGHTABLE",
+                f"hierarchical_weights['{grain}']['{key}']: '{key}' là thuộc tính ngữ cảnh "
+                "(nguồn từ unit_enrichment_attributes) — chưa có đường dẫn thăng hạng đã "
+                "qua quản trị (đăng ký ranking_feature_definitions + assertion có bằng "
+                "chứng + CEO phê duyệt); không được gán trọng số trực tiếp.",
+            )
+        if key in LEGAL_GATE_FEATURE_KEYS:
+            raise HierarchicalConfigError(
+                "LEGAL_GATE_NOT_WEIGHTABLE",
+                f"hierarchical_weights['{grain}']['{key}']: '{key}' là legal gate, không phải tiêu chí có trọng số",
             )
         total += weight
         if spec.get("direction") not in DIRECTIONS:
@@ -284,9 +325,18 @@ async def create_draft(
     note: str,
     created_by: str,
     copied_from_version: int | None = None,
+    hierarchical_weights: dict | None = None,
 ) -> dict:
-    """Soạn một version MỚI ở trạng thái `draft`. Chưa ảnh hưởng lần chạy nào."""
+    """Soạn một version MỚI ở trạng thái `draft`. Chưa ảnh hưởng lần chạy nào.
+
+    `hierarchical_weights` (D41) is separate, additive, nullable config read
+    only by `compute_hierarchical_scores_for_run()` — omitting it (the
+    default) leaves hierarchical scoring unconfigured for this version,
+    exactly like every config before this parameter existed.
+    """
     validate_weights(weights)
+    if hierarchical_weights is not None:
+        validate_hierarchical_weights(hierarchical_weights)
     if not 0 < float(min_weight_coverage) <= 1:
         raise ConfigError("COVERAGE_RANGE", "min_weight_coverage phải trong (0, 1]")
     if not created_by.strip():
@@ -302,6 +352,7 @@ async def create_draft(
                 version=version,
                 status="draft",
                 weights=weights,
+                hierarchical_weights=hierarchical_weights,
                 min_weight_coverage=Decimal(str(min_weight_coverage)),
                 note=note,
                 copied_from_version=copied_from_version,
@@ -317,6 +368,57 @@ async def create_draft(
 
     log.info("ranking.config.draft_created", version=version, created_by=created_by)
     return dict(row)
+
+
+async def create_draft_in_session(
+    session,
+    *,
+    weights: dict,
+    min_weight_coverage: float,
+    note: str,
+    created_by: str,
+    copied_from_version: int | None = None,
+    hierarchical_weights: dict | None = None,
+) -> dict:
+    """Create a validated draft without committing the caller's transaction."""
+    validate_weights(weights)
+    if hierarchical_weights is not None:
+        validate_hierarchical_weights(hierarchical_weights)
+    if not 0 < float(min_weight_coverage) <= 1:
+        raise ConfigError("COVERAGE_RANGE", "min_weight_coverage phải trong (0, 1]")
+    if not created_by.strip():
+        raise ConfigError("CREATED_BY_REQUIRED", "created_by không được rỗng")
+
+    highest = await session.scalar(sa.select(sa.func.max(ranking_configs.c.version)))
+    version = int(highest or 0) + 1
+    config_id = uuid.uuid4()
+    now = datetime.now(UTC)
+    await session.execute(
+        sa.insert(ranking_configs).values(
+            id=config_id,
+            version=version,
+            status="draft",
+            weights=weights,
+            hierarchical_weights=hierarchical_weights,
+            min_weight_coverage=Decimal(str(min_weight_coverage)),
+            note=note,
+            copied_from_version=copied_from_version,
+            created_by=created_by.strip(),
+            created_at=now,
+        )
+    )
+    return {
+        "id": config_id,
+        "version": version,
+        "status": "draft",
+        "weights": weights,
+        "hierarchical_weights": hierarchical_weights,
+        "min_weight_coverage": Decimal(str(min_weight_coverage)),
+        "note": note,
+        "copied_from_version": copied_from_version,
+        "created_by": created_by.strip(),
+        "created_at": now,
+    }
 
 
 async def publish(*, version: int, published_by: str) -> dict:
@@ -342,6 +444,27 @@ async def publish(*, version: int, published_by: str) -> dict:
             raise ConfigError("ALREADY_PUBLISHED", f"Config v{version} đang được phát hành")
 
         validate_weights(target["weights"])
+
+        # Mandatory-scope item 4/6: a config that originated from an
+        # expert/governance weight proposal may only be published once that
+        # proposal is CEO-approved — publishing is otherwise a direct admin
+        # action with no proposal link at all (bootstrap/migration path,
+        # e.g. `scripts/enable_hierarchical_ranking.py`), which stays
+        # unaffected: `linked_proposal is None` skips this gate entirely,
+        # never bypassed silently, just genuinely not proposal-originated.
+        linked_proposal = (
+            await session.execute(
+                sa.select(ranking_weight_proposals.c.id, ranking_weight_proposals.c.status).where(
+                    ranking_weight_proposals.c.proposed_config_id == target["id"]
+                )
+            )
+        ).mappings().first()
+        if linked_proposal is not None and linked_proposal["status"] != "approved":
+            raise ConfigError(
+                "PROPOSAL_NOT_APPROVED",
+                f"Config v{version} được gắn với đề xuất {linked_proposal['id']} đang ở trạng thái "
+                f"'{linked_proposal['status']}' — chỉ publish được sau khi CEO đã duyệt (status='approved')",
+            )
 
         # Đặc trưng khảo sát chỉ được phát hành khi ĐÃ CÓ dữ liệu, và chỉ khi
         # chính sách thiếu là `skip`. Với `zero`/`neutral` thì thiếu dữ liệu
@@ -387,13 +510,82 @@ async def publish(*, version: int, published_by: str) -> dict:
     return dict(row)
 
 
+async def publish_in_session(session, *, version: int, published_by: str) -> dict:
+    """Publish a validated draft without committing the caller's transaction."""
+    if not published_by.strip():
+        raise ConfigError("PUBLISHED_BY_REQUIRED", "published_by không được rỗng")
+
+    target = (
+        await session.execute(sa.select(ranking_configs).where(ranking_configs.c.version == version))
+    ).mappings().first()
+    if target is None:
+        raise ConfigError("CONFIG_NOT_FOUND", f"Không có config version {version}")
+    if target["status"] == "published":
+        raise ConfigError("ALREADY_PUBLISHED", f"Config v{version} đang được phát hành")
+
+    validate_weights(target["weights"])
+    linked_proposal = (
+        await session.execute(
+            sa.select(ranking_weight_proposals.c.id, ranking_weight_proposals.c.status).where(
+                ranking_weight_proposals.c.proposed_config_id == target["id"]
+            )
+        )
+    ).mappings().first()
+    if linked_proposal is not None and linked_proposal["status"] != "approved":
+        raise ConfigError(
+            "PROPOSAL_NOT_APPROVED",
+            f"Config v{version} được gắn với đề xuất {linked_proposal['id']} đang ở trạng thái "
+            f"'{linked_proposal['status']}' — chỉ publish được sau khi CEO đã duyệt (status='approved')",
+        )
+
+    risky = {
+        key
+        for key, spec in target["weights"].items()
+        if key in SURVEY_FEATURES and spec.get("missing_value_policy") == "skip"
+    }
+    have_data = await _survey_features_with_data(session, risky)
+    starving = sorted(risky - have_data)
+    if starving:
+        raise ConfigError(
+            "SURVEY_FEATURE_HAS_NO_DATA",
+            (
+                f"Đặc trưng khảo sát {starving} dùng chính sách 'skip' nhưng CHƯA có dữ liệu nào. "
+                "Phát hành sẽ làm coverage tụt dưới ngưỡng và MỌI căn bị bỏ qua — hệ thống chạy "
+                "sạch mà không sinh thứ hạng nào. Nạp dữ liệu khảo sát trước, hoặc đổi chính sách sang 'neutral'."
+            ),
+        )
+
+    now = datetime.now(UTC)
+    await session.execute(
+        sa.update(ranking_configs)
+        .where(ranking_configs.c.status == "published")
+        .values(status="archived", archived_at=now)
+    )
+    await session.execute(
+        sa.update(ranking_configs)
+        .where(ranking_configs.c.version == version)
+        .values(status="published", published_by=published_by.strip(), published_at=now, archived_at=None)
+    )
+    return {**dict(target), "status": "published", "published_by": published_by.strip(), "published_at": now, "archived_at": None}
+
+
 async def rollback_to(*, version: int, created_by: str) -> dict:
     """Quay lại trọng số của một version cũ bằng cách CHÉP nó sang version mới.
 
     Không sửa lịch sử: version cũ giữ nguyên trạng thái `archived`, và dòng mới
     mang `copied_from_version` để truy được nó chép từ đâu — cùng nguyên tắc với
     `calculator_comparisons` (0013) và `reconciliation_findings` (0011).
-    """
+
+    **Fixed (mandatory-scope item 6/8)**: this used to copy ONLY `weights`/
+    `min_weight_coverage` — `hierarchical_weights` was silently dropped
+    (`create_draft()`'s default `None`), so rolling back to an old version
+    that HAD a configured hierarchical grain composition would publish a new
+    version with hierarchical scoring silently disabled, with no error and
+    no warning. Now `source["hierarchical_weights"]` is carried forward
+    verbatim; if it no longer validates against the current feature registry
+    (`validate_hierarchical_weights()`, called inside `create_draft()`), this
+    raises `HierarchicalConfigError` and creates NOTHING — a loud failure,
+    never a silent NULL publish."""
     async with get_session_factory()() as session:
         source = (
             await session.execute(sa.select(ranking_configs).where(ranking_configs.c.version == version))
@@ -408,5 +600,6 @@ async def rollback_to(*, version: int, created_by: str) -> dict:
         note=f"Rollback: chép trọng số từ v{version}.",
         created_by=created_by,
         copied_from_version=version,
+        hierarchical_weights=source["hierarchical_weights"],
     )
     return await publish(version=draft["version"], published_by=created_by)

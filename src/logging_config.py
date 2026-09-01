@@ -71,7 +71,6 @@ _SENSITIVE_KEYS = frozenset(
         "secret",
         "api_key",
         "llm_api_key",
-        "openai_api_key",
         "database_url",
         "redis_url",
         "dsn",

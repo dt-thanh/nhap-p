@@ -23,7 +23,6 @@ const PATHS = {
   search:    "M11 4a7 7 0 105.1 11.8L21 20.7M16.1 15.8L21 20.7",
   bell:      "M18 8a6 6 0 00-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4",
   overview:  "M4 19V5M4 19h16M7 15l3-4 3 2 5-6",
-  settings:  "M12 8a4 4 0 100 8 4 4 0 000-8zM4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4 12H2M22 12h-2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4M12 4V2M12 22v-2",
 };
 
 export default function Icon({ name, size = 18, color = "currentColor", strokeWidth = 1.8, style }) {

@@ -12,9 +12,9 @@
 //   3. Đổi Project RESET Area và dữ liệu scoped theo nó — không giữ lại area
 //      của dự án cũ (đó chính là lớp lỗi "activeProjectId() cache toàn cục"
 //      mà endpoints.js cũ mắc phải, xem ghi chú ở đó).
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { bootstrapInventoryDefault, listAreasScoped, listProjects } from "../api/endpoints";
+import { listAreasScoped, listProjects } from "../api/endpoints";
 import { isAuthError } from "../api/client";
 
 const PROJECT_PARAM = "project";
@@ -41,35 +41,6 @@ export function useProjectScope({ projectExternalId: routeProjectExternalId } = 
   // "idle" | "ok" | "unauthorized" | "error"
   const [projectsStatus, setProjectsStatus] = useState("idle");
   const [areasStatus, setAreasStatus] = useState("idle");
-  const [bootstrapping, setBootstrapping] = useState(false);
-  const bootstrapPromise = useRef(null);
-
-  const applyBootstrap = useCallback(async () => {
-    if (bootstrapPromise.current) return bootstrapPromise.current;
-    const request = (async () => {
-      setBootstrapping(true);
-      try {
-        const result = await bootstrapInventoryDefault();
-        const project = result.project;
-        const area = result.area;
-        setProjects((current) => [...current.filter((item) => item.external_id !== project.external_id), project]);
-        setAreas([area]);
-        setSearchParams((prev) => {
-          const next = new URLSearchParams(prev);
-          next.set(PROJECT_PARAM, project.external_id);
-          next.set(AREA_PARAM, area.external_id);
-          return next;
-        });
-        return result;
-      } finally {
-        setBootstrapping(false);
-        bootstrapPromise.current = null;
-      }
-    })();
-    bootstrapPromise.current = request;
-    return request;
-  }, [setSearchParams]);
-
   const setProjectExternalId = useCallback(
     (nextId) => {
       // Chế độ path-scoped (routeProjectExternalId có mặt): đổi dự án là
@@ -133,10 +104,10 @@ export function useProjectScope({ projectExternalId: routeProjectExternalId } = 
     if (valid.some((project) => project.external_id === projectExternalId)) return;
     if (valid.length) {
       setProjectExternalId(valid[0].external_id);
-      return;
     }
-    applyBootstrap().catch((error) => setProjectsStatus(isAuthError(error) ? "unauthorized" : "error"));
-  }, [applyBootstrap, loadingProjects, projectExternalId, projects, projectsStatus, routeProjectExternalId, setProjectExternalId]);
+    // An empty project list is never auto-filled here — projects come from
+    // MiniCRM sync only. Pages render their own "no project yet" empty state.
+  }, [loadingProjects, projectExternalId, projects, projectsStatus, routeProjectExternalId, setProjectExternalId]);
 
   // 2) Danh sách Area của Project đang chọn — nạp lại mỗi khi Project đổi.
   useEffect(() => {
@@ -173,16 +144,11 @@ export function useProjectScope({ projectExternalId: routeProjectExternalId } = 
     if (valid.some((area) => area.external_id === areaExternalId)) return;
     if (valid.length) {
       setAreaExternalId(valid[0].external_id);
-      return;
     }
-    // A path-scoped page cannot switch projects without changing its route.
-    // Keep that contract intact; only query-scoped Inventory may resolve an
-    // empty database by moving to the isolated demo project.
-    if (routeProjectExternalId !== undefined) return;
-    // Never add an area to a user project. The bootstrap returns its isolated
-    // demo project instead, preserving source ownership and real data.
-    applyBootstrap().catch((error) => setAreasStatus(isAuthError(error) ? "unauthorized" : "error"));
-  }, [applyBootstrap, areaExternalId, areas, areasStatus, loadingAreas, projectExternalId, routeProjectExternalId, setAreaExternalId]);
+    // A project with zero areas (not yet synced, or genuinely empty) is never
+    // papered over by switching to an isolated demo project — areas come from
+    // MiniCRM sync only. Pages render their own "no area yet" empty state.
+  }, [areaExternalId, areas, areasStatus, loadingAreas, projectExternalId, setAreaExternalId]);
 
   const currentProject = useMemo(
     () => projects.find((p) => p.external_id === projectExternalId) || null,
@@ -206,7 +172,5 @@ export function useProjectScope({ projectExternalId: routeProjectExternalId } = 
     loadingAreas,
     projectsStatus,
     areasStatus,
-    bootstrapping,
-    bootstrapDefault: applyBootstrap,
   };
 }

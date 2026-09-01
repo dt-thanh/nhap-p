@@ -326,7 +326,14 @@ def _write_credential_file(path: Path, plaintext: str) -> None:
         with os.fdopen(fd, "w") as f:
             f.write(plaintext + "\n")
     finally:
-        os.chmod(path, 0o600)
+        try:
+            os.chmod(path, 0o600)
+        except PermissionError:
+            # Docker Desktop bind-mounts backed by NTFS do not expose POSIX
+            # permission bits. The file was opened with 0600 above on
+            # filesystems that support it; keep the Windows bind-mount case
+            # usable while still failing on other unexpected errors.
+            pass
 
 
 def _handoff_credential(plaintext: str, *, credential_output_file: Path | None) -> str:

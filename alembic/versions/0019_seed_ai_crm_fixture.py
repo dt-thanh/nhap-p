@@ -16,10 +16,27 @@ depending on Mini CRM being online.
 ║  does NOT prove the Mini CRM → outbox → relay → Backend sync pipeline     ║
 ║  works — that pipeline is debugged and tested completely separately (see ║
 ║  `scripts/seed_mini_crm_from_json.py`, `tests/test_api/test_sync_auth.py`)║
-║  This revision writes DIRECTLY to Backend tables via SQLAlchemy Core,    ║
-║  the same sanctioned dev-seed path `scripts/seed_dev.py` already uses —  ║
-║  `ProjectService.create_project`/etc. were narrowed to ingestion-only    ║
-║  writers at Phase D, so there is no service-layer path for this anyway.  ║
+║                                                                            ║
+║  `upgrade()` IS NOW A NO-OP (2026-08-28). Alembic must never auto-seed   ║
+║  business/domain data on a fresh database. A brand-new database running  ║
+║  `alembic upgrade head` gets schema only — zero `projects`/`areas`/      ║
+║  `units` rows. An EXISTING database that already applied the OLD version ║
+║  of this revision is unaffected: Alembic never re-runs an already-       ║
+║  stamped revision, so this edit changes nothing for it, and `downgrade()`║
+║  below is UNCHANGED — still correctly reverses that database's real      ║
+║  fixture rows, scoped by source identity, exactly as before.             ║
+║                                                                            ║
+║  The same mapping logic this revision used to run automatically now      ║
+║  lives, unchanged, behind an explicit, confirmed, dev-only CLI:          ║
+║                                                                            ║
+║      python -m scripts.seed_legacy_fixture --dry-run                     ║
+║      python -m scripts.seed_legacy_fixture --confirm-seed                ║
+║                                                                            ║
+║  It still writes DIRECTLY to Backend tables via SQLAlchemy Core — the    ║
+║  same sanctioned dev-seed path `scripts/seed_dev.py` already uses —      ║
+║  never a service-layer path, and its output is explicitly                ║
+║  non-authoritative (never valid for CRM reconciliation or authoritative  ║
+║  ranking).                                                                ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
 Fixture identity (the ONLY thing `downgrade()` keys off, and how every row
@@ -73,7 +90,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from alembic import op
-from scripts._seed_ai_crm_fixture_core import SeedError, build_downgrade_statements, build_upserts, load_seed
+from scripts._seed_ai_crm_fixture_core import build_downgrade_statements
 
 revision: str = "0019_seed_ai_crm_fixture"
 down_revision: str | None = "0018_agent_recommendations"
@@ -82,19 +99,19 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    try:
-        data = load_seed()
-        plan = build_upserts(data)
-    except SeedError as exc:
-        raise RuntimeError(f"0019_seed_ai_crm_fixture: {exc}") from exc
-
-    bind = op.get_bind()
-    for _table_name, stmt in plan.statements:
-        bind.execute(stmt)
-
-    print("=== 0019_seed_ai_crm_fixture: mapping report ===")
-    for name, n in plan.counts.items():
-        print(f"  [{name}] {n} upserted")
+    # `upgrade()` is now a no-op (2026-08-28). Alembic must never auto-seed
+    # business/domain fixture data on a fresh database — see the boxed note
+    # in this file's module docstring. Any database that already applied the
+    # OLD version of this revision is unaffected: Alembic never re-runs an
+    # already-stamped revision, and `downgrade()` below is UNCHANGED, so it
+    # still correctly reverses that database's real fixture rows by source
+    # identity. Use `python -m scripts.seed_legacy_fixture --confirm-seed`
+    # to seed this fixture explicitly instead.
+    print(
+        "=== 0019_seed_ai_crm_fixture: upgrade() is now a no-op — "
+        "use `python -m scripts.seed_legacy_fixture --confirm-seed` to seed this "
+        "fixture explicitly (never automatic on `alembic upgrade head`). ==="
+    )
 
 
 def downgrade() -> None:

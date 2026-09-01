@@ -283,6 +283,9 @@ function UnitRow({ row }) {
           </div>
         )}
         <span style={S.sub} title={CONFIDENCE_LABEL[row.confidence]}>{CONFIDENCE_LABEL[row.confidence]}</span>
+        {row.rankingFormula === "v3_hierarchical" && (
+          <span style={S.v3Badge} title="Điểm này đã tính theo trọng số AHP được CEO duyệt">AHP (v3)</span>
+        )}
       </td>
       <td style={S.td}>
         {bandStyle ? (
@@ -366,6 +369,7 @@ const S = {
   track: { flex: 1, minWidth: 70, height: 6, borderRadius: radius.pill, background: color.canvas, overflow: "hidden" },
   fill: { display: "block", height: "100%", borderRadius: radius.pill },
   percent: { fontVariantNumeric: "tabular-nums", fontWeight: 700, color: color.ink, minWidth: 52, textAlign: "right" },
+  v3Badge: { display: "inline-block", marginTop: 2, color: "#047857", background: "#d1fae5", borderRadius: radius.pill, padding: "2px 8px", fontSize: 10, fontWeight: 700 },
   badge: { display: "inline-block", borderRadius: radius.pill, padding: "4px 10px", fontSize: size.tiny, fontWeight: 700, whiteSpace: "nowrap" },
   updated: { color: color.muted, fontSize: size.tiny, whiteSpace: "nowrap" },
 

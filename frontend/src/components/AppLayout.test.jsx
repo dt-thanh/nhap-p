@@ -9,8 +9,7 @@ vi.mock("../api/endpoints", () => ({ getMePermissions: vi.fn() }));
 
 const NAV_ITEMS = [
   ["Tổng quan", "/overview"],
-  ["Tồn kho", "/inventory"],
-  ["AI tư vấn", "/ai-agent"],
+  ["AI Agent", "/ai-agent"],
   ["Xếp hạng", "/ranking"],
   ["Dự án", "/projects"],
 ];
@@ -40,6 +39,33 @@ describe("AppLayout integration shell", () => {
 
     const links = within(screen.getByRole("navigation", { name: "Điều hướng chính" })).getAllByRole("link");
     expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual(NAV_ITEMS);
+    expect(screen.queryByRole("link", { name: "Tồn kho" })).not.toBeInTheDocument();
+  });
+
+  it("shows Phân tích cố vấn only for the server-derived Advisor capability", async () => {
+    getMePermissions.mockResolvedValue({
+      role: "business_viewer",
+      capabilities: { advisor_analysis_authoring: true },
+    });
+    renderShell();
+    expect(await screen.findByRole("link", { name: "Phân tích cố vấn" })).toHaveAttribute("href", "/expert-analysis");
+  });
+
+  it.each([
+    ["viewer", { role: "business_viewer", capabilities: { advisor_analysis_authoring: false } }],
+    ["sales", { role: "pipeline_operator", capabilities: { advisor_analysis_authoring: false } }],
+    ["CEO", { role: "admin", capabilities: { advisor_analysis_authoring: false, advisor_analysis_review: true } }],
+  ])("does not expose Advisor authoring navigation to %s", async (_persona, permissions) => {
+    getMePermissions.mockResolvedValue(permissions);
+    renderShell();
+    await waitFor(() => expect(getMePermissions).toHaveBeenCalled());
+    expect(screen.queryByRole("link", { name: "Phân tích cố vấn" })).not.toBeInTheDocument();
+  });
+
+  it("shows the CEO-only Advisor Analysis review navigation from the server capability", async () => {
+    getMePermissions.mockResolvedValue({ role: "admin", capabilities: { advisor_analysis_review: true } });
+    renderShell();
+    expect(await screen.findByRole("link", { name: "Phê duyệt phân tích cố vấn" })).toHaveAttribute("href", "/advisor-analysis/review");
   });
 
   it("marks only the exact Overview route active", () => {
@@ -47,7 +73,6 @@ describe("AppLayout integration shell", () => {
     renderShell("/overview");
 
     expect(screen.getByRole("link", { name: "Tổng quan" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Tồn kho" })).not.toHaveAttribute("aria-current");
   });
 
   it("marks the current route with aria-current and renders the outlet", () => {
@@ -57,7 +82,7 @@ describe("AppLayout integration shell", () => {
     expect(screen.getByRole("link", { name: "Dự án" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByRole("link", { name: "Nhật ký" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Danh mục" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "AI tư vấn" })).toHaveAttribute("href", "/ai-agent");
+    expect(screen.getByRole("link", { name: "AI Agent" })).toHaveAttribute("href", "/ai-agent");
     expect(screen.getByRole("button", { name: "Mở trò chuyện với AI" })).toBeInTheDocument();
     expect(screen.getByText("Outlet content")).toBeInTheDocument();
   });
@@ -119,6 +144,7 @@ describe("AppLayout integration shell", () => {
     fireEvent.click(toggle);
     expect(screen.getByRole("button", { name: "Đóng menu" })).toBeInTheDocument();
     expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.queryByRole("link", { name: "Cài đặt" })).not.toBeInTheDocument();
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -157,9 +183,11 @@ describe("AppLayout integration shell", () => {
     expect(screen.getByText("Projects page")).toBeInTheDocument();
   });
 
-  it("shows Settings only for an admin principal", async () => {
+  it("does not expose Settings to an admin principal", async () => {
     getMePermissions.mockResolvedValue({ role: "admin", project_scope: "ALL" });
     renderShell("/settings");
-    expect(await screen.findByRole("link", { name: "Cài đặt" })).toHaveAttribute("href", "/settings");
+    await waitFor(() => expect(getMePermissions).toHaveBeenCalled());
+    expect(screen.queryByRole("link", { name: "Cài đặt" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Cài đặt")).not.toBeInTheDocument();
   });
 });

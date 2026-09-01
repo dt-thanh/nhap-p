@@ -330,7 +330,22 @@ export function HotUnitsTab({ projectExternalId: routeProjectExternalId } = {}) 
   // fallback only for older API deployments during a rolling upgrade.
   const rankingState = data?.state ?? (data?.computed_at == null ? "not_run" : "ready");
   const unavailableRanking = rankingState !== "ready";
-  const emptyRankingCopy = rankingState === "insufficient_data"
+  const emptyRankingCopy = rankingState === "queued"
+    ? {
+      title: "Đang chờ xếp hạng",
+      message: "Yêu cầu xếp hạng đã được ghi nhận và đang chờ phiên trước hoàn tất.",
+    }
+    : rankingState === "running"
+      ? {
+        title: "Đang tính điểm",
+        message: "Hệ thống đang tính điểm từ cấu hình đã được gắn với ranking run này.",
+      }
+      : rankingState === "failed"
+        ? {
+          title: "Xếp hạng thất bại",
+          message: "Lần chạy gần nhất không hoàn tất. Không có điểm mới nào được hiển thị.",
+        }
+        : rankingState === "insufficient_data"
     ? {
       title: "Chưa có căn đủ điều kiện để xếp hạng",
       message: data?.reason === "NO_LIVE_UNITS"
@@ -360,6 +375,16 @@ export function HotUnitsTab({ projectExternalId: routeProjectExternalId } = {}) 
           >
             cấu hình v{data.config_version} ›
           </button>
+        )}
+        {data?.ranking_formula === "v3_hierarchical" && (
+          <span style={S.v3Badge} title="Thứ hạng đang được tính từ trọng số AHP đã được CEO duyệt">
+            Đã áp dụng AHP (v3)
+          </span>
+        )}
+        {data?.ahp_pending_status && (
+          <span style={S.v3PendingBadge} title="Đề xuất AHP đã được duyệt nhưng chưa áp dụng xong vào ranking này">
+            Đang chờ áp dụng AHP
+          </span>
         )}
       </header>
 
@@ -499,7 +524,10 @@ export function HotUnitsTab({ projectExternalId: routeProjectExternalId } = {}) 
                       {visibleItems.map((u) => {
                         const bandStyle = BAND_STYLE[u.band] || BAND_STYLE.low;
                         const open = expanded === u.unit_id;
-                        const percent = u.score_percent ?? 0;
+                        const percent =
+                          (data?.ranking_formula === "v3_hierarchical" ? u.effective_score_percent : null) ??
+                          u.score_percent ??
+                          0;
                         return (
                           <React.Fragment key={u.unit_id}>
                             <tr
@@ -534,6 +562,7 @@ export function HotUnitsTab({ projectExternalId: routeProjectExternalId } = {}) 
                               <tr>
                                 <td colSpan={isMobile ? 6 : 9} style={S.explainCell}>
                                   <Explanation unit={u} />
+                                  <HierarchicalPanel unit={u} />
                                 </td>
                               </tr>
                             )}
@@ -608,6 +637,179 @@ function Explanation({ unit }) {
   );
 }
 
+// PR-7: badges for `hierarchical.score_mode` — glyph + label + color, so the
+// state never depends on color alone (accessibility requirement).
+const HIERARCHICAL_MODE_META = {
+  unit_only: { label: "Unit only", glyph: "○", fg: color.muted, bg: color.canvas },
+  partial_hierarchical: { label: "Partial context", glyph: "◐", fg: color.warn, bg: color.warnSoft },
+  full_hierarchical: { label: "Full context", glyph: "●", fg: color.ok, bg: color.okSoft },
+  legal_gated: { label: "Legal gated", glyph: "⚠", fg: color.danger, bg: color.dangerSoft },
+};
+
+const GRAIN_LABEL = { market: "Market", project: "Project", area: "Area", unit: "Unit" };
+
+function formatIsoDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("vi-VN");
+}
+
+/** PR-7 — read-only hierarchical (M/P/A/U) disclosure.
+ *
+ * `unit.hierarchical` is `null` whenever the backend read flag
+ * (`src/config.py::hierarchical_read_enabled`) is off, or nothing is
+ * persisted yet for this unit — this component renders NOTHING in that
+ * case. There is no frontend-side feature flag: the backend is the single
+ * kill switch, and this panel is purely reactive to whether the API
+ * disclosed data at all (§ PR-7 "when disabled, legacy response/UI remains
+ * unchanged").
+ *
+ * The score is never shown without its meaning: mode badge, coverage,
+ * mandatory disclosure text, and (when not legal-gated) the full grain
+ * breakdown are all rendered together, never the bare number alone.
+ */
+function HierarchicalPanel({ unit }) {
+  const h = unit.hierarchical;
+  if (!h) return null;
+
+  if (!h.available) {
+    return (
+      <div style={S.hier}>
+        <div style={S.hierHead}>
+          <b style={{ color: color.ink }}>Hierarchical score</b>
+          <span style={S.hierUnavailable}>Chưa có dữ liệu (không khả dụng)</span>
+        </div>
+      </div>
+    );
+  }
+
+  const meta = HIERARCHICAL_MODE_META[h.score_mode] || HIERARCHICAL_MODE_META.unit_only;
+  const gated = h.legal_gate?.gated === true;
+  const coveragePercent =
+    h.top_level_weight_coverage !== null && h.top_level_weight_coverage !== undefined
+      ? Number(h.top_level_weight_coverage) * 100
+      : null;
+
+  return (
+    <div style={S.hier}>
+      <div style={S.hierHead}>
+        <b style={{ color: color.ink }}>Hierarchical score</b>
+        <span style={{ ...S.hierScore, color: gated ? color.danger : color.ink }}>
+          {h.score !== null && h.score !== undefined ? Number(h.score).toFixed(4) : "Not ranked"}
+        </span>
+        <span style={{ ...S.badge, color: meta.fg, background: meta.bg }}>
+          <span aria-hidden="true">{meta.glyph}</span> {meta.label}
+        </span>
+      </div>
+
+      {coveragePercent !== null && (
+        <div style={S.hierCoverage}>
+          Top-level context coverage: <b>{coveragePercent.toFixed(0)}%</b>
+        </div>
+      )}
+
+      {h.disclosure && <p style={S.hierDisclosure}>{h.disclosure}</p>}
+
+      <p style={S.hierLegacyNote}>
+        CRM unit score (điểm hiện hành, dùng để xếp hạng bán hàng):{" "}
+        <b style={{ color: color.ink }}>{Number(unit.score).toFixed(4)}</b>
+        {gated && " — không phải khuyến nghị; xem trạng thái Legal bên dưới."}
+      </p>
+
+      {h.comparability_warning && <p style={S.hierWarning}>⚠ {h.comparability_warning}</p>}
+
+      {gated ? (
+        <div style={S.hierGateBox}>
+          <b>Legal gate:</b> {h.legal_gate.status}
+          {h.legal_gate.reason && ` — ${h.legal_gate.reason}`}
+        </div>
+      ) : (
+        <details style={S.hierDetails}>
+          <summary style={S.hierSummary}>Chi tiết theo grain</summary>
+          <table style={S.explainTable}>
+            <thead>
+              <tr>
+                <th style={S.explainTh}>Grain</th>
+                <th style={S.explainTh}>Trạng thái</th>
+                <th style={S.explainTh}>Điểm</th>
+                <th style={S.explainTh}>Coverage</th>
+                <th style={S.explainTh}>Freshness</th>
+                <th style={S.explainTh}>Bằng chứng</th>
+              </tr>
+            </thead>
+            <tbody>
+              {["market", "project", "area", "unit"].map((grain) => {
+                const g = h.grains?.[grain];
+                if (!g) return null;
+                return (
+                  <tr key={grain}>
+                    <td style={S.explainTd}>{GRAIN_LABEL[grain]}</td>
+                    <td style={S.explainTd}>
+                      {g.eligible ? (
+                        <span style={{ color: color.ok }}>✓ Included</span>
+                      ) : (
+                        <span style={{ color: color.muted }}>✕ {g.exclusion_reason || "Excluded"}</span>
+                      )}
+                    </td>
+                    <td style={S.explainTd}>{g.score !== null && g.score !== undefined ? decimal(g.score, 4) : "—"}</td>
+                    <td style={S.explainTd}>
+                      {g.coverage !== null && g.coverage !== undefined ? decimal(g.coverage) : "—"}
+                    </td>
+                    <td style={S.explainTd}>
+                      {g.freshness && g.freshness.status === "fresh"
+                        ? `hiệu lực ${formatIsoDate(g.freshness.effective_at)}`
+                        : "—"}
+                    </td>
+                    <td style={S.explainTd}>
+                      {g.evidence_refs && g.evidence_refs.length > 0
+                        ? g.evidence_refs.map((ref, i) =>
+                            ref.status === "available" ? (
+                              <span key={ref.document_id || i} title={ref.object_storage_key} style={{ marginRight: 6 }}>
+                                📄 {ref.original_filename || "evidence"}
+                              </span>
+                            ) : (
+                              <span key={i} style={{ color: color.muted, marginRight: 6 }}>
+                                (không khả dụng)
+                              </span>
+                            )
+                          )
+                        : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <div style={S.hierWeights}>
+            <div>
+              <b>Configured weights:</b>{" "}
+              {h.configured_grain_weights
+                ? Object.entries(h.configured_grain_weights)
+                    .map(([k, v]) => `${GRAIN_LABEL[k] || k} ${decimal(v)}`)
+                    .join(" · ")
+                : "—"}
+            </div>
+            <div>
+              <b>Effective weights:</b>{" "}
+              {h.effective_grain_weights && Object.keys(h.effective_grain_weights).length > 0
+                ? Object.entries(h.effective_grain_weights)
+                    .map(([k, v]) => `${GRAIN_LABEL[k] || k} ${decimal(v)}`)
+                    .join(" · ")
+                : "—"}
+            </div>
+          </div>
+
+          <div style={S.hierMeta}>
+            <span>Cutoff: {formatIsoDate(h.cutoff_at)}</span>
+            <span>Computed: {formatIsoDate(h.computed_at)}</span>
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 function DriverChips({ contributions = [] }) {
   return (
     <div className="ranking-driver-chips" aria-label="Ba drivers chính">
@@ -635,6 +837,8 @@ const S = {
   h1: { margin: 0, color: color.ink, fontFamily: font.display, fontSize: 28, fontWeight: 700, letterSpacing: "-.03em" },
   sub: { margin: "5px 0 0", color: color.muted, fontSize: size.small },
   configBadge: { flex: "none", color: color.accent, background: color.accentSoft, border: 0, borderRadius: radius.pill, padding: "7px 12px", fontSize: size.tiny, fontWeight: 700, fontFamily: font.mono, cursor: "pointer" },
+  v3Badge: { flex: "none", color: "#047857", background: "#d1fae5", borderRadius: radius.pill, padding: "7px 12px", fontSize: size.tiny, fontWeight: 700 },
+  v3PendingBadge: { flex: "none", color: "#b45309", background: "#fef3c7", borderRadius: radius.pill, padding: "7px 12px", fontSize: size.tiny, fontWeight: 700 },
 
   scopeBar: { background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.md, padding: space(4), marginBottom: space(4), boxShadow: shadow },
   label: { display: "flex", flexDirection: "column", gap: 5, color: color.ink, fontSize: 15, fontWeight: 500 },
@@ -686,4 +890,26 @@ const S = {
   pageInfo: { color: color.muted, fontSize: size.tiny, fontVariantNumeric: "tabular-nums" },
 
   disclaimer: { marginTop: space(5), color: color.muted, fontSize: size.tiny, textAlign: "center", lineHeight: 1.6 },
+
+  // PR-7: hierarchical (M/P/A/U) disclosure panel.
+  hier: { padding: space(4), marginTop: space(3), borderTop: `1px dashed ${color.border}` },
+  hierHead: { display: "flex", alignItems: "center", gap: space(3), flexWrap: "wrap", marginBottom: space(2) },
+  hierScore: { fontFamily: font.mono, fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" },
+  hierUnavailable: { color: color.muted, fontSize: size.tiny },
+  hierCoverage: { color: color.muted, fontSize: size.tiny, marginBottom: space(2) },
+  hierDisclosure: { margin: `0 0 ${space(2)}px`, color: color.body, fontSize: size.tiny, lineHeight: 1.5 },
+  hierLegacyNote: { margin: `0 0 ${space(2)}px`, color: color.muted, fontSize: size.tiny },
+  hierWarning: { margin: `0 0 ${space(2)}px`, color: color.warn, fontWeight: 600, fontSize: size.tiny },
+  hierGateBox: {
+    background: color.dangerSoft,
+    color: color.danger,
+    borderRadius: radius.sm,
+    padding: space(3),
+    fontWeight: 600,
+    fontSize: size.tiny,
+  },
+  hierDetails: { marginTop: space(2) },
+  hierSummary: { cursor: "pointer", color: color.accent, fontWeight: 600, fontSize: size.tiny },
+  hierWeights: { display: "flex", flexDirection: "column", gap: 4, marginTop: space(3), color: color.body, fontSize: size.tiny },
+  hierMeta: { display: "flex", gap: space(4), marginTop: space(2), color: color.muted, fontSize: size.tiny, fontFamily: font.mono },
 };

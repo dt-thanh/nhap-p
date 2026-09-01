@@ -305,4 +305,26 @@ describe("GlobalUnitRanking — bảng xếp hạng căn toàn cục", () => {
     renderTable();
     expect(screen.getByTestId("global-ranking-meta")).toHaveTextContent("Hiện 3 / 3 căn · 2 dự án");
   });
+
+  it("22. dự án đã áp dụng AHP (v3): hiện nhãn AHP (v3) và ưu tiên effective_score_percent", () => {
+    const built = buildGlobalRanking([
+      {
+        project: project(),
+        ranking: ranking(
+          [unit({ unit_id: "u1", unit_code: "A-01", score: "0.2000", score_percent: 20, effective_score: "0.9500", effective_score_percent: 95, band: "high" })],
+          { ranking_formula: "v3_hierarchical" },
+        ),
+      },
+    ]);
+    renderTable({ built });
+
+    expect(screen.getByText("AHP (v3)")).toBeInTheDocument();
+    expect(screen.getByText("95.0%")).toBeInTheDocument();
+    expect(screen.queryByText("20.0%")).not.toBeInTheDocument();
+  });
+
+  it("23. dự án v2 thuần: không hiện nhãn AHP (v3)", () => {
+    renderTable();
+    expect(screen.queryByText("AHP (v3)")).not.toBeInTheDocument();
+  });
 });

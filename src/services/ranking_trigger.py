@@ -28,20 +28,27 @@ from __future__ import annotations
 import uuid
 
 import sqlalchemy as sa
-from rq import Retry
 
 from src.db import get_session_factory
 from src.logging_config import get_logger
 from src.models.tables import projects
-from src.ranking.service import enqueue_ranking
-from src.task_queue import INGEST_QUEUE, get_queue
+from src.ranking.service import dispatch_persisted_ranking_run, enqueue_ranking
 
 log = get_logger("src.services.ranking_trigger")
 
 # Cùng hàng đợi với `recompute_domain`: hai việc này luôn đi cặp sau một lô đồng
 # bộ, và xếp chúng vào hai hàng khác nhau chỉ tạo ra khả năng chúng chạy lệch
 # nhau xa mà không đem lại gì.
-RANKING_QUEUE = INGEST_QUEUE
+async def enqueue_existing_ranking_run(
+    *, project_id: uuid.UUID | str, run_id: uuid.UUID | str, trigger: str, session_factory=None
+) -> bool:
+    """Dispatch a committed row and save the backing RQ job identity."""
+    return await dispatch_persisted_ranking_run(
+        project_id=project_id,
+        run_id=run_id,
+        trigger=trigger,
+        session_factory=session_factory,
+    )
 
 
 async def trigger_ranking(
@@ -86,26 +93,12 @@ async def trigger_ranking(
         log.info("ranking.trigger.coalesced", project_id=str(project_id), run_id=str(run_id), trigger=trigger)
         return run_id, False
 
-    try:
-        get_queue(RANKING_QUEUE).enqueue(
-            "src.jobs.rank_project.rank_project",
-            project_id=str(project_id),
-            run_id=str(run_id),
-            trigger=trigger,
-            retry=Retry(max=3, interval=[10, 30, 60]),
-        )
-    except Exception as exc:
+    if not await enqueue_existing_ranking_run(
+        project_id=project_id, run_id=run_id, trigger=trigger, session_factory=session_factory
+    ):
         # Dòng `queued` ĐÃ commit và vẫn nằm đó. Đây là lý do thứ tự phải là
         # "ghi DB trước, đẩy RQ sau": Redis chết thì việc cần làm vẫn còn dấu
         # vết để xếp lại; đẩy RQ trước thì một job mồ côi trỏ vào run không tồn tại.
-        log.error(
-            "ranking.trigger.enqueue_job_failed",
-            project_id=str(project_id),
-            run_id=str(run_id),
-            trigger=trigger,
-            error_type=type(exc).__name__,
-            exc_info=exc,
-        )
         return run_id, False
 
     log.info("ranking.trigger.enqueued", project_id=str(project_id), run_id=str(run_id), trigger=trigger)

@@ -35,7 +35,7 @@ from tests.conftest import (
     DASHBOARD_VIEWER_TOKEN,
     db_skip_reason,
 )
-from tests.test_agent_e2e import PROJECT_ID, UNIT_IDS, _insert_config, _insert_dataset
+from tests.ranking_fixture import PROJECT_ID, UNIT_IDS, _insert_config, _insert_dataset
 
 _SKIP = db_skip_reason()
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(bool(_SKIP), reason=_SKIP or "")]

@@ -161,3 +161,27 @@ def rank_scores(scores: list[UnitScore]) -> list[UnitScore]:
             final[s.unit_id] = UnitScore(**{**s.__dict__, "rank_in_area": i + 1})
 
     return [final[s.unit_id] for s in project_ranked] + skipped
+
+
+def effective_rank_scores(
+    scores: list[UnitScore], hierarchical_by_unit: dict[str, Decimal | None]
+) -> dict[str, tuple[int | None, int | None]]:
+    """Ranking v3: re-derive `rank_in_project`/`rank_in_area` from
+    `effective_score = hierarchical_by_unit.get(unit_id) or s.score` (per-unit
+    fallback to the legacy score) instead of the plain legacy `score`.
+
+    Deliberately returns ONLY the resulting rank pair per `unit_id`, never a
+    full `UnitScore` list — the substituted score used internally to compute
+    these ranks is not a real score and must never be mistaken for one by a
+    caller (e.g. persisted into `ranking_scores.score`). Reuses `rank_scores()`
+    unchanged: this is a re-ranking of the same units, not a new algorithm.
+    """
+    def _effective(s: UnitScore) -> Decimal | None:
+        # `or` would be wrong here: a genuine hierarchical score of exactly
+        # 0 is falsy but must NOT fall back to the legacy score.
+        hier = hierarchical_by_unit.get(s.unit_id)
+        return hier if hier is not None else s.score
+
+    substituted = [UnitScore(**{**s.__dict__, "score": _effective(s)}) for s in scores]
+    reranked = rank_scores(substituted)
+    return {s.unit_id: (s.rank_in_project, s.rank_in_area) for s in reranked}

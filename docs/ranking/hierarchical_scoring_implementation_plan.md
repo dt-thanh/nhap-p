@@ -909,6 +909,64 @@ A hierarchical result replays identically from `ranking_run_id` alone: `ranking_
 
 `ranking_scores.score` (the existing CRM-only column) is retrieved separately, by the existing `GET /ranking` route, unaffected by any payload above.
 
+### 6.1 POST-PR-7 CORRECTION — actual shipped API contract (2026-08-27)
+
+**PR-7 IMPLEMENTED.** The sketch above (`GET /ranking/hierarchical` as a
+~~separate, new~~ endpoint, `grain_statuses`/`legal_result`/`evidence`/
+`snapshot_ids` field naming) was speculative and is **not** what shipped —
+code wins over this older prose per the repo's own authority order. What
+was actually built, verified against `src/api/ranking.py`/`src/models/
+schemas.py`/`src/ranking/hierarchical_view.py`:
+
+- **No new route.** `GET /ranking`'s existing response (`RankedUnitOut`,
+  `src/models/schemas.py`) gained one new optional field per unit,
+  `hierarchical: HierarchicalUnitOut | null` — extending a backward-compatible
+  response was judged safer than a second endpoint the frontend would have
+  to merge by `unit_id` itself, and the task instruction owning this PR
+  explicitly preferred extension when safe. Old clients that don't know the
+  new key are unaffected; nothing about `score`/`contributions`/`band`/etc.
+  changed shape or meaning.
+- **Field names follow the ACTUAL persisted `hierarchical_contributions`
+  shape** (`src/ranking/service.py::_build_hierarchical_contributions()`/
+  `_build_legal_gated_contributions()`, PR-1..PR-6), not this section's
+  guesses: `grains` (not `grain_statuses`), `legal_gate` (not `legal_result`),
+  `evidence_refs` nested per grain (not a top-level `evidence` map),
+  `available`/`reason` (not a bare-`null` "not computed" state).
+- **Two independent feature flags**, both in `src/config.py`, both default
+  `False`: `hierarchical_ranking_enabled` (PR-1, gates whether the post-run
+  COMPUTE step ever writes the two columns) and the new
+  `hierarchical_read_enabled` (PR-7, gates whether `GET /ranking` DISCLOSES
+  already-written data at all — the read-surface kill switch). Turning the
+  read flag off makes every item's `hierarchical` field `null` instantly, no
+  migration, no touch to `ranking_scores`.
+- **Evidence/freshness**: `src/ranking/hierarchical_view.py` batch-reads
+  (never per-unit) the immutable `ranking_feature_justifications.effective_at`/
+  `.expires_at` and linked `ranking_evidence_documents` for every
+  justification id a run's own snapshot already resolved — never a live
+  re-selection, never data outside the requesting principal's already-scoped
+  project.
+- **No frontend feature flag was added.** `frontend/src/pages/RankingPage.jsx`'s
+  new `HierarchicalPanel` renders purely reactively: `null` → nothing
+  rendered, matching "legacy response/UI remains unchanged" without
+  inventing a client-side flag mechanism (the codebase's only precedent,
+  two single-purpose `import.meta.env.VITE_*` booleans, was judged
+  unnecessary to extend here — the backend flag is the sole gate).
+- **Observability**: `src/ranking/hierarchical_view.py::
+  log_hierarchical_read_observability()` emits one structured log event
+  (`ranking.hierarchical_read.completed`) per `GET /ranking` request with a
+  persisted hierarchical read — `score_mode` counts, unavailable/legal_gated
+  counts, excluded-grain reason counts, comparability-warning count,
+  evidence available/unavailable counts, coverage value distribution, and
+  latency. No metrics backend exists in this repo (verified: no
+  Prometheus/statsd/OTel dependency) — structured logs are the entire
+  observability surface, consistent with every other module's convention.
+- **Tests**: `tests/test_api/test_ranking_hierarchical.py` (14 tests: mode
+  semantics, authorization, backward compatibility, evidence/freshness,
+  malformed-row degradation) and 6 new cases in
+  `frontend/src/pages/RankingPage.test.jsx` (badge/disclosure per mode,
+  legal-gated no-score/no-band state, comparability warning, flag-off
+  hides the panel).
+
 ---
 
 ## 7. Test plan (pytest-style names, not implemented)
@@ -1165,3 +1223,46 @@ A narrow reliability pass after PR-5 shipped, scoped to test fixtures/isolation,
   Result at the time of this pass: **698 passed, 1 skipped, 0 failed, 0 errors.** The one remaining, unrelated pre-existing failure this canonical command used to carry (`tests/auth/test_config_safety.py::test_default_app_env_with_bypass_true_is_rejected`, an ambient `APP_ENV=development` process-env leak from `.env` into a test that only isolates against the `.env` FILE, not process env vars) was also fixed in this pass — see the test's own updated docstring.
 - **Preflight added:** `scripts/preflight_test_env.sh` — read-only, non-destructive; checks host disk free space (configurable `MIN_FREE_DISK_MB`, default 2048), reports Docker disk usage (never prunes), and checks Postgres/Redis service health, failing fast with no test/migration started if disk is short. Wired into `scripts/test_db.sh` as an early gate.
 - **Migration certification (fresh Postgres, this pass):** `alembic upgrade head` from nothing succeeds; exactly one head (`0041_area_grain_scope`); guarded downgrade to `0036_remove_historical_ranking` (the pre-PR-1 baseline) succeeds with every PR-1..5 protected-data guard exercised as a no-op; re-upgrade reaches the identical head with no duplicate Market/Area feature-definition seeds. The pre-existing, out-of-scope `0025_synthetic_unit_labels -> 0024_rename_synthetic_labels_vinhomes_stats` downgrade bug (`ck_units_updated_after_created` CHECK violation inside `0024`'s own downgrade, re-confirmed with a fresh scratch database during this pass) remains unfixed — it predates PR-1 by twelve revisions and does not block the PR-1→PR-5 upgrade/guarded-downgrade/re-upgrade path certified above.
+
+### Post-PR-6 release certification (validation-only pass, 2026-08-27)
+
+A read-only/diagnostic-only certification pass for PR-1 through PR-6 (Legal), confirming the repository is safe to begin PR-7. No ranking, governance, migration, schema, or API file was touched by this pass; the only file touched is this one, to record the result.
+
+- **Environment:** `bash scripts/preflight_test_env.sh` → all checks passed (host disk 29499MB free, 48% used, threshold 2048MB). Postgres (`db`), Redis (`redis`), Keycloak (`keycloak`, realm `p100` imported successfully — `CRM.CEO` role confirmed present at `docker/keycloak/p100-realm.json:34,96`), and `minicrm_db` all healthy (`docker ps`). An earlier attempt this same day was correctly **blocked** by preflight at 1238-1284MB free (below the 2048MB threshold, following an unrelated external `docker compose down -v` event the prior turn) — no test/migration was run during that blocked window; the owner subsequently freed host disk, and this pass re-ran preflight clean before proceeding.
+- **Alembic:** exactly one head, `0042_legal_assertion_gate` — confirmed via `python -m alembic heads`.
+- **Fresh migration certification:**
+  ```
+  bash scripts/test_db.sh -q \
+    tests/test_migrations/test_pr1_pr4_integration_hardening.py \
+    tests/test_migrations/test_0041_area_grain_scope.py \
+    tests/test_migrations/test_0042_legal_assertion_gate.py
+  ```
+  Result: **68 passed, 0 failed** (300.82s pytest runtime). Proves, on a freshly created `absorption_test` database: clean upgrade from nothing through `0042`; exactly one head; guarded downgrade from `0042` to the pre-PR-1 baseline `0036_remove_historical_ranking` with every PR-1..6 protected-data guard a no-op; re-upgrade to the identical head with Market (4), Area (3), and Legal (1) feature-definition seeds each re-created exactly once, no duplicates.
+- **Canonical PR-1→PR-6 regression suite** (exact command, no `-p no:logging`):
+  ```
+  bash scripts/test_db.sh -q \
+    tests/test_migrations/ tests/test_ranking_boundary.py \
+    tests/test_services/test_governance.py tests/test_services/test_governance_value_mode.py \
+    tests/test_services/test_governance_pr2_boundaries.py tests/test_ranking/ \
+    tests/test_api/test_ranking_endpoint.py tests/test_agent_e2e.py tests/test_agents/ \
+    tests/auth/ tests/test_services/test_import_records_fixture_isolation.py
+  ```
+  Result: **736 passed, 1 failed, 0 errors** (1250.33s / 20:50 runtime), run uninterrupted (`docker events` for the full run window returned no container/volume lifecycle events; host disk unchanged at 29GB free before and after). The one failure, `tests/test_migrations/test_0031_unit_inventory_daily.py::test_the_core_projection_matches_the_migrated_columns`, is pre-existing, unrelated baseline debt — see below — and is not a PR-1→PR-6 regression.
+- **Migration `0031` maintenance debt, classified STALE TEST:** `alembic/versions/0031_unit_inventory_daily.py` created table `unit_inventory_daily` (P1, dashboard-era materialization). `alembic/versions/0036_remove_historical_ranking.py:38` (`op.drop_table(TABLE)`, `TABLE = "unit_inventory_daily"` at line 29) intentionally dropped it six revisions before PR-1 begins, and `src/models/tables.py` was updated to no longer declare it. `tests/test_migrations/test_0031_unit_inventory_daily.py`'s own fixture correctly upgrades only to `0031` on a scratch database (the table genuinely exists there), but `test_the_core_projection_matches_the_migrated_columns` (line 152) does `from src.models.tables import unit_inventory_daily` — importing the CURRENT (head-state) Python declaration, which `0036` already removed — an `ImportError` unrelated to schema state, reproduced identically in isolation (`bash scripts/test_db.sh -q tests/test_migrations/test_0031_unit_inventory_daily.py` → 1 failed, 45 passed) and inside the full canonical sweep. All 45 other tests in that same file pass, since they assert against the scratch DB's raw schema directly rather than importing the head-state Core table object. Not fixed in this pass (out of scope: predates PR-1, and this pass may only record debt, not correct migrations/tests). **Maintenance action for a future narrowly-scoped pass:** delete or rewrite `test_the_core_projection_matches_the_migrated_columns` to stop importing a Core table object that no longer exists at head, since `0036` retired it.
+- **Verdict: READY FOR PR-7.** All required gates (disk/service preflight, single correct Alembic head, fresh migration certification, canonical suite at 0 failed/0 errors net of the one documented pre-existing `0031` staleness) are satisfied on a clean, uninterrupted run.
+
+### `0031` stale-test maintenance fix (2026-08-27)
+
+- `tests/test_migrations/test_0031_unit_inventory_daily.py::test_the_core_projection_matches_the_migrated_columns` was corrected because it asserted a current-head Core mapping (`from src.models.tables import unit_inventory_daily`) for a table intentionally removed by `0036_remove_historical_ranking.py:38` (`op.drop_table(TABLE)`, `TABLE = "unit_inventory_daily"` at line 29). The test now asserts the historically-correct shape hardcoded from `0031_unit_inventory_daily.py`'s own `create_table()` call (lines 60-78, every column `nullable=False`) against the scratch database at the `0031` migration state, and no longer imports any current-head Core declaration. Renamed to `test_the_migrated_columns_match_0031s_own_create_table`.
+- No production migration, schema, model, or ranking behavior changed. Only `tests/test_migrations/test_0031_unit_inventory_daily.py` was edited.
+- The canonical PR-1→PR-6 command was rerun with **0 failed / 0 errors** (`737 passed, 1228.66s / 0:20:28`, uninterrupted — no `docker events` in the run window, disk unchanged at 29GB free before/after).
+
+### PR-7 implementation (2026-08-27)
+
+Read-only hierarchical (M/P/A/U) disclosure surface, per §6.1's correction above. No ranking/governance/scoring/migration/schema file changed — verified via `git status`, files list in §6.1.
+
+- **Backend tests:** `bash scripts/test_db.sh -q tests/test_api/test_ranking_hierarchical.py` → 14 new tests + the shared 41-test `test_import_records.py` prefix, **55 passed, 0 failed**. `bash scripts/test_db.sh -q tests/test_api/test_ranking_endpoint.py` (the pre-existing legacy suite, unmodified) → all 20 still pass, proving backward compatibility.
+- **Canonical PR-1→PR-6 + PR-7 sweep** (`test_migrations/`, `test_ranking_boundary.py`, governance/ranking/agents/auth suites, plus `test_ranking_endpoint.py` and the new `test_ranking_hierarchical.py`, no `-p no:logging`): **751 passed, 0 failed, 0 errors**, 1155.85s (0:19:15), uninterrupted (disk 29GB free unchanged before/after, all containers healthy throughout).
+- **Frontend tests:** `RankingPage.test.jsx`'s 9 new hierarchical-disclosure cases pass (`npx vitest run src/pages/RankingPage.test.jsx` → 9/9). Full frontend suite: 467/471 passing; the 4 failures (`HotUnitsTab.test.jsx` ×1, `AgentPage.test.jsx` ×3) are **pre-existing, unrelated baseline debt** — reproduced identically with this pass's own frontend changes fully `git stash`-ed out, confirmed via a stash/re-run/pop cycle, not caused by PR-7.
+- **Backend baseline debt, also pre-existing and unrelated:** `tests/test_api/test_ranking_historical.py`/`test_ranking_historical_batch.py` (11 tests) fail with `404 Not Found` — no `/ranking/historical` route exists anywhere in `src/api/`/`src/main.py` (verified by grep); these test files reference a route that does not currently exist in this codebase, unrelated to hierarchical scoring or PR-7. Not fixed here (out of PR-7's narrow scope; flagged for a future maintenance pass, same category as the `0031` fix above).
+- `ruff check` clean on every file this pass touched.

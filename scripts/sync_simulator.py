@@ -95,13 +95,34 @@ def cmd_validate_all() -> int:
 SYNTHETIC_PROJECT_ID = "5117d1c0-0000-4000-8000-000000000001"
 
 
-def cmd_seed_project() -> int:
+# Non-CRM lineage — obviously distinct from any real Mini CRM instance id
+# (`mini-crm-dev`) and from the other dev-only fixtures' identities, so this
+# row can never be mistaken for real synced data or be untraceable
+# (`source_system IS NULL`).
+SYNTHETIC_PROJECT_SOURCE_SYSTEM = "sync_simulator_fixture"
+SYNTHETIC_PROJECT_SOURCE_INSTANCE_ID = "sync-simulator-local"
+
+
+def cmd_seed_project(*, confirmed: bool) -> int:
     """Dựng dự án + phân khu TỔNG HỢP mà các fixture tham chiếu.
 
     Cần bước này vì dự án và phân khu do HỆ THỐNG NÀY sở hữu — hợp đồng nói rõ CRM
     tham chiếu được nhưng không tạo được (mục 2). Fixture vì thế không tự dựng được
     phạm vi của chính nó, và đó là hành vi đúng chứ không phải thiếu sót.
+
+    Bắt buộc ``--confirm-seed`` và ``APP_ENV=development`` — đây là một lần GHI,
+    và dòng nó tạo ra phải luôn mang danh tính nguồn (`source_system`), không
+    bao giờ để trống, khớp bất biến "MiniCRM là chủ sở hữu duy nhất của
+    Project/Area/Unit/Deal" của dự án.
     """
+    import os
+
+    app_env = os.getenv("APP_ENV", "").strip().lower()
+    if app_env and app_env != "development":
+        raise SystemExit(f"Từ chối: sync_simulator --seed-project không chạy ngoài development (APP_ENV={app_env!r}).")
+    if not confirmed:
+        raise SystemExit("Từ chối: --seed-project cần --confirm-seed đi kèm (đây là một lần GHI).")
+
     import asyncio
     import uuid
     from datetime import UTC, date, datetime
@@ -116,10 +137,19 @@ def cmd_seed_project() -> int:
             async with session.begin():
                 await session.execute(
                     sa.text(
-                        "INSERT INTO projects (id, name, launch_date, created_at) "
-                        "VALUES (:i, 'SYNTHETIC — simulator fixture', :d, :t) ON CONFLICT (id) DO NOTHING"
+                        "INSERT INTO projects (id, name, launch_date, created_at, external_id, "
+                        "source_system, source_instance_id) "
+                        "VALUES (:i, 'SYNTHETIC — simulator fixture', :d, :t, :ext, :sys, :inst) "
+                        "ON CONFLICT (id) DO NOTHING"
                     ),
-                    {"i": uuid.UUID(SYNTHETIC_PROJECT_ID), "d": date(2026, 1, 1), "t": datetime.now(UTC)},
+                    {
+                        "i": uuid.UUID(SYNTHETIC_PROJECT_ID),
+                        "d": date(2026, 1, 1),
+                        "t": datetime.now(UTC),
+                        "ext": SYNTHETIC_PROJECT_ID,
+                        "sys": SYNTHETIC_PROJECT_SOURCE_SYSTEM,
+                        "inst": SYNTHETIC_PROJECT_SOURCE_INSTANCE_ID,
+                    },
                 )
                 existing = await session.scalar(
                     sa.select(areas.c.id).where(
@@ -137,6 +167,9 @@ def cmd_seed_project() -> int:
                             area_sqm=75,
                             total_units=100,
                             created_at=datetime.now(UTC),
+                            external_id="sync-simulator-fixture-area-a1",
+                            source_system=SYNTHETIC_PROJECT_SOURCE_SYSTEM,
+                            source_instance_id=SYNTHETIC_PROJECT_SOURCE_INSTANCE_ID,
                         )
                     )
 
@@ -231,6 +264,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--list", action="store_true", help="liệt kê kịch bản tổng hợp")
     parser.add_argument("--validate-all", action="store_true", help="kiểm mọi fixture theo JSON Schema")
     parser.add_argument("--seed-project", action="store_true", help="dựng dự án + phân khu tổng hợp cho fixture")
+    parser.add_argument("--confirm-seed", action="store_true", help="bắt buộc đi kèm --seed-project — đây là một lần GHI")
     parser.add_argument("--issue-key", action="store_true", help="cấp một khoá API cho dev cục bộ")
     parser.add_argument("--scenario", help="tên kịch bản cần gửi")
     parser.add_argument("--api-key", default="", help="khoá API dùng để gửi")
@@ -245,7 +279,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.validate_all:
         return cmd_validate_all()
     if args.seed_project:
-        return cmd_seed_project()
+        return cmd_seed_project(confirmed=args.confirm_seed)
     if args.issue_key:
         return cmd_issue_key(args.instance, args.system)
     if args.scenario:

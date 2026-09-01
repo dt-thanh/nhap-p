@@ -396,6 +396,44 @@ describe("globalUnitRanking — chuẩn hoá và trộn", () => {
     expect(meta.truncatedProjects).toEqual([{ label: "Harbor Crest", shown: 1, total: 640 }]);
   });
 
+  it("18a. dự án đã áp dụng AHP (v3): ưu tiên effective_score/effective_score_percent, gắn rankingFormula", () => {
+    const { rows } = buildGlobalRanking([
+      {
+        project: project(),
+        ranking: ranking(
+          [unit({ unit_id: "u1", score: "0.2000", score_percent: 20, effective_score: "0.9500", effective_score_percent: 95 })],
+          { ranking_formula: "v3_hierarchical" },
+        ),
+      },
+    ]);
+    expect(rows[0].score).toBe(0.95);
+    expect(rows[0].scorePercent).toBe(95);
+    expect(rows[0].rankingFormula).toBe("v3_hierarchical");
+  });
+
+  it("18b. dự án v2 thuần (không có ranking_formula): score/scorePercent giữ nguyên legacy, rankingFormula là v2_legacy", () => {
+    const { rows } = buildGlobalRanking([
+      { project: project(), ranking: ranking([unit({ unit_id: "u1", score: "0.2000", score_percent: 20 })]) },
+    ]);
+    expect(rows[0].score).toBe(0.2);
+    expect(rows[0].scorePercent).toBe(20);
+    expect(rows[0].rankingFormula).toBe("v2_legacy");
+  });
+
+  it("18c. v3 nhưng backend không gửi kèm effective_score cho căn này: rơi về score v2, không coi là 0", () => {
+    const { rows } = buildGlobalRanking([
+      {
+        project: project(),
+        ranking: ranking(
+          [unit({ unit_id: "u1", score: "0.2000", score_percent: 20 })],
+          { ranking_formula: "v3_hierarchical" },
+        ),
+      },
+    ]);
+    expect(rows[0].score).toBe(0.2);
+    expect(rows[0].scorePercent).toBe(20);
+  });
+
   it("19. số dự án chưa nạp được truyền nguyên vẹn ra meta", () => {
     const { meta } = buildGlobalRanking([], { projectsNotScanned: 7 });
     expect(meta.projectsNotScanned).toBe(7);

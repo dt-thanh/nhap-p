@@ -42,16 +42,6 @@ function areaKey(area, index) {
   return area?.external_id || area?.area_id || `${area?.area_name || UNAVAILABLE}-${index}`;
 }
 
-function sumIfComplete(rows, field) {
-  if (!rows.length) return null;
-  const values = rows.map((row) => {
-    const value = row?.[field];
-    return value === null || value === undefined || value === "" ? NaN : Number(value);
-  });
-  if (values.some((value) => !Number.isFinite(value))) return null;
-  return values.reduce((total, value) => total + value, 0);
-}
-
 export default function ProjectDetailPage() {
   const { externalId, id } = useParams();
   const projectExternalId = externalId || id;
@@ -74,10 +64,8 @@ export default function ProjectDetailPage() {
       || searchValue(area?.external_id).includes(normalized)
     ));
   }, [areas, query]);
-  const totalUnits = useMemo(() => sumIfComplete(areas, "total_units"), [areas]);
-  const remainingUnits = useMemo(() => sumIfComplete(areas, "units_remaining"), [areas]);
   const areaColumns = pick(bp, { mobile: 1, tablet: 2, laptop: 3, desktop: 4 });
-  const summaryColumns = pick(bp, { mobile: "1fr", tablet: "repeat(3, minmax(0, 1fr))", laptop: "repeat(3, minmax(0, 1fr))", desktop: "repeat(3, minmax(0, 1fr))" });
+  const summaryColumns = pick(bp, { mobile: "1fr", tablet: "repeat(2, minmax(0, 1fr))", laptop: "repeat(2, minmax(0, 1fr))", desktop: "repeat(2, minmax(0, 1fr))" });
   const contextColumns = pick(bp, { mobile: "1fr", tablet: "repeat(3, minmax(0, 1fr))", laptop: "repeat(3, minmax(0, 1fr))", desktop: "repeat(3, minmax(0, 1fr))" });
   const areasLoading = projectRequest.loading || areasRequest.loading;
   const areasError = !projectRequest.loading && areasRequest.error;
@@ -135,11 +123,6 @@ export default function ProjectDetailPage() {
           {project?.headline && <p style={S.introduce}>{project.headline}</p>}
           {project?.introduce && <p style={S.introduce}>{project.introduce}</p>}
         </div>
-        <div style={S.actions}>
-          <button style={S.primaryBtn} onClick={() => navigate(`/projects/${projectExternalId}/dashboard`)}>
-            {DASHBOARD_TEXT.openDashboard}
-          </button>
-        </div>
       </header>
 
       <section style={S.projectContext} aria-label="Thông tin dự án">
@@ -159,8 +142,7 @@ export default function ProjectDetailPage() {
 
       <section aria-label="Tổng quan phân khu" style={{ ...S.summaryGrid, gridTemplateColumns: summaryColumns }}>
         <SummaryCard label="Tổng phân khu" value={areasLoading ? null : formatNumber(areas.length)} icon="folder" loading={areasLoading} />
-        <SummaryCard label="Tổng số căn" value={areasLoading ? null : formatNumber(totalUnits)} icon="units" loading={areasLoading} />
-        <SummaryCard label="Còn lại tổng cộng" value={areasLoading ? null : formatNumber(remainingUnits)} icon="remaining" loading={areasLoading} />
+        <SummaryCard label="Tồn kho" value={projectRequest.loading ? null : formatNumber(project?.available_inventory_count)} icon="remaining" loading={projectRequest.loading} />
       </section>
 
       <section aria-labelledby="areas-title" style={S.catalogSection}>
@@ -294,15 +276,9 @@ const S = {
   badge: { fontSize: size.tiny, fontWeight: 700, padding: "4px 11px", borderRadius: radius.pill },
   sub: { fontSize: size.small, color: color.muted, margin: "6px 0 0" },
   introduce: { fontSize: size.small, color: color.body, margin: `${space(3)}px 0 0`, maxWidth: "70ch", lineHeight: 1.6 },
-  actions: { display: "flex", gap: space(2), flex: "none", flexWrap: "wrap" },
   secondaryBtn: {
     background: color.surface, color: color.body, border: `1px solid ${color.borderStrong}`, borderRadius: radius.sm,
     padding: `${space(2)}px ${space(4)}px`, fontSize: size.small, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-  },
-  primaryBtn: {
-    background: color.accent, color: "#fff", border: "none", borderRadius: radius.sm,
-    padding: `${space(2)}px ${space(4)}px`, fontSize: size.small, fontWeight: 600, cursor: "pointer",
-    fontFamily: "inherit", boxShadow: "0 4px 12px rgba(199,167,58,.24)",
   },
   addBtn: {
     background: color.accent, color: "#fff", border: "none", borderRadius: radius.sm,

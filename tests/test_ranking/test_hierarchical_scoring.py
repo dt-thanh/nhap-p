@@ -30,7 +30,61 @@ from src.models.tables import areas, ranking_configs, ranking_scores, units
 from src.ranking.service import compute_hierarchical_scores_for_run, run_ranking
 from src.services.ranking_config import HierarchicalConfigError, validate_hierarchical_weights
 from tests.conftest import db_skip_reason
-from tests.test_agent_e2e import AREA_ID, PROJECT_ID, SEED_WEIGHTS, UNIT_IDS, _insert_dataset
+from tests.ranking_fixture import AREA_ID, PROJECT_ID, SEED_WEIGHTS, UNIT_IDS, _insert_dataset
+
+# (0046) `market_interest_rate`/`market_demand`/`area_accessibility` are three
+# of the six RUBRIC_REQUIRED_FEATURE_KEYS — `upsert_justification()` now
+# rejects a free-form `normalized_numeric` for them and demands a rubric band
+# instead. `_publish_market_value_assertion()`/`_publish_area_value_assertion()`
+# below get-or-create a rubric (same canonical five bands as migration 0046)
+# and snap the caller's requested value to the nearest band for these keys;
+# `market_liquidity` (used by one test below) has no rubric and is unaffected.
+_TEST_RUBRIC_BANDS = [
+    {"value": "0.00", "label": "Band 0", "evidence_requirement": "test fixture — no real evidence policy"},
+    {"value": "0.25", "label": "Band 1", "evidence_requirement": "test fixture — no real evidence policy"},
+    {"value": "0.50", "label": "Band 2", "evidence_requirement": "test fixture — no real evidence policy"},
+    {"value": "0.75", "label": "Band 3", "evidence_requirement": "test fixture — no real evidence policy"},
+    {"value": "1.00", "label": "Band 4", "evidence_requirement": "test fixture — no real evidence policy"},
+]
+
+
+def _nearest_rubric_band(value: str) -> Decimal:
+    target = Decimal(value)
+    return min((Decimal(b["value"]) for b in _TEST_RUBRIC_BANDS), key=lambda c: abs(c - target))
+
+
+async def _value_mode_kwargs(feature_id: uuid.UUID, feature_key: str, normalized_value: str) -> dict:
+    from src.services import governance
+
+    if feature_key not in governance.RUBRIC_REQUIRED_FEATURE_KEYS:
+        return {"normalized_numeric": Decimal(normalized_value)}
+
+    rubric = await governance.get_current_feature_rubric(feature_id)
+    if rubric is None:
+        rubric = await governance.create_feature_rubric(
+            feature_definition_id=feature_id, bands=_TEST_RUBRIC_BANDS, created_by="test-fixture"
+        )
+    return {
+        "rubric_id": uuid.UUID(str(rubric["id"])),
+        "rubric_band_value": _nearest_rubric_band(normalized_value),
+    }
+
+
+async def _mark_evidence_ready(document_id: uuid.UUID) -> None:
+    """Create the persisted extraction/chunk/embedding required by readiness."""
+    from src.services import evidence_extraction
+
+    await evidence_extraction.insert_chunks_and_mark_succeeded(
+        document_id,
+        [{
+            "chunk_index": 0,
+            "page_number": 1,
+            "content": "Verified fixture evidence.",
+            "token_count": 3,
+            "embedding_model": "text-embedding-3-small",
+            "embedding": [0.001] * 1536,
+        }],
+    )
 
 _SKIP = db_skip_reason()
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(bool(_SKIP), reason=_SKIP or "")]
@@ -40,7 +94,7 @@ VALID_HIERARCHICAL_WEIGHTS = {
         "market_interest_rate": {"weight": 1.0, "direction": "negative", "missing_value_policy": "neutral"},
     },
     "project": {
-        "expert_location_score": {"weight": 1.0, "direction": "positive", "missing_value_policy": "neutral"},
+        "project_design_score": {"weight": 1.0, "direction": "positive", "missing_value_policy": "neutral"},
     },
     "area": {
         # Deliberately an EXPERT key, not a CRM key: `_insert_dataset()`
@@ -91,6 +145,12 @@ async def _insert_config(session_factory, *, hierarchical_weights: dict | None) 
 async def factory(truncate_all, monkeypatch):
     session_factory = async_sessionmaker(truncate_all, expire_on_commit=False)
     monkeypatch.setattr("src.ranking.service.get_session_factory", lambda: session_factory, raising=False)
+    # Keep the baseline runs explicitly legacy-only; tests that exercise the
+    # post-run hierarchical step enable this feature flag in their own scope.
+    monkeypatch.setattr(
+        "src.ranking.service.get_settings",
+        lambda: type("_S", (), {"hierarchical_ranking_enabled": False})(),
+    )
     return session_factory
 
 
@@ -190,7 +250,15 @@ async def test_unit_only_hierarchical_score_equals_legacy_score_exactly(factory)
         assert c["effective_grain_weights"] == {"unit": "1.000000"}
         assert c["configured_grain_weights"] == {"market": 0.10, "project": 0.25, "area": 0.25, "unit": 0.40}
         assert c["disclosure"] == "Unit-only hierarchical score — Market, Project, and Area context unavailable."
-        assert c["legal_gate"] == {"status": None, "gated": False}
+        # PR-6: no Legal assertion has been published for this project in
+        # this suite either, so the gate discloses UNKNOWN (never gated,
+        # never inferred as NOT_HIGH_RISK) with the "nothing published"
+        # reason — see `_publish_legal_value_assertion()` below for tests
+        # that actually exercise HIGH_RISK/NOT_HIGH_RISK/explicit UNKNOWN.
+        assert c["legal_gate"]["status"] == "UNKNOWN"
+        assert c["legal_gate"]["gated"] is False
+        assert c["legal_gate"]["reason"] == "NO_PUBLISHED_LEGAL_ASSERTION"
+        assert c["legal_gate"]["feature_value_id"] is None
         assert c["cutoff_at"]
         assert c["grains"]["market"] == {
             "eligible": False, "score": None, "coverage": None, "exclusion_reason": "NO_PUBLISHED_MARKET_VALUE"
@@ -460,7 +528,7 @@ async def test_comparability_warning_is_unset_when_every_unit_shares_the_same_el
 async def _publish_project_value_assertion(
     factory,
     *,
-    feature_key: str = "expert_location_score",
+    feature_key: str = "project_design_score",
     normalized_value: str = "0.80",
     effective_at: datetime | None = None,
     expires_at: datetime | None = None,
@@ -481,12 +549,12 @@ async def _publish_project_value_assertion(
                 id=feature_id,
                 feature_key=feature_key,
                 feature_version="v1",
-                name="Expert location score",
+                name="Điểm chất lượng thiết kế dự án",
                 category="expert",
                 grain="project",
                 value_type="numeric",
-                formula_id="expert_slider",
-                normalization_method="identity",
+                formula_id="expert_value_assertion",
+                normalization_method="rubric_band" if feature_key == "project_design_score" else "identity",
                 direction="positive",
                 missing_policy="skip",
                 status="active",
@@ -519,7 +587,7 @@ async def _publish_project_value_assertion(
             feature_definition_id=feature_id,
             created_by_expert_id=author_id,
             assertion_kind="value",
-            normalized_numeric=Decimal(normalized_value),
+            **await _value_mode_kwargs(feature_id, feature_key, normalized_value),
             rationale="Sales velocity has increased 20% QoQ per Q2 report.",
             methodology="Comparative analysis against 3 comparable projects.",
             evidence_summary="See attached Q2 2026 Market Analysis, page 4.",
@@ -531,6 +599,7 @@ async def _publish_project_value_assertion(
             author_subject="analyst@example.com",
         )
         document = await governance.register_evidence_document(
+            project_id=PROJECT_ID,
             proposal_id=uuid.UUID(str(proposal["id"])),
             uploaded_by_expert_id=author_id,
             original_filename="q2-2026-market-analysis.pdf",
@@ -539,6 +608,7 @@ async def _publish_project_value_assertion(
             sha256_checksum="a" * 64,
             file_size_bytes=1024,
         )
+        await _mark_evidence_ready(uuid.UUID(str(document["id"])))
         await governance.link_evidence_to_justification(
             document_id=uuid.UUID(str(document["id"])),
             feature_justification_id=uuid.UUID(str(justification["id"])),
@@ -547,9 +617,10 @@ async def _publish_project_value_assertion(
         await governance.submit_review(
             proposal_id=uuid.UUID(str(proposal["id"])),
             decision="approved",
-            comment="Approved — location premium confirmed.",
+            comment="Approved — project design evidence confirmed.",
             reviewer_subject="ceo@example.com",
             reviewer_is_ceo=True,
+            evidence_review_acknowledged=True,
         )
         published = await governance.mark_published(
             proposal_id=uuid.UUID(str(proposal["id"])), actor_expert_id=author_id
@@ -634,7 +705,7 @@ async def _publish_market_value_assertion(
             feature_definition_id=feature_id,
             created_by_expert_id=author_id,
             assertion_kind="value",
-            normalized_numeric=Decimal(normalized_value),
+            **await _value_mode_kwargs(feature_id, feature_key, normalized_value),
             rationale="Central bank held the policy rate steady this quarter.",
             methodology="Direct read of the published policy bulletin.",
             evidence_summary="See attached central bank bulletin, page 1.",
@@ -647,6 +718,7 @@ async def _publish_market_value_assertion(
             author_subject="market-analyst@example.com",
         )
         document = await governance.register_evidence_document(
+            project_id=PROJECT_ID,
             proposal_id=uuid.UUID(str(proposal["id"])),
             uploaded_by_expert_id=author_id,
             original_filename="central-bank-bulletin-q2-2026.pdf",
@@ -655,6 +727,7 @@ async def _publish_market_value_assertion(
             sha256_checksum="c" * 64,
             file_size_bytes=2048,
         )
+        await _mark_evidence_ready(uuid.UUID(str(document["id"])))
         await governance.link_evidence_to_justification(
             document_id=uuid.UUID(str(document["id"])),
             feature_justification_id=uuid.UUID(str(justification["id"])),
@@ -666,6 +739,7 @@ async def _publish_market_value_assertion(
             comment="Approved — bulletin verified.",
             reviewer_subject="market-ceo@example.com",
             reviewer_is_ceo=True,
+            evidence_review_acknowledged=True,
         )
         published = await governance.mark_published(
             proposal_id=uuid.UUID(str(proposal["id"])), actor_expert_id=author_id
@@ -693,11 +767,12 @@ async def test_eligible_project_value_yields_partial_hierarchical_with_exact_dec
     )
     assert hr.written == 5
 
-    # U (u1) = 0.5900 (LEGACY_SCORES), P = 0.80, W_P = 0.25, W_U = 0.40.
-    # F = (0.25*0.80 + 0.40*0.59) / 0.65 = 0.436 / 0.65 = 0.67076923...
-    # ROUND_HALF_UP to 4dp (engine.py's own rounding, unchanged) = 0.6708.
+    # (0046) project_design_score is rubric-backed: requested 0.80 snaps to
+    # the canonical 0.75 band. U=0.5900, P=0.7500, W_P=0.25, W_U=0.40.
+    # F = (0.25*0.75 + 0.40*0.59) / 0.65 = 0.4235 / 0.65 = 0.651538...
+    # ROUND_HALF_UP to 4dp (engine.py's own rounding, unchanged) = 0.6515.
     row = await _score_row(factory, UNIT_IDS["u1"])
-    assert row["hierarchical_score"] == Decimal("0.6708")
+    assert row["hierarchical_score"] == Decimal("0.6515")
     assert row["hierarchical_score"] != row["score"], "partial composition must differ from legacy U alone"
 
     c = row["hierarchical_contributions"]
@@ -708,7 +783,7 @@ async def test_eligible_project_value_yields_partial_hierarchical_with_exact_dec
         "area": {"reason": "NO_PUBLISHED_AREA_EXPERT_VALUE"},
     }
     assert c["grains"]["project"]["eligible"] is True
-    assert c["grains"]["project"]["score"] == "0.8000"
+    assert c["grains"]["project"]["score"] == "0.7500"
     assert c["grains"]["project"]["coverage"] == "1.0"
     assert c["grains"]["project"]["snapshot_id"]
     assert len(c["grains"]["project"]["feature_value_ids"]) == 1
@@ -740,7 +815,7 @@ async def test_repeated_run_reuses_the_same_materialized_value_no_duplicate(fact
     assert count == 1
 
     row = await _score_row(factory, UNIT_IDS["u1"])
-    assert row["hierarchical_score"] == Decimal("0.6708")
+    assert row["hierarchical_score"] == Decimal("0.6515")
 
 
 async def test_a_second_ranking_run_gets_its_own_pinned_snapshot_copy(factory):
@@ -787,7 +862,7 @@ async def test_a_second_ranking_run_gets_its_own_pinned_snapshot_copy(factory):
     assert value_count == 2, "each run's snapshot pins its own copy of the value, not a shared reference"
 
     row = await _score_row(factory, UNIT_IDS["u1"])
-    assert row["hierarchical_score"] == Decimal("0.6708"), "replay is stable across repeated runs"
+    assert row["hierarchical_score"] == Decimal("0.6515"), "replay is stable across repeated runs"
 
 
 async def test_no_eligible_value_for_a_different_feature_key_stays_unit_only(factory):
@@ -925,18 +1000,23 @@ async def test_materializer_rejects_a_market_scope_assertion_even_if_called_dire
         proposal = await governance.create_proposal(
             project_id=PROJECT_ID, created_by_expert_id=author_id, assertion_kind="value", scope_type="market"
         )
+        rubric = await governance.create_feature_rubric(
+            feature_definition_id=feature_id, bands=_TEST_RUBRIC_BANDS, created_by="test-fixture"
+        )
         justification = await governance.upsert_justification(
             proposal_id=uuid.UUID(str(proposal["id"])),
             feature_definition_id=feature_id,
             created_by_expert_id=author_id,
             assertion_kind="value",
-            normalized_numeric=Decimal("0.5"),
+            rubric_id=uuid.UUID(str(rubric["id"])),
+            rubric_band_value=Decimal("0.50"),
             rationale="r", methodology="m", evidence_summary="e",
             expected_effect="increase", confidence="medium", limitations="l",
             effective_at=now, external_source_citation="Central bank bulletin Q2 2026",
             author_subject="analyst-market@example.com",
         )
         document = await governance.register_evidence_document(
+            project_id=PROJECT_ID,
             proposal_id=uuid.UUID(str(proposal["id"])),
             uploaded_by_expert_id=author_id,
             original_filename="rate.pdf",
@@ -945,6 +1025,7 @@ async def test_materializer_rejects_a_market_scope_assertion_even_if_called_dire
             sha256_checksum="b" * 64,
             file_size_bytes=512,
         )
+        await _mark_evidence_ready(uuid.UUID(str(document["id"])))
         await governance.link_evidence_to_justification(
             document_id=uuid.UUID(str(document["id"])), feature_justification_id=uuid.UUID(str(justification["id"]))
         )
@@ -953,6 +1034,7 @@ async def test_materializer_rejects_a_market_scope_assertion_even_if_called_dire
             proposal_id=uuid.UUID(str(proposal["id"])),
             decision="approved", comment="Approved.",
             reviewer_subject="ceo-market@example.com", reviewer_is_ceo=True,
+            evidence_review_acknowledged=True,
         )
         await governance.mark_published(proposal_id=uuid.UUID(str(proposal["id"])), actor_expert_id=author_id)
     finally:
@@ -1055,33 +1137,26 @@ async def test_eligible_market_value_composes_with_project_u_m_p(factory):
         PROJECT_ID, result.run_id, result.config_version_id, session_factory=factory
     )
 
+    # (0046) `market_interest_rate` is RUBRIC_REQUIRED — "0.60" snaps to the
+    # nearest canonical band, 0.50 (see `_value_mode_kwargs`).
     # VALID_HIERARCHICAL_WEIGHTS' market block orients `market_interest_rate`
-    # as "negative" (a higher rate is worse) — M = oriented(0.60, "negative")
-    # = 1 - 0.60 = 0.40, computed by `engine.score_unit()` unchanged, same as
+    # as "negative" (a higher rate is worse) — M = oriented(0.50, "negative")
+    # = 1 - 0.50 = 0.50, computed by `engine.score_unit()` unchanged, same as
     # every other grain call.
-    # U=0.5900, P=0.80, M=0.40, W_U=0.40, W_P=0.25, W_M=0.10.
-    # F = (0.10*0.40 + 0.25*0.80 + 0.40*0.59) / 0.75
-    #   = (0.04 + 0.20 + 0.236) / 0.75 = 0.476 / 0.75 = 0.63466666...
-    # ROUND_HALF_UP to 4dp = 0.6347.
+    # U=0.5900, P=0.7500 (rubric band), M=0.5000, W_U=0.40, W_P=0.25,
+    # W_M=0.10. F = (0.10*0.50 + 0.25*0.75 + 0.40*0.59) / 0.75
+    #   = (0.05 + 0.1875 + 0.236) / 0.75 = 0.4735 / 0.75 = 0.631333... .
     row = await _score_row(factory, UNIT_IDS["u1"])
-    assert row["hierarchical_score"] == Decimal("0.6347")
+    assert row["hierarchical_score"] == Decimal("0.6313")
 
     c = row["hierarchical_contributions"]
     assert c["score_mode"] == "partial_hierarchical"
     assert set(c["eligible_grains"]) == {"market", "project"}
     assert c["excluded_grains"] == {"area": {"reason": "NO_PUBLISHED_AREA_EXPERT_VALUE"}}
     assert c["grains"]["market"]["eligible"] is True
-    assert c["grains"]["market"]["score"] == "0.4000"
+    assert c["grains"]["market"]["score"] == "0.5000"
     assert c["grains"]["market"]["snapshot_id"]
     assert len(c["grains"]["market"]["feature_value_ids"]) == 1
-    # 0.10/0.75 and 0.40/0.75 are repeating thirds — each term is
-    # independently quantized to 6dp (pre-existing PR-1 disclosure-only
-    # rounding, not a scoring bug: the actual `hierarchical_score` above is
-    # exact), so the disclosed sum can land a single unit of the last
-    # decimal place away from 1 for this particular three-grain weight
-    # split. `test_effective_weights_sum_to_one_for_scored_non_gated_output`
-    # (PR-1) already covers the exact-sum case with a weight split that
-    # doesn't hit repeating thirds.
     total_effective = sum(Decimal(v) for v in c["effective_grain_weights"].values())
     assert abs(total_effective - Decimal("1")) <= Decimal("0.000001")
 
@@ -1095,11 +1170,11 @@ async def test_eligible_market_value_alone_composes_u_plus_m(factory):
         PROJECT_ID, result.run_id, result.config_version_id, session_factory=factory
     )
 
-    # M = oriented(0.60, "negative") = 0.40 (same orientation as the combined
-    # test above). U=0.5900, M=0.40, W_U=0.40, W_M=0.10.
-    # F = (0.10*0.40 + 0.40*0.59) / 0.50 = (0.04 + 0.236) / 0.50 = 0.552.
+    # (0046) "0.60" snaps to band 0.50 (see above).
+    # M = oriented(0.50, "negative") = 0.50. U=0.5900, M=0.50, W_U=0.40, W_M=0.10.
+    # F = (0.10*0.50 + 0.40*0.59) / 0.50 = (0.05 + 0.236) / 0.50 = 0.572.
     row = await _score_row(factory, UNIT_IDS["u1"])
-    assert row["hierarchical_score"] == Decimal("0.5520")
+    assert row["hierarchical_score"] == Decimal("0.5720")
     c = row["hierarchical_contributions"]
     assert c["score_mode"] == "partial_hierarchical"
     assert c["eligible_grains"] == ["market"]
@@ -1200,7 +1275,9 @@ async def test_market_credit_policy_uses_the_90_day_default_shelf_life(factory):
     )
     row = await _score_row(factory, UNIT_IDS["u1"])
     assert row["hierarchical_contributions"]["grains"]["market"]["eligible"] is True
-    assert row["hierarchical_contributions"]["grains"]["market"]["score"] == "0.7000"
+    # (0046) `market_credit_policy` is RUBRIC_REQUIRED — "0.70" snaps to the
+    # nearest canonical band, 0.75.
+    assert row["hierarchical_contributions"]["grains"]["market"]["score"] == "0.7500"
 
 
 async def test_future_effective_market_value_is_excluded(factory):
@@ -1403,7 +1480,7 @@ async def _publish_area_value_assertion(
             feature_definition_id=feature_id,
             created_by_expert_id=author_id,
             assertion_kind="value",
-            normalized_numeric=Decimal(normalized_value),
+            **await _value_mode_kwargs(feature_id, feature_key, normalized_value),
             rationale="Accessibility improved after new road opened.",
             methodology="On-site survey against 3 comparable areas.",
             evidence_summary="See attached accessibility survey, page 2.",
@@ -1415,6 +1492,7 @@ async def _publish_area_value_assertion(
             author_subject=author_subject,
         )
         document = await governance.register_evidence_document(
+            project_id=PROJECT_ID,
             proposal_id=uuid.UUID(str(proposal["id"])),
             uploaded_by_expert_id=author_id,
             original_filename="area-accessibility-survey.pdf",
@@ -1423,6 +1501,7 @@ async def _publish_area_value_assertion(
             sha256_checksum="c" * 64,
             file_size_bytes=1024,
         )
+        await _mark_evidence_ready(uuid.UUID(str(document["id"])))
         await governance.link_evidence_to_justification(
             document_id=uuid.UUID(str(document["id"])),
             feature_justification_id=uuid.UUID(str(justification["id"])),
@@ -1434,6 +1513,7 @@ async def _publish_area_value_assertion(
             comment="Approved — accessibility improvement confirmed.",
             reviewer_subject="ceo-area@example.com",
             reviewer_is_ceo=True,
+            evidence_review_acknowledged=True,
         )
         published = await governance.mark_published(
             proposal_id=uuid.UUID(str(proposal["id"])), actor_expert_id=author_id
@@ -1521,15 +1601,17 @@ async def test_eligible_area_expert_value_composes_u_plus_a(factory):
         PROJECT_ID, result.run_id, result.config_version_id, session_factory=factory
     )
 
-    # A=0.70, W_A=0.25, U=0.59, W_U=0.40.
-    # F = (0.25*0.70 + 0.40*0.59)/0.65 = (0.175+0.236)/0.65 = 0.411/0.65
-    #   = 0.632307... -> 0.6323.
+    # (0046) `area_accessibility` is RUBRIC_REQUIRED — "0.70" snaps to the
+    # nearest canonical band, 0.75.
+    # A=0.75, W_A=0.25, U=0.59, W_U=0.40.
+    # F = (0.25*0.75 + 0.40*0.59)/0.65 = (0.1875+0.236)/0.65 = 0.4235/0.65
+    #   = 0.651538... -> 0.6515.
     row = await _score_row(factory, UNIT_IDS["u1"])
-    assert row["hierarchical_score"] == Decimal("0.6323")
+    assert row["hierarchical_score"] == Decimal("0.6515")
     c = row["hierarchical_contributions"]
     assert c["score_mode"] == "partial_hierarchical"
     assert c["eligible_grains"] == ["area"]
-    assert c["grains"]["area"]["score"] == "0.7000"
+    assert c["grains"]["area"]["score"] == "0.7500"
     assert c["grains"]["area"]["crm_feature_keys"] == []
     assert c["grains"]["area"]["expert_feature_keys"] == ["area_accessibility"]
     assert c["grains"]["area"]["snapshot_id"]
@@ -1561,8 +1643,9 @@ async def test_missing_expert_area_value_does_not_erase_crm_only_area_score(fact
     )
     row = await _score_row(factory, UNIT_IDS["u1"])
     c = row["hierarchical_contributions"]
-    # A = (0.5*1.0 + 0.5*0.70)/(0.5+0.5) = (0.5+0.35)/1.0 = 0.85.
-    assert c["grains"]["area"]["score"] == "0.8500"
+    # (0046) "0.70" snaps to band 0.75. A = (0.5*1.0 + 0.5*0.75)/(0.5+0.5)
+    # = (0.5+0.375)/1.0 = 0.875.
+    assert c["grains"]["area"]["score"] == "0.8750"
     assert c["grains"]["area"]["crm_feature_keys"] == ["area_velocity_norm"]
     assert c["grains"]["area"]["expert_feature_keys"] == ["area_accessibility"]
     assert c["grains"]["area"]["score"] != first_area_score
@@ -1576,8 +1659,9 @@ async def test_u_plus_project_plus_area_partial_composition(factory):
     await compute_hierarchical_scores_for_run(
         PROJECT_ID, result.run_id, result.config_version_id, session_factory=factory
     )
-    # P=0.80,W_P=0.25; A=0.70,W_A=0.25; U=0.59,W_U=0.40. Sum=0.90.
-    # F=(0.20+0.175+0.236)/0.90=0.611/0.90=0.678888... -> 0.6789.
+    # (0046) "0.70" snaps to band 0.75.
+    # P=0.75,W_P=0.25; A=0.75,W_A=0.25; U=0.59,W_U=0.40. Sum=0.90.
+    # F=(0.1875+0.1875+0.236)/0.90=0.611/0.90=0.678888... -> 0.6789.
     row = await _score_row(factory, UNIT_IDS["u1"])
     assert row["hierarchical_score"] == Decimal("0.6789")
     c = row["hierarchical_contributions"]
@@ -1594,10 +1678,12 @@ async def test_u_plus_market_plus_area_partial_composition(factory):
     await compute_hierarchical_scores_for_run(
         PROJECT_ID, result.run_id, result.config_version_id, session_factory=factory
     )
-    # M=0.40 (oriented),W_M=0.10; A=0.70,W_A=0.25; U=0.59,W_U=0.40. Sum=0.75.
-    # F=(0.04+0.175+0.236)/0.75=0.451/0.75=0.601333... -> 0.6013.
+    # (0046) "0.60" snaps to band 0.50 (market, oriented negative -> 0.50);
+    # "0.70" snaps to band 0.75 (area).
+    # M=0.50 (oriented),W_M=0.10; A=0.75,W_A=0.25; U=0.59,W_U=0.40. Sum=0.75.
+    # F=(0.05+0.1875+0.236)/0.75=0.4735/0.75=0.631333... -> 0.6313.
     row = await _score_row(factory, UNIT_IDS["u1"])
-    assert row["hierarchical_score"] == Decimal("0.6013")
+    assert row["hierarchical_score"] == Decimal("0.6313")
     c = row["hierarchical_contributions"]
     assert c["score_mode"] == "partial_hierarchical"
     assert set(c["eligible_grains"]) == {"market", "area"}
@@ -1615,11 +1701,12 @@ async def test_full_hierarchical_composition_u_plus_m_plus_p_plus_a(factory):
     await compute_hierarchical_scores_for_run(
         PROJECT_ID, result.run_id, result.config_version_id, session_factory=factory
     )
-    # M=0.40,W_M=0.10; P=0.80,W_P=0.25; A=0.70,W_A=0.25; U=0.59,W_U=0.40. Sum=1.0.
-    # F=0.04+0.20+0.175+0.236=0.651 -> exactly 0.6510 (no repeating decimal
+    # (0046) "0.60"->band 0.50 (market, oriented); "0.70"->band 0.75 (area).
+    # M=0.50,W_M=0.10; P=0.75,W_P=0.25; A=0.75,W_A=0.25; U=0.59,W_U=0.40. Sum=1.0.
+    # F=0.05+0.1875+0.1875+0.236=0.661 -> exactly 0.6610.
     # since the weight split sums exactly to 1 here).
     row = await _score_row(factory, UNIT_IDS["u1"])
-    assert row["hierarchical_score"] == Decimal("0.6510")
+    assert row["hierarchical_score"] == Decimal("0.6610")
     c = row["hierarchical_contributions"]
     assert c["score_mode"] == "full_hierarchical"
     assert set(c["eligible_grains"]) == {"market", "project", "area"}
@@ -1805,8 +1892,10 @@ async def test_two_areas_in_the_same_project_have_independent_area_scores_and_tr
 
     c1 = row_area1["hierarchical_contributions"]
     c2 = row_area2["hierarchical_contributions"]
+    # (0046) `area_accessibility` is RUBRIC_REQUIRED — "0.90" snaps to the
+    # nearest canonical band, 1.00.
     assert c1["grains"]["area"]["eligible"] is True
-    assert c1["grains"]["area"]["score"] == "0.9000"
+    assert c1["grains"]["area"]["score"] == "1.0000"
     assert c2["grains"]["area"]["eligible"] is False
     assert c2["grains"]["area"]["exclusion_reason"] == "NO_PUBLISHED_AREA_EXPERT_VALUE"
 
@@ -1837,17 +1926,302 @@ async def test_same_area_ordering_is_invariant_to_a_shared_area_score_change(fac
     assert u2 > u1
 
 
-# --- Legal gate (D27) — documented, deferred -----------------------------------
+# --- Legal gate (D27, PR-6) ---------------------------------------------------
 
 
-@pytest.mark.skip(
-    reason=(
-        "No legal-status source or seam exists anywhere in this repository yet "
-        "(D27's HIGH_RISK gate) -- _legal_status_for_project() is a documented "
-        "stub that always returns NOT_AVAILABLE; PR-1 ships no writer that could "
-        "ever set HIGH_RISK. Real coverage is deferred to the PR that adds a "
-        "legal-status source, per the owner instruction not to fabricate one here."
+LEGAL_FEATURE_KEY = "project_legal_status"
+
+
+async def _publish_legal_value_assertion(
+    factory,
+    *,
+    categorical_value: str = "HIGH_RISK",
+    effective_at: datetime | None = None,
+    expires_at: datetime | None = None,
+    author_subject: str = "legal-analyst@example.com",
+    reviewer_subject: str = "ceo-legal@example.com",
+) -> dict:
+    """Same real-`governance`-service draft -> evidence -> submit -> CEO-
+    approve -> publish lifecycle as `_publish_project_value_assertion()`
+    et al., `scope_type='project'`, categorical `project_legal_status`.
+    Get-or-create the feature definition by `feature_key` (`truncate_all`
+    wipes `ranking_feature_definitions` every test, same reasoning as the
+    Market/Area helpers above)."""
+    from src.models.tables import ranking_feature_definitions
+    from src.services import governance
+
+    original_factory = governance.get_session_factory
+    try:
+        governance.get_session_factory = lambda: factory  # type: ignore[assignment]
+
+        async with factory() as session:
+            feature_id = await session.scalar(
+                sa.select(ranking_feature_definitions.c.id).where(
+                    ranking_feature_definitions.c.feature_key == LEGAL_FEATURE_KEY
+                )
+            )
+            if feature_id is None:
+                feature_id = uuid.uuid4()
+                now = datetime.now(UTC)
+                await session.execute(
+                    sa.insert(ranking_feature_definitions).values(
+                        id=feature_id,
+                        feature_key=LEGAL_FEATURE_KEY,
+                        feature_version="v1",
+                        name="Project legal status",
+                        category="legal",
+                        grain="project",
+                        value_type="categorical",
+                        formula_id="expert_value_assertion",
+                        normalization_method="none",
+                        direction="neutral",
+                        missing_policy="skip",
+                        status="active",
+                        definition_metadata={
+                            "allowed_categorical_values": ["HIGH_RISK", "NOT_HIGH_RISK", "UNKNOWN"]
+                        },
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                await session.commit()
+            else:
+                await session.rollback()
+
+        author = await governance.get_or_create_expert_profile(identity_subject=author_subject)
+        author_id = uuid.UUID(str(author["id"]))
+
+        proposal = await governance.create_proposal(
+            project_id=PROJECT_ID,
+            created_by_expert_id=author_id,
+            assertion_kind="value",
+            scope_type="project",
+        )
+        justification = await governance.upsert_justification(
+            proposal_id=uuid.UUID(str(proposal["id"])),
+            feature_definition_id=feature_id,
+            created_by_expert_id=author_id,
+            assertion_kind="value",
+            categorical_value=categorical_value,
+            rationale="Outside counsel memo flags an unresolved title dispute.",
+            methodology="Legal review of the project's land-use documentation.",
+            evidence_summary="See attached counsel memo, page 1.",
+            expected_effect="decrease" if categorical_value == "HIGH_RISK" else "neutral",
+            confidence="high",
+            limitations="Single-counsel review.",
+            effective_at=effective_at,
+            expires_at=expires_at,
+            author_subject=author_subject,
+        )
+        document = await governance.register_evidence_document(
+            project_id=PROJECT_ID,
+            proposal_id=uuid.UUID(str(proposal["id"])),
+            uploaded_by_expert_id=author_id,
+            original_filename="legal-memo.pdf",
+            mime_type="application/pdf",
+            object_storage_key=f"evidence/{uuid.uuid4().hex}.pdf",
+            sha256_checksum="d" * 64,
+            file_size_bytes=1024,
+        )
+        await _mark_evidence_ready(uuid.UUID(str(document["id"])))
+        await governance.link_evidence_to_justification(
+            document_id=uuid.UUID(str(document["id"])),
+            feature_justification_id=uuid.UUID(str(justification["id"])),
+        )
+        await governance.submit_proposal(proposal_id=uuid.UUID(str(proposal["id"])), actor_expert_id=author_id)
+        await governance.submit_review(
+            proposal_id=uuid.UUID(str(proposal["id"])),
+            decision="approved",
+            comment=f"Approved — {categorical_value}.",
+            reviewer_subject=reviewer_subject,
+            reviewer_is_ceo=True,
+            evidence_review_acknowledged=True,
+        )
+        published = await governance.mark_published(
+            proposal_id=uuid.UUID(str(proposal["id"])), actor_expert_id=author_id
+        )
+        assert published["status"] == "published"
+        return {"proposal": proposal, "justification": justification}
+    finally:
+        governance.get_session_factory = original_factory
+
+
+async def test_no_legal_assertion_yields_unknown_no_gate_and_unit_only_d37_unchanged(factory):
+    result = await _run_with(factory, hierarchical_weights=VALID_HIERARCHICAL_WEIGHTS)
+    await compute_hierarchical_scores_for_run(
+        PROJECT_ID, result.run_id, result.config_version_id, session_factory=factory
     )
-)
-async def test_high_risk_legal_status_yields_null_hierarchical_score_without_changing_legacy(factory):
-    ...
+    row = await _score_row(factory, UNIT_IDS["u1"])
+    assert row["hierarchical_score"] == Decimal(LEGACY_SCORES["u1"])
+    assert row["hierarchical_contributions"]["legal_gate"]["status"] == "UNKNOWN"
+    assert row["hierarchical_contributions"]["legal_gate"]["gated"] is False
+    assert row["hierarchical_contributions"]["legal_gate"]["reason"] == "NO_PUBLISHED_LEGAL_ASSERTION"
+    assert row["hierarchical_contributions"]["score_mode"] == "unit_only"
+
+
+async def test_explicit_unknown_legal_assertion_does_not_gate_and_is_disclosed(factory):
+    await _run_with(factory, hierarchical_weights=VALID_HIERARCHICAL_WEIGHTS)
+    await _publish_legal_value_assertion(factory, categorical_value="UNKNOWN")
+    result = await run_ranking(PROJECT_ID, session_factory=factory)
+    await compute_hierarchical_scores_for_run(
+        PROJECT_ID, result.run_id, result.config_version_id, session_factory=factory
+    )
+    row = await _score_row(factory, UNIT_IDS["u1"])
+    gate = row["hierarchical_contributions"]["legal_gate"]
+    assert gate["status"] == "UNKNOWN"
+    assert gate["gated"] is False
+    assert gate["feature_value_id"] is not None, "an explicit UNKNOWN assertion is a real snapshot value"
+    assert row["hierarchical_score"] is not None
+
+
+async def test_not_high_risk_legal_assertion_does_not_gate_and_d37_score_is_unchanged(factory):
+    await _run_with(factory, hierarchical_weights=VALID_HIERARCHICAL_WEIGHTS)
+    await _publish_legal_value_assertion(factory, categorical_value="NOT_HIGH_RISK")
+    result = await run_ranking(PROJECT_ID, session_factory=factory)
+    await compute_hierarchical_scores_for_run(
+        PROJECT_ID, result.run_id, result.config_version_id, session_factory=factory
+    )
+    row = await _score_row(factory, UNIT_IDS["u1"])
+    gate = row["hierarchical_contributions"]["legal_gate"]
+    assert gate["status"] == "NOT_HIGH_RISK"
+    assert gate["gated"] is False
+    assert "note" in gate, "NOT_HIGH_RISK must disclose reviewed status without claiming a legal guarantee"
+    assert row["hierarchical_score"] == Decimal(LEGACY_SCORES["u1"])
+    assert row["hierarchical_contributions"]["score_mode"] == "unit_only"
+
+
+async def test_high_risk_legal_assertion_gates_every_scored_unit_in_the_project(factory):
+    await _run_with(factory, hierarchical_weights=VALID_HIERARCHICAL_WEIGHTS)
+    await _publish_legal_value_assertion(factory, categorical_value="HIGH_RISK")
+    result = await run_ranking(PROJECT_ID, session_factory=factory)
+    await compute_hierarchical_scores_for_run(
+        PROJECT_ID, result.run_id, result.config_version_id, session_factory=factory
+    )
+    for key in ("u1", "u2", "u3"):  # u4 is legacy-skipped, no ranking_scores row
+        row = await _score_row(factory, UNIT_IDS[key])
+        assert row["hierarchical_score"] is None
+        contributions = row["hierarchical_contributions"]
+        assert contributions["score_mode"] == "legal_gated"
+        assert contributions["hierarchical_score"] is None
+        assert contributions["legal_gate"]["status"] == "HIGH_RISK"
+        assert contributions["legal_gate"]["gated"] is True
+        assert contributions["legal_gate"]["source"] == "snapshot"
+        assert contributions["legal_gate"]["snapshot_id"]
+        assert contributions["legal_gate"]["feature_value_id"]
+        assert contributions["legal_gate"]["source_justification_id"]
+        assert contributions["legal_gate"]["reviewer_subject"] is None, "no raw OIDC subject in a score response"
+        assert contributions["legal_gate"]["reviewer_expert_id"], "a non-PII ID reference must still be present"
+        assert contributions["excluded_grains"] == {
+            "market": {"reason": "LEGAL_GATE"},
+            "project": {"reason": "LEGAL_GATE"},
+            "area": {"reason": "LEGAL_GATE"},
+            "unit": {"reason": "LEGAL_GATE"},
+        }
+        assert contributions["eligible_grains"] == []
+
+
+async def test_high_risk_never_changes_legacy_score_ranks_or_legacy_contributions(factory):
+    """Legacy `score`/`rank_in_area`/`rank_in_project`/`contributions` come
+    ENTIRELY from `run_ranking()`'s own legacy step, which has no knowledge
+    of Legal at all — they must be identical to every other test's
+    unit-only baseline (`LEGACY_SCORES`), regardless of whether the
+    hierarchical step later gates the run."""
+    baseline_result = await _run_with(factory, hierarchical_weights=VALID_HIERARCHICAL_WEIGHTS)
+    baseline = await _score_row(factory, UNIT_IDS["u1"])
+
+    await _publish_legal_value_assertion(factory, categorical_value="HIGH_RISK")
+    gated_result = await run_ranking(PROJECT_ID, session_factory=factory)
+    await compute_hierarchical_scores_for_run(
+        PROJECT_ID, gated_result.run_id, gated_result.config_version_id, session_factory=factory
+    )
+    gated = await _score_row(factory, UNIT_IDS["u1"])
+
+    assert gated["score"] == baseline["score"] == Decimal(LEGACY_SCORES["u1"])
+    assert gated["rank_in_area"] == baseline["rank_in_area"]
+    assert gated["rank_in_project"] == baseline["rank_in_project"]
+    assert gated["contributions"] == baseline["contributions"]
+    assert gated["hierarchical_score"] is None
+    assert gated["ranking_run_id"] != baseline_result.run_id, "sanity: two distinct runs were actually compared"
+
+
+async def test_high_risk_blocks_full_hierarchical_composition_equally(factory):
+    """A project with Market/Project/Area ALL eligible (would otherwise be
+    `full_hierarchical`) must still gate to `hierarchical_score = NULL` —
+    the gate fires BEFORE any grain-eligibility check, never merely when
+    fewer parents are available (§24.4.5)."""
+    await _run_with(factory, hierarchical_weights=VALID_HIERARCHICAL_WEIGHTS)
+    await _publish_project_value_assertion(factory)
+    await _publish_market_value_assertion(factory)
+    await _publish_area_value_assertion(factory)
+    await _publish_legal_value_assertion(factory, categorical_value="HIGH_RISK")
+    result = await run_ranking(PROJECT_ID, session_factory=factory)
+    await compute_hierarchical_scores_for_run(
+        PROJECT_ID, result.run_id, result.config_version_id, session_factory=factory
+    )
+    row = await _score_row(factory, UNIT_IDS["u1"])
+    assert row["hierarchical_score"] is None
+    assert row["hierarchical_contributions"]["score_mode"] == "legal_gated"
+
+
+async def test_later_high_risk_publish_does_not_rewrite_an_old_runs_snapshot_or_result(factory):
+    result = await _run_with(factory, hierarchical_weights=VALID_HIERARCHICAL_WEIGHTS)
+    await compute_hierarchical_scores_for_run(
+        PROJECT_ID, result.run_id, result.config_version_id, session_factory=factory
+    )
+    before = await _score_row(factory, UNIT_IDS["u1"])
+    assert before["hierarchical_contributions"]["legal_gate"]["status"] == "UNKNOWN"
+
+    await _publish_legal_value_assertion(factory, categorical_value="HIGH_RISK")
+    # Re-invoking the SAME run must reuse its own already-pinned Legal
+    # snapshot (idempotent get-or-create), never re-select from governance.
+    await compute_hierarchical_scores_for_run(
+        PROJECT_ID, result.run_id, result.config_version_id, session_factory=factory
+    )
+    after = await _score_row(factory, UNIT_IDS["u1"])
+    assert after["hierarchical_contributions"]["legal_gate"]["status"] == "UNKNOWN"
+    assert after["hierarchical_score"] == before["hierarchical_score"]
+
+
+async def test_a_new_run_at_a_later_cutoff_gates_once_high_risk_is_eligible(factory):
+    await _run_with(factory, hierarchical_weights=VALID_HIERARCHICAL_WEIGHTS)
+    await _publish_legal_value_assertion(factory, categorical_value="HIGH_RISK")
+    new_result = await run_ranking(PROJECT_ID, session_factory=factory)
+    await compute_hierarchical_scores_for_run(
+        PROJECT_ID, new_result.run_id, new_result.config_version_id, session_factory=factory
+    )
+    row = await _score_row(factory, UNIT_IDS["u1"])
+    assert row["hierarchical_score"] is None
+    assert row["hierarchical_contributions"]["legal_gate"]["status"] == "HIGH_RISK"
+
+
+async def test_repeated_invocation_of_a_gated_run_is_deterministic_and_idempotent(factory):
+    await _run_with(factory, hierarchical_weights=VALID_HIERARCHICAL_WEIGHTS)
+    await _publish_legal_value_assertion(factory, categorical_value="HIGH_RISK")
+    result = await run_ranking(PROJECT_ID, session_factory=factory)
+    await compute_hierarchical_scores_for_run(
+        PROJECT_ID, result.run_id, result.config_version_id, session_factory=factory
+    )
+    first = await _score_row(factory, UNIT_IDS["u1"])
+    await compute_hierarchical_scores_for_run(
+        PROJECT_ID, result.run_id, result.config_version_id, session_factory=factory
+    )
+    second = await _score_row(factory, UNIT_IDS["u1"])
+    assert first["hierarchical_contributions"] == second["hierarchical_contributions"]
+    assert first["hierarchical_score"] is None
+    assert second["hierarchical_score"] is None
+
+
+async def test_a_project_without_high_risk_is_independently_unaffected_by_another_projects_gate(factory):
+    """Sanity check that the gate is read from THIS run's own project-scoped
+    Legal snapshot, not some global switch — exercised here by simply
+    confirming a project with no Legal assertion at all still composes D37
+    normally even after a HIGH_RISK helper has run earlier in the same test
+    session against the same PROJECT_ID fixture (i.e. no cross-test global
+    state leaks the gate)."""
+    result = await _run_with(factory, hierarchical_weights=VALID_HIERARCHICAL_WEIGHTS)
+    await compute_hierarchical_scores_for_run(
+        PROJECT_ID, result.run_id, result.config_version_id, session_factory=factory
+    )
+    row = await _score_row(factory, UNIT_IDS["u1"])
+    assert row["hierarchical_score"] is not None
+    assert row["hierarchical_contributions"]["legal_gate"]["gated"] is False

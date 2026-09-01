@@ -90,6 +90,7 @@ describe("AreaDetailPage trend and status catalog", () => {
 
     await waitFor(() => expect(getDashboardTrend).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByRole("heading", { name: "Xu hướng tiêu thụ" })).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Tồn kho" })).not.toBeInTheDocument();
     expect(getDashboardTrend).toHaveBeenCalledWith({ areaId: "area-internal-1", areaTotalUnits: 5, granularity: "day" });
     expect(getAreaByExternalId).toHaveBeenCalledWith("area-external-1");
     expect(listInventoryScoped).toHaveBeenCalledWith("project-external-1", {
@@ -148,7 +149,7 @@ describe("AreaDetailPage trend and status catalog", () => {
     expect(await screen.findByText("Xu hướng tiêu thụ")).toBeInTheDocument();
   });
 
-  it("preserves inventory loading data and lazy deals behavior", async () => {
+  it("preserves status data and lazy deals behavior", async () => {
     renderPage();
 
     expect(await screen.findAllByText("S-01")).not.toHaveLength(0);

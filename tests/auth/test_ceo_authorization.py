@@ -108,6 +108,7 @@ async def test_verified_crm_ceo_role_yields_subject_and_is_ceo_true(jwks):
     assert principal.role == "admin"
     assert principal.subject == "ceo-subject-1"
     assert principal.is_ceo is True
+    assert principal.oidc_roles == frozenset({"CRM.CEO"})
 
 
 async def test_generic_admin_role_without_raw_ceo_yields_is_ceo_false(jwks):
@@ -145,6 +146,7 @@ async def test_session_cookie_carries_is_ceo_through_issue_session(oidc_env, key
     principal = await dashboard_auth.authenticate_dashboard(None, session_token)
     assert principal.subject == "ceo-3"
     assert principal.is_ceo is True
+    assert principal.oidc_roles == frozenset({"CRM.CEO"})
 
 
 async def test_session_cookie_without_ceo_role_carries_is_ceo_false(oidc_env, keypair):
@@ -155,6 +157,7 @@ async def test_session_cookie_without_ceo_role_carries_is_ceo_false(oidc_env, ke
     principal = await dashboard_auth.authenticate_dashboard(None, session_token)
     assert principal.subject == "sales-1"
     assert principal.is_ceo is False
+    assert principal.oidc_roles == frozenset({"CRM.SALES"})
 
 
 async def test_sessions_issued_before_is_ceo_shipped_still_decode(oidc_env, keypair):

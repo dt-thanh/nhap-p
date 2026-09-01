@@ -439,7 +439,13 @@ def _default_config() -> SeedConfig:
 def main(argv: list[str] | None = None) -> int:
     defaults = _default_config()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dry-run", action="store_true", help="validate target and show counts without opening a DB connection")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument(
+        "--dry-run", action="store_true", help="validate target and show counts without opening a DB connection"
+    )
+    mode.add_argument(
+        "--confirm-seed", action="store_true", help="the only write path — requires an allowlisted, non-production target"
+    )
     parser.add_argument("--project", help="limit the seed to a project external id")
     parser.add_argument("--area", help="limit the seed to an area external id")
     parser.add_argument("--as-of-date", type=_parse_date, default=defaults.as_of_date)
@@ -450,6 +456,8 @@ def main(argv: list[str] | None = None) -> int:
     reset_group.add_argument("--no-reset", action="store_true", help="explicitly select the non-destructive default")
     parser.add_argument("--confirm-reset-demo-data", action="store_true", help="required together with --reset-demo-data")
     args = parser.parse_args(argv)
+    if args.reset_demo_data and not args.confirm_seed:
+        parser.error("--reset-demo-data requires --confirm-seed (this is a write)")
     if args.reset_demo_data and not args.confirm_reset_demo_data:
         parser.error("--reset-demo-data requires --confirm-reset-demo-data")
     if args.confirm_reset_demo_data and not args.reset_demo_data:
@@ -464,6 +472,7 @@ def main(argv: list[str] | None = None) -> int:
         app_environment=get_settings().app_env,
     )
     _print_report(metadata, config, plan, dry_run=args.dry_run)
+    print("*** NON-AUTHORITATIVE: not valid for CRM reconciliation or authoritative ranking. ***")
     if args.dry_run:
         return 0
     asyncio.run(

@@ -22,6 +22,7 @@ const PROJECT = {
   introduce: "Giới thiệu dự án",
   cover_image_url: null,
   source_revision: 1,
+  available_inventory_count: 70,
 };
 
 const AREAS = [
@@ -57,6 +58,11 @@ const AREAS = [
   },
 ];
 
+const COMPLETE_AREAS = AREAS.map((area) => ({
+  ...area,
+  units_remaining: area.external_id === "area-a" ? 40 : 30,
+}));
+
 function LocationProbe() {
   const location = useLocation();
   return <div data-testid="location">{location.pathname}{location.search}</div>;
@@ -73,8 +79,8 @@ function renderPage(initialEntries = ["/projects/project-a"]) {
   );
 }
 
-function resolvePage(areas = AREAS) {
-  getProjectByExternalId.mockResolvedValue(PROJECT);
+function resolvePage(areas = AREAS, project = PROJECT) {
+  getProjectByExternalId.mockResolvedValue(project);
   listAreasScoped.mockResolvedValue(areas);
   renderPage();
 }
@@ -85,13 +91,13 @@ describe("ProjectDetailPage area list", () => {
   });
 
   it("renders project context, launch date, KPI totals, and real area fields", async () => {
-    resolvePage();
+    resolvePage(COMPLETE_AREAS);
 
     expect(await screen.findByRole("heading", { name: "Ocean Park 1" })).toBeInTheDocument();
     expect(screen.getByText(/Mở bán 1\/1\/2026|Mở bán 01\/01\/2026/)).toBeInTheDocument();
     expect(screen.getByText("Mã dự án").nextSibling).toHaveTextContent("project-a");
     expect(screen.queryByRole("button", { name: "Nạp dữ liệu" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Xem bảng điều khiển" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Xem bảng điều khiển" })).not.toBeInTheDocument();
 
     expect(await screen.findAllByTestId("area-card")).toHaveLength(2);
     expect(screen.getByRole("heading", { name: "Sapphire 1" })).toBeInTheDocument();
@@ -104,8 +110,28 @@ describe("ProjectDetailPage area list", () => {
     expect(screen.getByText(/Ngày chốt tồn kho: 15\/8\/2026|Ngày chốt tồn kho: 15\/08\/2026/)).toBeInTheDocument();
 
     expect(screen.getByText("Tổng phân khu").nextSibling).toHaveTextContent("2");
-    expect(screen.getByText("Tổng số căn").nextSibling).toHaveTextContent("180");
-    expect(screen.getByText("Còn lại tổng cộng").nextSibling).toHaveTextContent("Chưa có dữ liệu");
+    const summary = screen.getByRole("region", { name: "Tổng quan phân khu" });
+    expect(within(summary).getByText("Tồn kho").nextSibling).toHaveTextContent("70");
+    expect(within(summary).queryByText("Tổng số căn")).not.toBeInTheDocument();
+    expect(within(summary).queryByText("Còn lại tổng cộng")).not.toBeInTheDocument();
+  });
+
+  it("aggregates the API-provided area counts for a different project without hard-coding", async () => {
+    const secondProject = { ...PROJECT, external_id: "project-b", name: "La Pura" };
+    getProjectByExternalId.mockResolvedValue(secondProject);
+    listAreasScoped.mockResolvedValue([
+      { ...AREAS[0], external_id: "tower-1", total_units: 12, units_remaining: 5 },
+      { ...AREAS[1], external_id: "tower-2", total_units: 8, units_remaining: 2 },
+    ]);
+    renderPage(["/projects/project-b"]);
+
+    expect(await screen.findByRole("heading", { name: "La Pura" })).toBeInTheDocument();
+    await screen.findAllByTestId("area-card");
+    const summary = screen.getByRole("region", { name: "Tổng quan phân khu" });
+    expect(within(summary).getByText("Tồn kho").nextSibling).toHaveTextContent("7");
+    expect(within(summary).queryByText("Tổng số căn")).not.toBeInTheDocument();
+    expect(within(summary).queryByText("Còn lại tổng cộng")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Xem bảng điều khiển" })).not.toBeInTheDocument();
   });
 
   it("uses the supplied cover and a safe fallback for missing cover and values", async () => {
@@ -123,11 +149,13 @@ describe("ProjectDetailPage area list", () => {
         snapshot_date: null,
         cover_image_url: null,
       },
-    ]);
+    ], { ...PROJECT, available_inventory_count: null });
 
     expect(await screen.findByTestId("area-cover-fallback")).toBeInTheDocument();
     expect(document.querySelector('img[src="/area-a.jpg"]')).toBeInTheDocument();
     expect(screen.getAllByText("Chưa có dữ liệu").length).toBeGreaterThan(1);
+    const summary = screen.getByRole("region", { name: "Tổng quan phân khu" });
+    expect(within(summary).getByText("Tồn kho").nextSibling).toHaveTextContent("Chưa có dữ liệu");
     expect(screen.queryByText("legacy-area-uuid")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Bảng điều khiển: Chưa có dữ liệu/ })).toBeDisabled();
   });
@@ -165,8 +193,9 @@ describe("ProjectDetailPage area list", () => {
     expect(screen.getByRole("link", { name: "Mở bảng điều khiển phân khu Sapphire 1" })).toHaveAttribute("href", "/projects/project-a/areas/area-a");
     expect(screen.queryByRole("link", { name: /area-uuid-1/ })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Xem bảng điều khiển" }));
-    expect(await screen.findByTestId("location")).toHaveTextContent("/projects/project-a/dashboard");
+    expect(screen.queryByRole("button", { name: "Xem bảng điều khiển" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("link", { name: "Mở bảng điều khiển phân khu Sapphire 1" }));
+    expect(await screen.findByTestId("location")).toHaveTextContent("/projects/project-a/areas/area-a");
   });
 
   it("keeps the detail page list-only and does not request dashboard data", async () => {

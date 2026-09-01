@@ -476,6 +476,7 @@ def issue_session(
         # cookie is read back. Persisting the CEO bit now is the only way it
         # survives into `DashboardPrincipal` on the session-cookie path.
         "is_ceo": "CRM.CEO" in identity.roles,
+        "oidc_roles": sorted(identity.roles),
         "iss": "absorbiq",
         "iat": now,
         "exp": now + get_settings().session_ttl_seconds,

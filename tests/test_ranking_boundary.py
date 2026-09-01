@@ -106,7 +106,7 @@ def test_no_module_writes_to_a_ranking_table_it_is_not_declared_for():
     assert writes == [], f"có module ghi vào bảng xếp hạng mà nó không được khai báo: {writes}"
 
 
-@pytest.mark.parametrize("module", ["engine.py", "ahp.py"])
+@pytest.mark.parametrize("module", ["engine.py", "ahp.py", "hierarchical_ahp.py"])
 def test_ranking_math_modules_are_pure_no_db_no_network(module):
     """§10.1: 'hàm tính điểm là hàm thuần, không I/O, không mạng'. Không module
     toán nào được import session/engine DB hay client mạng.
@@ -348,11 +348,32 @@ def test_the_backend_alembic_history_has_one_current_head():
         (`area_velocity_norm`/`area_conversion_norm`) CỐ Ý không có dòng nào
         ở đây, chúng vẫn là đặc trưng vận hành thuần (`_area_features()`),
         không bao giờ qua value-mode assertion.
+      * `0042_legal_assertion_gate` — PR-6: nới CHECK `scope_type` trên
+        `ranking_feature_snapshots`/`ranking_feature_values` sang
+        `IN ('project', 'market', 'area', 'legal')`, và nới hai CHECK hình
+        dạng (`ck_rfs_scope_shape`/`ck_rfv_scope_shape`) để `'legal'` cũng
+        buộc `area_id IS NULL` giống `'project'`/`'market'` — không index
+        UNIQUE mới nào cần thêm (`uq_rfs_run_project_scope_no_area` đã bao
+        MỌI scope_type có `area_id IS NULL`). Cộng thêm hạt giống: đúng một
+        `ranking_feature_definitions` grain `'project'`, `value_type`
+        `'categorical'` (`project_legal_status`), vocabulary tối giản D40
+        (`HIGH_RISK`/`NOT_HIGH_RISK`/`UNKNOWN`) ghi trong
+        `definition_metadata.allowed_categorical_values` — không phải một
+        CHECK bảng-rộng trên `categorical_value` (xem docstring migration).
+      * `0043_unit_enrichment_attributes` — schema migration THUẦN CỘNG THÊM:
+        một bảng MỚI, generic, không gắn với một dự án cụ thể nào
+        (`unit_enrichment_attributes`, FK tới `units.id`,
+        `UNIQUE(unit_id)`), cho dữ liệu bối cảnh/tham chiếu theo từng căn
+        (subdivision, tầng, giá niêm yết gốc, provenance/synthetic-origin).
+        KHÔNG chạm bốn bảng xếp hạng, KHÔNG chạm `ranking_feature_definitions`
+        (không hạt giống nào được thêm) — không có đường đọc nào từ
+        `src/ranking/` vào bảng này (xem
+        `tests/test_ranking/test_unit_enrichment_not_authoritative.py`).
 
     Test này ĐỎ mỗi khi có revision mới là TÍN HIỆU ĐÚNG, không phải hồi quy:
     ai cập nhật nó theo hiện thực mới thì đang làm đúng việc."""
     revisions = sorted(p.name for p in (REPO_ROOT / "alembic" / "versions").glob("*.py"))
-    assert len(revisions) == 43, f"số revision đã đổi: {len(revisions)} — {revisions}"
+    assert len(revisions) == 48, f"số revision đã đổi: {len(revisions)} — {revisions}"
     # Sắp theo tên: revision gộp `7022f5bfa250` đứng cuối vì tiền tố chữ, không
     # phải vì nó là head. Head thật là `0036_remove_historical_ranking`.
     assert "0036_remove_historical_ranking.py" in revisions
@@ -375,8 +396,14 @@ GOVERNANCE_TABLES = (
     "ranking_feature_justifications",
     "ranking_evidence_documents",
     "ranking_evidence_document_features",
+    "ranking_proposal_evidence_links",
     "ranking_proposal_reviews",
     "ranking_config_audit_events",
+    # 0044 (mandatory-scope item 4): document archive/delete lifecycle log.
+    "ranking_evidence_document_lifecycle_events",
+    # 0046: versioned evidence-to-value rubrics for qualitative assertions.
+    "ranking_feature_rubrics",
+    "ranking_feature_rubric_bands",
 )
 GOVERNANCE_ALLOWED_WRITERS: dict[str, set[str]] = {
     table: {"src/services/governance.py"} for table in GOVERNANCE_TABLES

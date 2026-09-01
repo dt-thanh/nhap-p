@@ -22,7 +22,7 @@ VALID = {
         "market_demand": {"weight": 0.5, "direction": "positive", "missing_value_policy": "neutral"},
     },
     "project": {
-        "expert_location_score": {"weight": 1.0, "direction": "positive", "missing_value_policy": "neutral"},
+        "project_design_score": {"weight": 1.0, "direction": "positive", "missing_value_policy": "neutral"},
     },
     "area": {
         "area_velocity_norm": {"weight": 1.0, "direction": "positive", "missing_value_policy": "neutral"},
@@ -42,6 +42,24 @@ def _copy() -> dict:
 
 def test_valid_hierarchical_weights_passes():
     validate_hierarchical_weights(_copy())  # no raise
+
+
+def test_empty_parent_grain_is_allowed_when_its_composition_weight_is_zero():
+    valid = _copy()
+    valid["project"] = {}
+    valid["grain_weights"]["project"]["weight"] = 0.0
+    valid["grain_weights"]["market"]["weight"] = 0.35
+
+    validate_hierarchical_weights(valid)  # no raise
+
+
+def test_empty_parent_grain_is_rejected_when_its_composition_weight_is_positive():
+    invalid = _copy()
+    invalid["project"] = {}
+
+    with pytest.raises(HierarchicalConfigError) as exc:
+        validate_hierarchical_weights(invalid)
+    assert exc.value.code == "HIERARCHICAL_GRAIN_EMPTY"
 
 
 def test_empty_is_rejected():
@@ -140,6 +158,50 @@ def test_grain_weights_negative_weight_is_rejected():
     with pytest.raises(HierarchicalConfigError) as exc:
         validate_hierarchical_weights(bad)
     assert exc.value.code == "HIERARCHICAL_GRAIN_WEIGHT_NEGATIVE"
+
+
+# --- Contextual-attribute guard (0046 follow-up, Rule 3) ---------------------
+#
+# Unlike flat `validate_weights()` (safe by construction via its KNOWN_FEATURES
+# allowlist), the hierarchical validator has no allowlist — any string key was
+# previously accepted. These tests prove `ENRICHMENT_SOURCED_FEATURE_KEYS`
+# (`src/ranking/enrichment_guard.py`) is now rejected here too, since no
+# governed promotion path exists yet for any of those names.
+
+
+@pytest.mark.parametrize("grain", ["market", "project", "area"])
+@pytest.mark.parametrize("contextual_key", ["floor", "view", "direction", "tower", "standard_price_vnd"])
+def test_contextual_enrichment_key_is_rejected_in_any_grain(grain, contextual_key):
+    bad = _copy()
+    bad[grain] = {contextual_key: {"weight": 1.0, "direction": "positive", "missing_value_policy": "neutral"}}
+    with pytest.raises(HierarchicalConfigError) as exc:
+        validate_hierarchical_weights(bad)
+    assert exc.value.code == "CONTEXTUAL_FEATURE_NOT_WEIGHTABLE"
+
+
+def test_contextual_enrichment_key_alongside_a_valid_key_is_still_rejected():
+    """A contextual key must be rejected even when mixed in with otherwise-valid
+    keys in the same grain block — not silently skipped while the rest of the
+    block passes."""
+    bad = _copy()
+    bad["area"]["floor"] = {"weight": 0.0, "direction": "positive", "missing_value_policy": "neutral"}
+    with pytest.raises(HierarchicalConfigError) as exc:
+        validate_hierarchical_weights(bad)
+    assert exc.value.code == "CONTEXTUAL_FEATURE_NOT_WEIGHTABLE"
+
+
+def test_project_design_score_is_a_valid_weighted_project_criterion():
+    validate_hierarchical_weights(_copy())
+
+
+def test_project_legal_status_is_never_weightable():
+    bad = _copy()
+    bad["project"] = {
+        "project_legal_status": {"weight": 1.0, "direction": "positive", "missing_value_policy": "neutral"}
+    }
+    with pytest.raises(HierarchicalConfigError) as exc:
+        validate_hierarchical_weights(bad)
+    assert exc.value.code == "LEGAL_GATE_NOT_WEIGHTABLE"
 
 
 # --- Isolation from legacy validate_weights() --------------------------------

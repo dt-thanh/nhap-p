@@ -3,7 +3,10 @@
 # Preserves volumes, schema, Alembic history, Keycloak data, and .env skeletons.
 # Always ends with exactly one active sync_credentials row, in sync with
 # .dev-secrets/minicrm_sync_api_key, .env, and minicrm/.env — see
-# scripts/ensure_sync_credential.sh. Use --seed only when fixture data is wanted.
+# scripts/ensure_sync_credential.sh. Domain data (Project/Area/Unit/Deal) is
+# NEVER seeded by default — pass --seed-profile=minicrm_default|legacy_fixture
+# |synthetic_demo explicitly if fixture data is wanted. La Pura has its own
+# dedicated tool (scripts/seed_lapura.py), not wired into this script.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -11,14 +14,30 @@ cd "$REPO_ROOT"
 SECRET_DIR="$REPO_ROOT/.dev-secrets"
 SECRET_FILE="$SECRET_DIR/minicrm_sync_api_key"
 CONFIRMED=false
-SEED=false
+SEED_PROFILE=""
 for arg in "$@"; do
     case "$arg" in
         --yes) CONFIRMED=true ;;
-        --seed) SEED=true ;;
+        --seed)
+            echo "[dev-reset] LỖI: --seed đã bị loại bỏ — mọi lần nạp fixture phải nêu RÕ hồ sơ." >&2
+            echo "  Dùng: --seed-profile minicrm_default | legacy_fixture | synthetic_demo" >&2
+            echo "  Hoặc dùng công cụ chuyên biệt: python -m scripts.seed_lapura, "\
+"python -m scripts.seed_legacy_fixture, python -m scripts.seed_domain_demo_2026." >&2
+            exit 2
+            ;;
+        --seed-profile=*) SEED_PROFILE="${arg#*=}" ;;
+        --seed-profile) echo "[dev-reset] LỖI: --seed-profile cần giá trị, ví dụ --seed-profile=minicrm_default." >&2; exit 2 ;;
         *) echo "[dev-reset] LỖI: tùy chọn không được hỗ trợ: $arg" >&2; exit 2 ;;
     esac
 done
+case "$SEED_PROFILE" in
+    ""|minicrm_default|legacy_fixture|synthetic_demo) ;;
+    *)
+        echo "[dev-reset] LỖI: --seed-profile không hợp lệ: '$SEED_PROFILE'." >&2
+        echo "  Giá trị hợp lệ: minicrm_default | legacy_fixture | synthetic_demo" >&2
+        exit 2
+        ;;
+esac
 
 die() { echo "" >&2; echo "[dev-reset] LỖI: $*" >&2; exit 1; }
 info() { echo "[dev-reset] $*"; }
@@ -78,10 +97,15 @@ if [ "$CONFIRMED" != "true" ]; then
   - TRUNCATE các allowlist trong scripts/dev-hard-reset-*.sql;
   - giữ alembic_version, không dùng CASCADE;
   - đảm bảo đúng một sync_credentials active, đồng bộ secret file + .env + minicrm/.env;
-  - khởi động lại stack; thêm --seed nếu muốn nạp fixture qua API.
+  - khởi động lại stack; MẶC ĐỊNH KHÔNG nạp Project/Area/Unit/Deal nào —
+    thêm --seed-profile=<tên> nếu muốn nạp fixture, luôn tường minh về hồ sơ.
 
-Chạy thật: ./scripts/dev-reset.sh --yes
-Nạp fixture: ./scripts/dev-reset.sh --yes --seed
+Chạy thật (domain rỗng): ./scripts/dev-reset.sh --yes
+Nạp qua Mini CRM API (docs/mini_crm_seed.json — hồ sơ CRM_SYNCED_VALID):
+  ./scripts/dev-reset.sh --yes --seed-profile=minicrm_default
+Nạp fixture legacy phi thẩm quyền (dev-only): ./scripts/dev-reset.sh --yes --seed-profile=legacy_fixture
+Nạp demo tổng hợp (dev-only): ./scripts/dev-reset.sh --yes --seed-profile=synthetic_demo
+La Pura: dùng riêng python -m scripts.seed_lapura (không qua dev-reset.sh).
 EOF
     exit 0
 fi
@@ -157,15 +181,27 @@ bash scripts/ensure_sync_credential.sh
 info "Khởi động lại services (không recreate volume)..."
 docker compose up -d keycloak api worker scheduler minicrm frontend crm-frontend
 wait_healthy keycloak 120; wait_healthy api 90; wait_healthy minicrm 90
-if [ "$SEED" = "true" ]; then
+if [ -n "$SEED_PROFILE" ]; then
     if [ -x .venv/bin/python ]; then
         seed_python=.venv/bin/python
     else
-        command -v python3 >/dev/null 2>&1 || die "--seed cần python3 hoặc .venv/bin/python trên host."
+        command -v python3 >/dev/null 2>&1 || die "--seed-profile cần python3 hoặc .venv/bin/python trên host."
         seed_python=python3
     fi
-    info "Nạp fixture Mini CRM qua application/API và transactional outbox..."
-    "$seed_python" -m scripts.seed_mini_crm_from_json --skip-verify
+    case "$SEED_PROFILE" in
+        minicrm_default)
+            info "Hồ sơ 'minicrm_default': nạp docs/mini_crm_seed.json qua Mini CRM application/API và transactional outbox (CRM_SYNCED_VALID)..."
+            "$seed_python" -m scripts.seed_mini_crm_from_json --skip-verify
+            ;;
+        legacy_fixture)
+            info "Hồ sơ 'legacy_fixture': nạp fixture AI/CRM cũ — KHÔNG qua Mini CRM, KHÔNG thẩm quyền..."
+            "$seed_python" -m scripts.seed_legacy_fixture --confirm-seed
+            ;;
+        synthetic_demo)
+            info "Hồ sơ 'synthetic_demo': nạp dữ liệu demo tổng hợp 2026 — KHÔNG qua Mini CRM, KHÔNG thẩm quyền..."
+            "$seed_python" -m scripts.seed_domain_demo_2026 --confirm-seed
+            ;;
+    esac
 fi
 info "Done. Schema/migrations/config/secrets giữ nguyên; data rows trong allowlist đã xóa."
 info "Kiểm tra stack: docker compose ps"

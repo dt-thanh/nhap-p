@@ -566,16 +566,17 @@ def preflight(
     print("Preflight OK — biến môi trường có mặt, cả hai dịch vụ khoẻ.\n")
 
 
-def _load_seed(identity: IdentityMap) -> dict[str, Any]:
-    if not SEED_FILE.exists():
-        raise SeedError(
-            f"Không thấy {SEED_FILE.relative_to(REPO_ROOT)}. "
-            "File này phải được tạo trước — script không tự bịa dữ liệu."
-        )
-    data = json.loads(SEED_FILE.read_text(encoding="utf-8"))
+def _load_seed(identity: IdentityMap, seed_file: Path = SEED_FILE) -> dict[str, Any]:
+    if not seed_file.exists():
+        try:
+            shown = seed_file.relative_to(REPO_ROOT)
+        except ValueError:
+            shown = seed_file
+        raise SeedError(f"Không thấy {shown}. File này phải được tạo trước — script không tự bịa dữ liệu.")
+    data = json.loads(seed_file.read_text(encoding="utf-8"))
     missing = {"projects", "areas"} - data.keys()
     if missing:
-        raise SeedError(f"{SEED_FILE.name} thiếu khoá bắt buộc: {sorted(missing)}")
+        raise SeedError(f"{seed_file.name} thiếu khoá bắt buộc: {sorted(missing)}")
 
     projects = data.get("projects", [])
     areas = data.get("areas", [])
@@ -1526,7 +1527,21 @@ def main() -> int:
         help="re-emit unchanged fixture records through Mini CRM PATCH so a cleared destination can be rebuilt",
     )
     parser.add_argument("--skip-verify", action="store_true", help="Bỏ qua Phase D (xác minh chiếu Backend)")
+    parser.add_argument(
+        "--fixture",
+        default=None,
+        help=f"Đường dẫn fixture thay cho mặc định ({SEED_FILE.relative_to(REPO_ROOT)}) — "
+        "vd. một fixture riêng cho một lần seed bổ sung, không đụng fixture legacy.",
+    )
+    parser.add_argument(
+        "--state-file",
+        default=None,
+        help=f"Đường dẫn state file thay cho mặc định ({STATE_FILE.relative_to(REPO_ROOT)}).",
+    )
     args = parser.parse_args()
+
+    seed_file = Path(args.fixture) if args.fixture else SEED_FILE
+    state_file = Path(args.state_file) if args.state_file else STATE_FILE
 
     admin_token = os.getenv(ADMIN_TOKEN_ENV, "")
     backend_token = os.getenv(BACKEND_TOKEN_ENV, "")
@@ -1543,10 +1558,10 @@ def main() -> int:
         print(f"LỖI (preflight): {exc}", file=sys.stderr)
         return 1
 
-    identity = IdentityMap(STATE_FILE)
+    identity = IdentityMap(state_file)
 
     try:
-        data = _load_seed(identity)
+        data = _load_seed(identity, seed_file)
     except SeedError as exc:
         print(f"LỖI (kiểm cục bộ — CHƯA GHI GÌ): {exc}", file=sys.stderr)
         return 1

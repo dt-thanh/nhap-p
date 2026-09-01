@@ -1,0 +1,4 @@
+# File hội thoại tạm sinh ra mỗi lần chạy benchmark (src/agents/memory.py ghi
+# xuống đây, xem AGENT_SESSION_DIR trong runner.py) — không phải kết quả cần
+# lưu, không nên commit.
+results/.agent_sessions/

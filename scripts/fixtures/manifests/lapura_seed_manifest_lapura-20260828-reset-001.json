@@ -1,0 +1,4313 @@
+{
+  "batch_id": "lapura-20260828-reset-001",
+  "created_at": "2026-08-31T21:42:02.753475+00:00",
+  "pass": 2,
+  "source_files": [
+    {
+      "name": "crm_projects_import.csv",
+      "sha256": "14658248bc2a0d50aaab5352a62a8a0e43cd7ef6faa9ee3c38e952a7579db088"
+    },
+    {
+      "name": "crm_areas_import.csv",
+      "sha256": "de142d1ace3a792e8019e7d928095f1fd3619100391fbe4d9ceb44a8b4aa8e6b"
+    },
+    {
+      "name": "crm_units_import.csv",
+      "sha256": "b246604fd9db9a81aa3280dabbdc2a1c12cae5228333e14355a44d65291fc990"
+    },
+    {
+      "name": "crm_deals_sold_import.csv",
+      "sha256": "e029e19a6783296464d2f0448b486f5f6e0751c2ed9660f8e15338f38bdd27fc"
+    },
+    {
+      "name": "crm_deals_reserved_import.csv",
+      "sha256": "4f50ecd6bd2f8918e7755b331b00cad7ba15f10b29089a1c3b02417ea6ab3744"
+    },
+    {
+      "name": "lapura_unit_attributes_import.csv",
+      "sha256": "e28b20b29a63a1bd88ed9cc8e5ee3eff2559e7d327104f8f9217ed17926a38a2"
+    }
+  ],
+  "fixture_path": "scripts/fixtures/lapura_normalized_seed_v1.json",
+  "counts": {
+    "projects": 1,
+    "areas": 24,
+    "units": 392,
+    "deals": 193,
+    "unit_enrichment": 392
+  },
+  "entities": [
+    {
+      "kind": "project",
+      "source_row_key": "P-0001",
+      "fixture_external_key": "prj-la-pura",
+      "real_external_id": "P-0001",
+      "real_id": "b089db3c-b9a6-43f4-bd2e-bb3c934e4a99"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0001",
+      "fixture_external_key": "area-la-pura-a-0001",
+      "real_external_id": "A-0001",
+      "real_id": "7e0b88e2-3267-46a5-9441-eb39f7fab8a2"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0002",
+      "fixture_external_key": "area-la-pura-a-0002",
+      "real_external_id": "A-0002",
+      "real_id": "5a090561-8756-4e79-a9a3-4049fbe85d25"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0003",
+      "fixture_external_key": "area-la-pura-a-0003",
+      "real_external_id": "A-0003",
+      "real_id": "314a761a-f9aa-4eb4-8bdd-ada0003d86c2"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0004",
+      "fixture_external_key": "area-la-pura-a-0004",
+      "real_external_id": "A-0004",
+      "real_id": "78b8ed0a-a64a-4a20-bc0f-1ffa8f188474"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0005",
+      "fixture_external_key": "area-la-pura-a-0005",
+      "real_external_id": "A-0005",
+      "real_id": "4ec49193-a8dc-4d39-a27a-8b8cba1deb6d"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0006",
+      "fixture_external_key": "area-la-pura-a-0006",
+      "real_external_id": "A-0006",
+      "real_id": "79cc630b-be02-4c9d-b9a3-75abfc10566e"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0007",
+      "fixture_external_key": "area-la-pura-a-0007",
+      "real_external_id": "A-0007",
+      "real_id": "51aa327b-4b03-4dfe-b5b7-68af8381da19"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0008",
+      "fixture_external_key": "area-la-pura-a-0008",
+      "real_external_id": "A-0008",
+      "real_id": "ef1738ce-e4ff-4b92-b71d-62265baf919d"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0009",
+      "fixture_external_key": "area-la-pura-a-0009",
+      "real_external_id": "A-0009",
+      "real_id": "dfa2a61c-06dc-4ab9-8074-f4bc565b6a30"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0010",
+      "fixture_external_key": "area-la-pura-a-0010",
+      "real_external_id": "A-0010",
+      "real_id": "b9c7b9fd-ac52-4426-8a5a-b5d74f2e9b4a"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0011",
+      "fixture_external_key": "area-la-pura-a-0011",
+      "real_external_id": "A-0011",
+      "real_id": "bcdd96f1-6d6b-40f6-93d2-fdd10a069294"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0012",
+      "fixture_external_key": "area-la-pura-a-0012",
+      "real_external_id": "A-0012",
+      "real_id": "80f69e6d-bfc6-4ad6-826d-e59d9119130e"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0013",
+      "fixture_external_key": "area-la-pura-a-0013",
+      "real_external_id": "A-0013",
+      "real_id": "67fc946a-d45b-4b2e-ac77-01d3399d1d0f"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0014",
+      "fixture_external_key": "area-la-pura-a-0014",
+      "real_external_id": "A-0014",
+      "real_id": "73379e6c-e6ba-4907-9ae4-1fc83305a913"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0015",
+      "fixture_external_key": "area-la-pura-a-0015",
+      "real_external_id": "A-0015",
+      "real_id": "02bf92ba-2c26-4339-9ca1-b5abe12031fb"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0016",
+      "fixture_external_key": "area-la-pura-a-0016",
+      "real_external_id": "A-0016",
+      "real_id": "939bdb47-5921-4411-bf6d-347acb31d9bc"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0017",
+      "fixture_external_key": "area-la-pura-a-0017",
+      "real_external_id": "A-0017",
+      "real_id": "e6cd6a2b-b328-4154-bfb1-584976a86a68"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0018",
+      "fixture_external_key": "area-la-pura-a-0018",
+      "real_external_id": "A-0018",
+      "real_id": "db08a896-dd71-4fba-b960-ad2f638f0654"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0019",
+      "fixture_external_key": "area-la-pura-a-0019",
+      "real_external_id": "A-0019",
+      "real_id": "2fc19ca2-281a-49eb-be3d-f08512204145"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0020",
+      "fixture_external_key": "area-la-pura-a-0020",
+      "real_external_id": "A-0020",
+      "real_id": "385992dc-85ce-4f66-954c-cfb528402f5a"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0021",
+      "fixture_external_key": "area-la-pura-a-0021",
+      "real_external_id": "A-0021",
+      "real_id": "821d298c-1ab6-4cd4-a936-7c9990c479ec"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0022",
+      "fixture_external_key": "area-la-pura-a-0022",
+      "real_external_id": "A-0022",
+      "real_id": "d7af77ae-9f68-46b3-b7cc-e1d92f0f6367"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0023",
+      "fixture_external_key": "area-la-pura-a-0023",
+      "real_external_id": "A-0023",
+      "real_id": "1f847e11-ec29-4376-8d2f-3ef2d6823374"
+    },
+    {
+      "kind": "area",
+      "source_row_key": "A-0024",
+      "fixture_external_key": "area-la-pura-a-0024",
+      "real_external_id": "A-0024",
+      "real_id": "77e30306-df46-4501-aaa3-72b7f852bbb0"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0001",
+      "fixture_external_key": "unit-la-pura-u-0001",
+      "real_external_id": "U-0001",
+      "real_id": "863b2315-1f64-43d3-a350-2e8e2aa1fe20"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0002",
+      "fixture_external_key": "unit-la-pura-u-0002",
+      "real_external_id": "U-0002",
+      "real_id": "d3971d97-bdc3-4fca-b027-a9235abde19e"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0003",
+      "fixture_external_key": "unit-la-pura-u-0003",
+      "real_external_id": "U-0003",
+      "real_id": "cf60f056-05ef-47ca-852d-6dc135cb41f1"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0004",
+      "fixture_external_key": "unit-la-pura-u-0004",
+      "real_external_id": "U-0004",
+      "real_id": "a1f9ea48-4c52-4940-9dbb-6d832a11052b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0005",
+      "fixture_external_key": "unit-la-pura-u-0005",
+      "real_external_id": "U-0005",
+      "real_id": "5623bae9-3c95-41b4-88ac-3a53e2d960da"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0006",
+      "fixture_external_key": "unit-la-pura-u-0006",
+      "real_external_id": "U-0006",
+      "real_id": "821afd6a-9210-4d4f-9ab7-2566137e55c5"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0007",
+      "fixture_external_key": "unit-la-pura-u-0007",
+      "real_external_id": "U-0007",
+      "real_id": "eecb8e8e-b243-4515-8619-6037cc9b75c8"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0008",
+      "fixture_external_key": "unit-la-pura-u-0008",
+      "real_external_id": "U-0008",
+      "real_id": "3d93cbbe-279a-4054-a034-e9e75bca372c"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0009",
+      "fixture_external_key": "unit-la-pura-u-0009",
+      "real_external_id": "U-0009",
+      "real_id": "f4d4d6c0-48a8-40d1-9e95-1c942fd7e1a0"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0010",
+      "fixture_external_key": "unit-la-pura-u-0010",
+      "real_external_id": "U-0010",
+      "real_id": "83406472-e75c-4e12-8843-ece6781c13b7"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0011",
+      "fixture_external_key": "unit-la-pura-u-0011",
+      "real_external_id": "U-0011",
+      "real_id": "f9015111-69d1-4675-af6d-7bbe32cf7aae"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0012",
+      "fixture_external_key": "unit-la-pura-u-0012",
+      "real_external_id": "U-0012",
+      "real_id": "d63344d4-ee6a-44c9-93ed-80ea64d5b594"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0013",
+      "fixture_external_key": "unit-la-pura-u-0013",
+      "real_external_id": "U-0013",
+      "real_id": "79130ea3-67df-4641-ba61-a7f5cf590f44"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0014",
+      "fixture_external_key": "unit-la-pura-u-0014",
+      "real_external_id": "U-0014",
+      "real_id": "8cfa8f34-2456-48fc-a380-9c55ee4ed97d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0015",
+      "fixture_external_key": "unit-la-pura-u-0015",
+      "real_external_id": "U-0015",
+      "real_id": "d1127011-d6e0-4d08-b08f-94a850d7e82f"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0016",
+      "fixture_external_key": "unit-la-pura-u-0016",
+      "real_external_id": "U-0016",
+      "real_id": "95e8dc91-267b-49f5-9b8a-461b758ea5a3"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0017",
+      "fixture_external_key": "unit-la-pura-u-0017",
+      "real_external_id": "U-0017",
+      "real_id": "5ac42a42-8820-4109-88f2-3112b8db1672"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0018",
+      "fixture_external_key": "unit-la-pura-u-0018",
+      "real_external_id": "U-0018",
+      "real_id": "3ef0b519-3224-4289-b503-4c78ae40252a"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0019",
+      "fixture_external_key": "unit-la-pura-u-0019",
+      "real_external_id": "U-0019",
+      "real_id": "c9fa3cf3-df46-42a7-ba8c-53851bfd84ab"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0020",
+      "fixture_external_key": "unit-la-pura-u-0020",
+      "real_external_id": "U-0020",
+      "real_id": "3c993547-307a-401d-8fdc-e3318d53cdba"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0021",
+      "fixture_external_key": "unit-la-pura-u-0021",
+      "real_external_id": "U-0021",
+      "real_id": "82f9e43c-c8a3-4991-9e50-c0787b030507"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0022",
+      "fixture_external_key": "unit-la-pura-u-0022",
+      "real_external_id": "U-0022",
+      "real_id": "ce57531c-8199-4b2a-a421-6f9abd61ab0a"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0023",
+      "fixture_external_key": "unit-la-pura-u-0023",
+      "real_external_id": "U-0023",
+      "real_id": "c49ff6e9-3efe-41bc-afaf-fbfabd54d287"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0024",
+      "fixture_external_key": "unit-la-pura-u-0024",
+      "real_external_id": "U-0024",
+      "real_id": "05ef1b09-d340-493d-8245-fcece2a63fe8"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0025",
+      "fixture_external_key": "unit-la-pura-u-0025",
+      "real_external_id": "U-0025",
+      "real_id": "580a01d2-ea57-415a-8210-e614fb1d17bc"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0026",
+      "fixture_external_key": "unit-la-pura-u-0026",
+      "real_external_id": "U-0026",
+      "real_id": "bf94c88c-a98d-4daa-9acb-c7a8a315da7f"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0027",
+      "fixture_external_key": "unit-la-pura-u-0027",
+      "real_external_id": "U-0027",
+      "real_id": "bd0cdde1-7ce6-4155-a4fa-5b8d93f3ba59"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0028",
+      "fixture_external_key": "unit-la-pura-u-0028",
+      "real_external_id": "U-0028",
+      "real_id": "41832791-20cd-4468-b5de-0f47fe5562e6"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0029",
+      "fixture_external_key": "unit-la-pura-u-0029",
+      "real_external_id": "U-0029",
+      "real_id": "c78f4d75-633e-471a-a6df-82fcbc5a037f"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0030",
+      "fixture_external_key": "unit-la-pura-u-0030",
+      "real_external_id": "U-0030",
+      "real_id": "86afe0af-5f6e-475b-9b81-139678460f48"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0031",
+      "fixture_external_key": "unit-la-pura-u-0031",
+      "real_external_id": "U-0031",
+      "real_id": "a365e2b3-22a7-444e-85d5-2eeaaacb8d28"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0032",
+      "fixture_external_key": "unit-la-pura-u-0032",
+      "real_external_id": "U-0032",
+      "real_id": "52a265a8-441e-469e-81be-d828ca1684aa"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0033",
+      "fixture_external_key": "unit-la-pura-u-0033",
+      "real_external_id": "U-0033",
+      "real_id": "d5f5f800-f828-47ba-8450-4493b4886ef9"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0034",
+      "fixture_external_key": "unit-la-pura-u-0034",
+      "real_external_id": "U-0034",
+      "real_id": "2e98be90-5634-47be-a3c5-1ef82f8917f1"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0035",
+      "fixture_external_key": "unit-la-pura-u-0035",
+      "real_external_id": "U-0035",
+      "real_id": "4053b9f1-8577-4c68-bdb7-baa863c35d2e"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0036",
+      "fixture_external_key": "unit-la-pura-u-0036",
+      "real_external_id": "U-0036",
+      "real_id": "fa2edb1c-3f52-4732-b32e-0ec57b09e5ac"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0037",
+      "fixture_external_key": "unit-la-pura-u-0037",
+      "real_external_id": "U-0037",
+      "real_id": "2d76816d-7af1-4183-8e83-3633bfca1418"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0038",
+      "fixture_external_key": "unit-la-pura-u-0038",
+      "real_external_id": "U-0038",
+      "real_id": "babf70d5-d37c-4ee8-9834-f2b7b66c54ac"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0039",
+      "fixture_external_key": "unit-la-pura-u-0039",
+      "real_external_id": "U-0039",
+      "real_id": "29c83cc7-9784-43d4-96a0-70fbd8f12802"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0040",
+      "fixture_external_key": "unit-la-pura-u-0040",
+      "real_external_id": "U-0040",
+      "real_id": "15d293c5-2be8-4afc-926a-5b0d870f60c5"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0041",
+      "fixture_external_key": "unit-la-pura-u-0041",
+      "real_external_id": "U-0041",
+      "real_id": "57c3ca23-212d-4b83-a895-d9b7875c718b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0042",
+      "fixture_external_key": "unit-la-pura-u-0042",
+      "real_external_id": "U-0042",
+      "real_id": "4911bad2-5a9e-432f-a4cb-827762b62a4a"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0043",
+      "fixture_external_key": "unit-la-pura-u-0043",
+      "real_external_id": "U-0043",
+      "real_id": "705db3d7-b364-4984-8263-4390d30e53c7"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0044",
+      "fixture_external_key": "unit-la-pura-u-0044",
+      "real_external_id": "U-0044",
+      "real_id": "c93ed053-5feb-43dd-831b-508f53db8d2b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0045",
+      "fixture_external_key": "unit-la-pura-u-0045",
+      "real_external_id": "U-0045",
+      "real_id": "c89e41b3-bdb9-49d5-be97-d6337412632e"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0046",
+      "fixture_external_key": "unit-la-pura-u-0046",
+      "real_external_id": "U-0046",
+      "real_id": "81b210ab-3acd-4a5a-b012-db2af8936eea"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0047",
+      "fixture_external_key": "unit-la-pura-u-0047",
+      "real_external_id": "U-0047",
+      "real_id": "11c1ce08-374c-4baf-9b83-7285ea916a32"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0048",
+      "fixture_external_key": "unit-la-pura-u-0048",
+      "real_external_id": "U-0048",
+      "real_id": "f30538d5-cdc0-47b7-9d13-751a80215d85"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0049",
+      "fixture_external_key": "unit-la-pura-u-0049",
+      "real_external_id": "U-0049",
+      "real_id": "d5373e71-b638-405e-b080-eb5f647bb679"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0050",
+      "fixture_external_key": "unit-la-pura-u-0050",
+      "real_external_id": "U-0050",
+      "real_id": "5543c55d-cb9e-4d89-ab42-18b631a4a672"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0051",
+      "fixture_external_key": "unit-la-pura-u-0051",
+      "real_external_id": "U-0051",
+      "real_id": "a88dadcd-28cd-42b1-aded-4710a8531bfc"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0052",
+      "fixture_external_key": "unit-la-pura-u-0052",
+      "real_external_id": "U-0052",
+      "real_id": "134f62ea-251e-43f4-8039-d2c0a133e3ec"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0053",
+      "fixture_external_key": "unit-la-pura-u-0053",
+      "real_external_id": "U-0053",
+      "real_id": "11716932-bf03-44a5-9524-7442cfb78263"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0054",
+      "fixture_external_key": "unit-la-pura-u-0054",
+      "real_external_id": "U-0054",
+      "real_id": "395c249b-1313-4fef-bfc1-e9fdaec68e0f"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0055",
+      "fixture_external_key": "unit-la-pura-u-0055",
+      "real_external_id": "U-0055",
+      "real_id": "fb3ef487-90ad-4401-85f0-3836740edbaa"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0056",
+      "fixture_external_key": "unit-la-pura-u-0056",
+      "real_external_id": "U-0056",
+      "real_id": "26e392f2-add7-45da-b4b6-78ca46b0496b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0057",
+      "fixture_external_key": "unit-la-pura-u-0057",
+      "real_external_id": "U-0057",
+      "real_id": "1b705fc1-d1c4-4267-9252-3efcaee8a789"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0058",
+      "fixture_external_key": "unit-la-pura-u-0058",
+      "real_external_id": "U-0058",
+      "real_id": "093edd2f-d0ac-4542-8017-fa2ae98b1feb"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0059",
+      "fixture_external_key": "unit-la-pura-u-0059",
+      "real_external_id": "U-0059",
+      "real_id": "e96501af-e52e-4645-848f-aa9bc46efa79"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0060",
+      "fixture_external_key": "unit-la-pura-u-0060",
+      "real_external_id": "U-0060",
+      "real_id": "385d196a-2171-4341-9684-9472c6a7dc02"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0061",
+      "fixture_external_key": "unit-la-pura-u-0061",
+      "real_external_id": "U-0061",
+      "real_id": "d8141766-a522-43c6-b57b-683a125c0239"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0062",
+      "fixture_external_key": "unit-la-pura-u-0062",
+      "real_external_id": "U-0062",
+      "real_id": "aa061a34-aad0-4892-b3da-6bcc02c57cb3"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0063",
+      "fixture_external_key": "unit-la-pura-u-0063",
+      "real_external_id": "U-0063",
+      "real_id": "6fdcb2e8-b597-4f68-a44a-dd51ad337e6b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0064",
+      "fixture_external_key": "unit-la-pura-u-0064",
+      "real_external_id": "U-0064",
+      "real_id": "c8723aa3-e69b-41d8-8f55-7086d8b0c8dd"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0065",
+      "fixture_external_key": "unit-la-pura-u-0065",
+      "real_external_id": "U-0065",
+      "real_id": "e397922f-226d-4fd9-b499-9f93e9ea9570"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0066",
+      "fixture_external_key": "unit-la-pura-u-0066",
+      "real_external_id": "U-0066",
+      "real_id": "ea84587e-a75c-4e02-9f9f-a352eb98d486"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0067",
+      "fixture_external_key": "unit-la-pura-u-0067",
+      "real_external_id": "U-0067",
+      "real_id": "ff8fcca4-5362-425f-aa48-cef6408ee472"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0068",
+      "fixture_external_key": "unit-la-pura-u-0068",
+      "real_external_id": "U-0068",
+      "real_id": "665b311f-2c36-44b0-bbfa-b191c833c5d4"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0069",
+      "fixture_external_key": "unit-la-pura-u-0069",
+      "real_external_id": "U-0069",
+      "real_id": "d21f30f9-0687-422c-8137-8bec02352f11"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0070",
+      "fixture_external_key": "unit-la-pura-u-0070",
+      "real_external_id": "U-0070",
+      "real_id": "08b7c40d-3355-4113-91e7-ebdd771799ef"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0071",
+      "fixture_external_key": "unit-la-pura-u-0071",
+      "real_external_id": "U-0071",
+      "real_id": "fbdcfc0d-448d-4524-9656-19615f2ae37e"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0072",
+      "fixture_external_key": "unit-la-pura-u-0072",
+      "real_external_id": "U-0072",
+      "real_id": "94b2e486-293f-4175-83d0-634d4d8bc413"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0073",
+      "fixture_external_key": "unit-la-pura-u-0073",
+      "real_external_id": "U-0073",
+      "real_id": "9c0ae6ad-6bb4-425e-b5e2-895d4db72304"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0074",
+      "fixture_external_key": "unit-la-pura-u-0074",
+      "real_external_id": "U-0074",
+      "real_id": "c70ec287-5fa3-49f9-9c97-465cf4821ce4"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0075",
+      "fixture_external_key": "unit-la-pura-u-0075",
+      "real_external_id": "U-0075",
+      "real_id": "d5db1b4a-af1f-4151-a335-841b5905d5be"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0076",
+      "fixture_external_key": "unit-la-pura-u-0076",
+      "real_external_id": "U-0076",
+      "real_id": "7cbb3e36-db80-4606-b645-145e5e22516f"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0077",
+      "fixture_external_key": "unit-la-pura-u-0077",
+      "real_external_id": "U-0077",
+      "real_id": "7460ddb6-3b58-4992-a29c-9b0f099016ba"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0078",
+      "fixture_external_key": "unit-la-pura-u-0078",
+      "real_external_id": "U-0078",
+      "real_id": "58811751-9d21-46f8-a734-6d538c13ca14"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0079",
+      "fixture_external_key": "unit-la-pura-u-0079",
+      "real_external_id": "U-0079",
+      "real_id": "4e4a9113-3d1a-4088-8bca-1d93ef241379"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0080",
+      "fixture_external_key": "unit-la-pura-u-0080",
+      "real_external_id": "U-0080",
+      "real_id": "8f7084fd-0699-4190-b3cb-4c7bc5f98ea5"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0081",
+      "fixture_external_key": "unit-la-pura-u-0081",
+      "real_external_id": "U-0081",
+      "real_id": "097f845e-3cc8-4928-a152-b484560a84fb"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0082",
+      "fixture_external_key": "unit-la-pura-u-0082",
+      "real_external_id": "U-0082",
+      "real_id": "ee597d48-9703-4edc-8794-a1bbf515a1ee"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0083",
+      "fixture_external_key": "unit-la-pura-u-0083",
+      "real_external_id": "U-0083",
+      "real_id": "46aafbd2-271b-42e7-98a7-39a9f55114ad"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0084",
+      "fixture_external_key": "unit-la-pura-u-0084",
+      "real_external_id": "U-0084",
+      "real_id": "b5e75a75-56de-427e-8c54-5ba0c1d92f84"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0085",
+      "fixture_external_key": "unit-la-pura-u-0085",
+      "real_external_id": "U-0085",
+      "real_id": "619f0660-97c0-497e-a76b-9fb3bb3e472d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0086",
+      "fixture_external_key": "unit-la-pura-u-0086",
+      "real_external_id": "U-0086",
+      "real_id": "71e5d0da-14eb-406c-9c00-8b276792dd8f"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0087",
+      "fixture_external_key": "unit-la-pura-u-0087",
+      "real_external_id": "U-0087",
+      "real_id": "8ba268fd-3903-4748-b710-8a3bf9272908"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0088",
+      "fixture_external_key": "unit-la-pura-u-0088",
+      "real_external_id": "U-0088",
+      "real_id": "f8d6b389-02f2-4d94-9c08-7e60ca42b9ed"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0089",
+      "fixture_external_key": "unit-la-pura-u-0089",
+      "real_external_id": "U-0089",
+      "real_id": "1e3bdc22-e5ed-439b-8466-8673c55ee411"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0090",
+      "fixture_external_key": "unit-la-pura-u-0090",
+      "real_external_id": "U-0090",
+      "real_id": "ad81f330-b273-4f5b-bcdd-a893cb35b024"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0091",
+      "fixture_external_key": "unit-la-pura-u-0091",
+      "real_external_id": "U-0091",
+      "real_id": "2f4c582c-fd09-4c4d-86d5-e99b2a62c091"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0092",
+      "fixture_external_key": "unit-la-pura-u-0092",
+      "real_external_id": "U-0092",
+      "real_id": "a1de3146-cc4a-4864-9ae1-2dcda18d8b8c"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0093",
+      "fixture_external_key": "unit-la-pura-u-0093",
+      "real_external_id": "U-0093",
+      "real_id": "cfefd4c6-2434-41f6-8b7d-0e90b876fea8"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0094",
+      "fixture_external_key": "unit-la-pura-u-0094",
+      "real_external_id": "U-0094",
+      "real_id": "886df6df-a9a3-433a-aea0-55917518dded"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0095",
+      "fixture_external_key": "unit-la-pura-u-0095",
+      "real_external_id": "U-0095",
+      "real_id": "126444e8-dd15-4e27-87e4-6e8c80a25239"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0096",
+      "fixture_external_key": "unit-la-pura-u-0096",
+      "real_external_id": "U-0096",
+      "real_id": "562b3554-5bf4-4199-9cf2-31c9f4c8f62c"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0097",
+      "fixture_external_key": "unit-la-pura-u-0097",
+      "real_external_id": "U-0097",
+      "real_id": "8231f7a9-457e-4ad4-9c76-fa87c3af13f8"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0098",
+      "fixture_external_key": "unit-la-pura-u-0098",
+      "real_external_id": "U-0098",
+      "real_id": "2ffad820-3742-4654-ab9c-8463f332b969"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0099",
+      "fixture_external_key": "unit-la-pura-u-0099",
+      "real_external_id": "U-0099",
+      "real_id": "fa3a98c3-1a52-4474-89a6-4f139c5ec692"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0100",
+      "fixture_external_key": "unit-la-pura-u-0100",
+      "real_external_id": "U-0100",
+      "real_id": "6ce7887a-9d54-41fe-9e44-2d42e382e987"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0101",
+      "fixture_external_key": "unit-la-pura-u-0101",
+      "real_external_id": "U-0101",
+      "real_id": "9bc51767-f60f-4170-b6a9-35113bbd7a16"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0102",
+      "fixture_external_key": "unit-la-pura-u-0102",
+      "real_external_id": "U-0102",
+      "real_id": "a7841413-5021-4d22-bd62-005ee2b84710"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0103",
+      "fixture_external_key": "unit-la-pura-u-0103",
+      "real_external_id": "U-0103",
+      "real_id": "1e230583-1ea0-4459-b65e-0be4844a2c5c"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0104",
+      "fixture_external_key": "unit-la-pura-u-0104",
+      "real_external_id": "U-0104",
+      "real_id": "dcbd726c-fdb3-4a5c-ab72-f4949fe56e9b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0105",
+      "fixture_external_key": "unit-la-pura-u-0105",
+      "real_external_id": "U-0105",
+      "real_id": "0f06ce3b-c5a0-41b9-aa4c-85145122225f"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0106",
+      "fixture_external_key": "unit-la-pura-u-0106",
+      "real_external_id": "U-0106",
+      "real_id": "ca1cea26-7860-4254-baa5-92023af8b61a"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0107",
+      "fixture_external_key": "unit-la-pura-u-0107",
+      "real_external_id": "U-0107",
+      "real_id": "2c116b25-21d2-4193-be2e-8f93f8a52e3f"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0108",
+      "fixture_external_key": "unit-la-pura-u-0108",
+      "real_external_id": "U-0108",
+      "real_id": "9d43b268-902e-41ce-b8af-8c8c20f2996d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0109",
+      "fixture_external_key": "unit-la-pura-u-0109",
+      "real_external_id": "U-0109",
+      "real_id": "a7f391af-68b4-4073-ab08-552ba7f67598"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0110",
+      "fixture_external_key": "unit-la-pura-u-0110",
+      "real_external_id": "U-0110",
+      "real_id": "e2c8949f-d335-4eb6-9c92-7fdc4b306dcd"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0111",
+      "fixture_external_key": "unit-la-pura-u-0111",
+      "real_external_id": "U-0111",
+      "real_id": "69e07439-f6c6-441f-a930-a4102d1a3726"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0112",
+      "fixture_external_key": "unit-la-pura-u-0112",
+      "real_external_id": "U-0112",
+      "real_id": "9cbec6a5-1d8e-4062-8639-fbdae97831da"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0113",
+      "fixture_external_key": "unit-la-pura-u-0113",
+      "real_external_id": "U-0113",
+      "real_id": "7d18ce36-b464-46b9-b059-c6b5e8f11f1e"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0114",
+      "fixture_external_key": "unit-la-pura-u-0114",
+      "real_external_id": "U-0114",
+      "real_id": "47ed079d-4ace-4588-90b4-c496d61593d7"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0115",
+      "fixture_external_key": "unit-la-pura-u-0115",
+      "real_external_id": "U-0115",
+      "real_id": "85fe6ba0-b264-4c49-977d-9253549ed945"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0116",
+      "fixture_external_key": "unit-la-pura-u-0116",
+      "real_external_id": "U-0116",
+      "real_id": "30b3ee47-b769-45f1-ac98-c1287f9426d3"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0117",
+      "fixture_external_key": "unit-la-pura-u-0117",
+      "real_external_id": "U-0117",
+      "real_id": "6604a442-a970-4c91-8ddb-0d28fe8b62be"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0118",
+      "fixture_external_key": "unit-la-pura-u-0118",
+      "real_external_id": "U-0118",
+      "real_id": "78c9e906-eddd-4e11-a140-1e9abcc16b47"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0119",
+      "fixture_external_key": "unit-la-pura-u-0119",
+      "real_external_id": "U-0119",
+      "real_id": "4437dc86-ea24-4b49-bb59-648c1289613b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0120",
+      "fixture_external_key": "unit-la-pura-u-0120",
+      "real_external_id": "U-0120",
+      "real_id": "cf85e4d4-d13f-4d3b-b7b0-041dc684bb21"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0121",
+      "fixture_external_key": "unit-la-pura-u-0121",
+      "real_external_id": "U-0121",
+      "real_id": "25fecc33-d4fb-4f42-8794-fc78dec88a94"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0122",
+      "fixture_external_key": "unit-la-pura-u-0122",
+      "real_external_id": "U-0122",
+      "real_id": "a2841144-079c-437a-a173-a5b42fef5cbf"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0123",
+      "fixture_external_key": "unit-la-pura-u-0123",
+      "real_external_id": "U-0123",
+      "real_id": "c109e686-7219-4b49-969a-d2bca2c85be2"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0124",
+      "fixture_external_key": "unit-la-pura-u-0124",
+      "real_external_id": "U-0124",
+      "real_id": "b0c5d272-15ff-45f7-9ee5-e96077b29703"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0125",
+      "fixture_external_key": "unit-la-pura-u-0125",
+      "real_external_id": "U-0125",
+      "real_id": "07d55923-a962-4592-b8df-d63768f80018"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0126",
+      "fixture_external_key": "unit-la-pura-u-0126",
+      "real_external_id": "U-0126",
+      "real_id": "bdd5b9ea-3292-45b5-bb4d-ac45cf0f41eb"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0127",
+      "fixture_external_key": "unit-la-pura-u-0127",
+      "real_external_id": "U-0127",
+      "real_id": "96563cf6-643f-4d18-972d-d42b8c4cf044"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0128",
+      "fixture_external_key": "unit-la-pura-u-0128",
+      "real_external_id": "U-0128",
+      "real_id": "74b24c1a-6952-4492-a96b-6f2203654b4a"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0129",
+      "fixture_external_key": "unit-la-pura-u-0129",
+      "real_external_id": "U-0129",
+      "real_id": "2d18f244-32cd-48c3-937f-56369cb4eea9"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0130",
+      "fixture_external_key": "unit-la-pura-u-0130",
+      "real_external_id": "U-0130",
+      "real_id": "9c4c4fdf-0899-4819-ba2f-11faf9ef8dbe"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0131",
+      "fixture_external_key": "unit-la-pura-u-0131",
+      "real_external_id": "U-0131",
+      "real_id": "83c9bbe3-4604-4201-ad56-45fa44266213"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0132",
+      "fixture_external_key": "unit-la-pura-u-0132",
+      "real_external_id": "U-0132",
+      "real_id": "01e48e70-3db3-48dd-8124-ad774121939a"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0133",
+      "fixture_external_key": "unit-la-pura-u-0133",
+      "real_external_id": "U-0133",
+      "real_id": "f9b73d85-5469-40d5-9f34-9b4c3dea5777"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0134",
+      "fixture_external_key": "unit-la-pura-u-0134",
+      "real_external_id": "U-0134",
+      "real_id": "dde9fa78-0770-4317-9800-d0db83f675cc"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0135",
+      "fixture_external_key": "unit-la-pura-u-0135",
+      "real_external_id": "U-0135",
+      "real_id": "1f6beff3-0645-4832-8a6a-4e67304800c2"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0136",
+      "fixture_external_key": "unit-la-pura-u-0136",
+      "real_external_id": "U-0136",
+      "real_id": "fc0b9a95-e21c-4d35-a2ca-fd029ab9efe2"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0137",
+      "fixture_external_key": "unit-la-pura-u-0137",
+      "real_external_id": "U-0137",
+      "real_id": "d8cb333b-60c9-45ad-a344-0dc9bc31010f"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0138",
+      "fixture_external_key": "unit-la-pura-u-0138",
+      "real_external_id": "U-0138",
+      "real_id": "7750e00c-6a6c-4972-81e8-0c9a31c4ca3d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0139",
+      "fixture_external_key": "unit-la-pura-u-0139",
+      "real_external_id": "U-0139",
+      "real_id": "d6c6c67b-0a16-403d-9004-1f605dc5ee33"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0140",
+      "fixture_external_key": "unit-la-pura-u-0140",
+      "real_external_id": "U-0140",
+      "real_id": "1f693af1-4eab-46c2-b910-3e944d389845"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0141",
+      "fixture_external_key": "unit-la-pura-u-0141",
+      "real_external_id": "U-0141",
+      "real_id": "c618cbab-5e3b-49f3-a322-e47d0a409775"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0142",
+      "fixture_external_key": "unit-la-pura-u-0142",
+      "real_external_id": "U-0142",
+      "real_id": "0a85e4d9-9dbe-4104-a226-bce2a7c21fc8"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0143",
+      "fixture_external_key": "unit-la-pura-u-0143",
+      "real_external_id": "U-0143",
+      "real_id": "7001f91e-e51a-4ff2-a9c0-96e064312538"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0144",
+      "fixture_external_key": "unit-la-pura-u-0144",
+      "real_external_id": "U-0144",
+      "real_id": "77f563dc-ac6d-4ca0-b40d-01c67dabfd3d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0145",
+      "fixture_external_key": "unit-la-pura-u-0145",
+      "real_external_id": "U-0145",
+      "real_id": "16e6f652-d46c-40b1-9c6f-ab81dae6336e"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0146",
+      "fixture_external_key": "unit-la-pura-u-0146",
+      "real_external_id": "U-0146",
+      "real_id": "5c6d15d3-9b36-412b-82e9-412e7b6baf2e"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0147",
+      "fixture_external_key": "unit-la-pura-u-0147",
+      "real_external_id": "U-0147",
+      "real_id": "bb63e27d-1e48-4311-80d2-0ce0e5da543b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0148",
+      "fixture_external_key": "unit-la-pura-u-0148",
+      "real_external_id": "U-0148",
+      "real_id": "3077741b-26b8-467f-8111-17531a670414"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0149",
+      "fixture_external_key": "unit-la-pura-u-0149",
+      "real_external_id": "U-0149",
+      "real_id": "4acd9fc3-f276-49fa-8c59-f31c0b534808"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0150",
+      "fixture_external_key": "unit-la-pura-u-0150",
+      "real_external_id": "U-0150",
+      "real_id": "fc1e49cd-31b9-44af-bc85-7df29e0fbbd0"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0151",
+      "fixture_external_key": "unit-la-pura-u-0151",
+      "real_external_id": "U-0151",
+      "real_id": "1f719aea-c3dd-42de-aeac-4f2f492edd23"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0152",
+      "fixture_external_key": "unit-la-pura-u-0152",
+      "real_external_id": "U-0152",
+      "real_id": "57018bba-976f-4fe6-8b08-3769fb395f54"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0153",
+      "fixture_external_key": "unit-la-pura-u-0153",
+      "real_external_id": "U-0153",
+      "real_id": "b524bf3f-b65b-42b0-8fc4-565a60220b36"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0154",
+      "fixture_external_key": "unit-la-pura-u-0154",
+      "real_external_id": "U-0154",
+      "real_id": "2e819272-57a4-4009-93e1-f5753fb684bf"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0155",
+      "fixture_external_key": "unit-la-pura-u-0155",
+      "real_external_id": "U-0155",
+      "real_id": "1d277d59-4ffe-4c62-9b7c-db8e1464e364"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0156",
+      "fixture_external_key": "unit-la-pura-u-0156",
+      "real_external_id": "U-0156",
+      "real_id": "81eb2d39-ee94-4a62-a726-92e45db39fd9"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0157",
+      "fixture_external_key": "unit-la-pura-u-0157",
+      "real_external_id": "U-0157",
+      "real_id": "36d90fc6-fc74-48cc-9492-57ae638c9727"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0158",
+      "fixture_external_key": "unit-la-pura-u-0158",
+      "real_external_id": "U-0158",
+      "real_id": "96d8712c-3bc3-47d1-9f56-d39e730f9ddf"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0159",
+      "fixture_external_key": "unit-la-pura-u-0159",
+      "real_external_id": "U-0159",
+      "real_id": "abab2cdd-9d42-4ab6-ab63-b4fda7fe7327"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0160",
+      "fixture_external_key": "unit-la-pura-u-0160",
+      "real_external_id": "U-0160",
+      "real_id": "d3a60a44-6266-4dd5-8721-a5423e744d15"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0161",
+      "fixture_external_key": "unit-la-pura-u-0161",
+      "real_external_id": "U-0161",
+      "real_id": "59c874e5-d1cc-4e97-bbb1-b2e8ca89defb"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0162",
+      "fixture_external_key": "unit-la-pura-u-0162",
+      "real_external_id": "U-0162",
+      "real_id": "e5c7fb9a-cbfb-4a02-beb0-4a66c6a7538c"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0163",
+      "fixture_external_key": "unit-la-pura-u-0163",
+      "real_external_id": "U-0163",
+      "real_id": "5583126c-146f-4ddd-ab84-1391dd2d437a"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0164",
+      "fixture_external_key": "unit-la-pura-u-0164",
+      "real_external_id": "U-0164",
+      "real_id": "9912acad-f5d4-4b28-bbf9-48cb231854ad"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0165",
+      "fixture_external_key": "unit-la-pura-u-0165",
+      "real_external_id": "U-0165",
+      "real_id": "725376af-a6fa-450a-bbaf-3ab1798a9bc8"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0166",
+      "fixture_external_key": "unit-la-pura-u-0166",
+      "real_external_id": "U-0166",
+      "real_id": "5dc80f66-b327-48ef-8edb-fdbe345cc271"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0167",
+      "fixture_external_key": "unit-la-pura-u-0167",
+      "real_external_id": "U-0167",
+      "real_id": "3b8ee78e-b1f6-4c69-97ae-84e3abbcc0ae"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0168",
+      "fixture_external_key": "unit-la-pura-u-0168",
+      "real_external_id": "U-0168",
+      "real_id": "b5739a9b-b23e-4495-892a-83951fcc53da"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0169",
+      "fixture_external_key": "unit-la-pura-u-0169",
+      "real_external_id": "U-0169",
+      "real_id": "d62e0bf0-2a29-41ad-acb5-a9943f547b32"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0170",
+      "fixture_external_key": "unit-la-pura-u-0170",
+      "real_external_id": "U-0170",
+      "real_id": "c20bdc43-c35d-4cbb-a021-f62099cd9749"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0171",
+      "fixture_external_key": "unit-la-pura-u-0171",
+      "real_external_id": "U-0171",
+      "real_id": "40a441bb-6c23-4b09-8144-73200b498309"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0172",
+      "fixture_external_key": "unit-la-pura-u-0172",
+      "real_external_id": "U-0172",
+      "real_id": "fa05b519-fe5c-4949-94aa-36a84191d286"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0173",
+      "fixture_external_key": "unit-la-pura-u-0173",
+      "real_external_id": "U-0173",
+      "real_id": "82c61c0d-6eda-40aa-a9f4-75a9a98f77b2"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0174",
+      "fixture_external_key": "unit-la-pura-u-0174",
+      "real_external_id": "U-0174",
+      "real_id": "665d281e-e491-4c1b-bf07-1a7f40e51ae2"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0175",
+      "fixture_external_key": "unit-la-pura-u-0175",
+      "real_external_id": "U-0175",
+      "real_id": "8cca9619-202d-449b-ad93-08f1eb66c5de"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0176",
+      "fixture_external_key": "unit-la-pura-u-0176",
+      "real_external_id": "U-0176",
+      "real_id": "69c22a48-3e40-457d-a5d9-7ffe2c9f05b6"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0177",
+      "fixture_external_key": "unit-la-pura-u-0177",
+      "real_external_id": "U-0177",
+      "real_id": "8141276c-e0b1-430e-ac70-8241fc1784d6"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0178",
+      "fixture_external_key": "unit-la-pura-u-0178",
+      "real_external_id": "U-0178",
+      "real_id": "1fc26c9e-349a-4ec6-9c3f-547f7a0e4f9b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0179",
+      "fixture_external_key": "unit-la-pura-u-0179",
+      "real_external_id": "U-0179",
+      "real_id": "d00f9eff-b2a8-4abd-9391-e45b18d96065"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0180",
+      "fixture_external_key": "unit-la-pura-u-0180",
+      "real_external_id": "U-0180",
+      "real_id": "296ed740-0ace-4378-a26f-3b5e73893bdc"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0181",
+      "fixture_external_key": "unit-la-pura-u-0181",
+      "real_external_id": "U-0181",
+      "real_id": "1daf9f34-513f-4d93-8162-799d5f212b15"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0182",
+      "fixture_external_key": "unit-la-pura-u-0182",
+      "real_external_id": "U-0182",
+      "real_id": "c35daa1e-76ae-483d-aa84-6ed245234141"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0183",
+      "fixture_external_key": "unit-la-pura-u-0183",
+      "real_external_id": "U-0183",
+      "real_id": "bafc3b8a-9b2a-43d7-bbd5-62d34402589b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0184",
+      "fixture_external_key": "unit-la-pura-u-0184",
+      "real_external_id": "U-0184",
+      "real_id": "0ef85a20-ea9e-4b5f-bce5-040a47f3ab65"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0185",
+      "fixture_external_key": "unit-la-pura-u-0185",
+      "real_external_id": "U-0185",
+      "real_id": "a8385337-e6d0-4486-a454-6ad8f58ae1da"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0186",
+      "fixture_external_key": "unit-la-pura-u-0186",
+      "real_external_id": "U-0186",
+      "real_id": "e7ce7346-80ac-4797-a1c8-ce20e00cc7d7"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0187",
+      "fixture_external_key": "unit-la-pura-u-0187",
+      "real_external_id": "U-0187",
+      "real_id": "36e2870d-917b-4278-9e03-c058bf50242a"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0188",
+      "fixture_external_key": "unit-la-pura-u-0188",
+      "real_external_id": "U-0188",
+      "real_id": "1cb53bad-5ed2-4feb-ba2d-5f471d2eccb3"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0189",
+      "fixture_external_key": "unit-la-pura-u-0189",
+      "real_external_id": "U-0189",
+      "real_id": "636b7e38-33c0-44e3-a8cd-40db1fa8cff4"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0190",
+      "fixture_external_key": "unit-la-pura-u-0190",
+      "real_external_id": "U-0190",
+      "real_id": "f9a88427-2042-4d4e-a1c7-46262708aa32"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0191",
+      "fixture_external_key": "unit-la-pura-u-0191",
+      "real_external_id": "U-0191",
+      "real_id": "5c8b9700-f1c9-4ad1-8f14-7ff10480d429"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0192",
+      "fixture_external_key": "unit-la-pura-u-0192",
+      "real_external_id": "U-0192",
+      "real_id": "4589b0a5-046d-4103-b33f-1538dd0aeb53"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0193",
+      "fixture_external_key": "unit-la-pura-u-0193",
+      "real_external_id": "U-0193",
+      "real_id": "faab0855-d586-4229-8e43-b71e11dc596d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0194",
+      "fixture_external_key": "unit-la-pura-u-0194",
+      "real_external_id": "U-0194",
+      "real_id": "e357f6d6-34f0-494f-8bd9-335287ea82b1"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0195",
+      "fixture_external_key": "unit-la-pura-u-0195",
+      "real_external_id": "U-0195",
+      "real_id": "9415022b-b7b2-4547-8afb-822998a9c68f"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0196",
+      "fixture_external_key": "unit-la-pura-u-0196",
+      "real_external_id": "U-0196",
+      "real_id": "bcf4958d-b1e2-4a47-b51e-150e8d2a4264"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0197",
+      "fixture_external_key": "unit-la-pura-u-0197",
+      "real_external_id": "U-0197",
+      "real_id": "69bfa3d6-aac7-4017-bb63-0bf5bfdf448d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0198",
+      "fixture_external_key": "unit-la-pura-u-0198",
+      "real_external_id": "U-0198",
+      "real_id": "c9d0f7fb-c26d-465b-ac88-1b2db3d46b97"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0199",
+      "fixture_external_key": "unit-la-pura-u-0199",
+      "real_external_id": "U-0199",
+      "real_id": "9ff036b7-9990-4ff5-b4b2-188ebbab1bbe"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0200",
+      "fixture_external_key": "unit-la-pura-u-0200",
+      "real_external_id": "U-0200",
+      "real_id": "d3929b52-9602-445f-95ca-9b01a44765bc"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0201",
+      "fixture_external_key": "unit-la-pura-u-0201",
+      "real_external_id": "U-0201",
+      "real_id": "049adffa-b991-41e0-a837-243c55043fd3"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0202",
+      "fixture_external_key": "unit-la-pura-u-0202",
+      "real_external_id": "U-0202",
+      "real_id": "30e65928-acfd-4159-948a-562567908fb7"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0203",
+      "fixture_external_key": "unit-la-pura-u-0203",
+      "real_external_id": "U-0203",
+      "real_id": "49dde1e5-825c-44d5-a0b4-8e1281db9e34"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0204",
+      "fixture_external_key": "unit-la-pura-u-0204",
+      "real_external_id": "U-0204",
+      "real_id": "2e6e875a-11ac-4d46-b967-11d1291799e5"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0205",
+      "fixture_external_key": "unit-la-pura-u-0205",
+      "real_external_id": "U-0205",
+      "real_id": "5c18596e-a149-4340-8f91-64c92c380e65"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0206",
+      "fixture_external_key": "unit-la-pura-u-0206",
+      "real_external_id": "U-0206",
+      "real_id": "4894562d-47fc-4bdd-aaf8-b212ca8adb0c"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0207",
+      "fixture_external_key": "unit-la-pura-u-0207",
+      "real_external_id": "U-0207",
+      "real_id": "97f52609-89b9-419b-b993-7448f6822c7a"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0208",
+      "fixture_external_key": "unit-la-pura-u-0208",
+      "real_external_id": "U-0208",
+      "real_id": "db967716-4c94-4909-aae6-fa84eb848f16"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0209",
+      "fixture_external_key": "unit-la-pura-u-0209",
+      "real_external_id": "U-0209",
+      "real_id": "697d9c06-c897-4294-b95e-5a91b4f14b70"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0210",
+      "fixture_external_key": "unit-la-pura-u-0210",
+      "real_external_id": "U-0210",
+      "real_id": "f1168bb0-6f31-42c7-8a95-42c486b27ad9"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0211",
+      "fixture_external_key": "unit-la-pura-u-0211",
+      "real_external_id": "U-0211",
+      "real_id": "a937e4be-93cd-4b91-b73b-78e1626a3e14"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0212",
+      "fixture_external_key": "unit-la-pura-u-0212",
+      "real_external_id": "U-0212",
+      "real_id": "2ad5a7e6-91a4-4dd3-aa56-7d3daeb96855"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0213",
+      "fixture_external_key": "unit-la-pura-u-0213",
+      "real_external_id": "U-0213",
+      "real_id": "d259f93a-cbf2-4ef1-a75e-48878b4c8e54"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0214",
+      "fixture_external_key": "unit-la-pura-u-0214",
+      "real_external_id": "U-0214",
+      "real_id": "a26f0fc8-af60-4304-ab3e-c3f83db8dff7"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0215",
+      "fixture_external_key": "unit-la-pura-u-0215",
+      "real_external_id": "U-0215",
+      "real_id": "29301570-8e3e-4cba-8a2f-e0189ffef076"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0216",
+      "fixture_external_key": "unit-la-pura-u-0216",
+      "real_external_id": "U-0216",
+      "real_id": "7e51e557-fe80-47fc-bc0e-d7fdfa6c35b0"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0217",
+      "fixture_external_key": "unit-la-pura-u-0217",
+      "real_external_id": "U-0217",
+      "real_id": "468bd6eb-34ed-4a20-a5fb-1341dc836eeb"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0218",
+      "fixture_external_key": "unit-la-pura-u-0218",
+      "real_external_id": "U-0218",
+      "real_id": "7d964acc-cb45-4925-99f4-77e783b9d21c"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0219",
+      "fixture_external_key": "unit-la-pura-u-0219",
+      "real_external_id": "U-0219",
+      "real_id": "0e13dd73-8075-4258-986f-a731c7faec39"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0220",
+      "fixture_external_key": "unit-la-pura-u-0220",
+      "real_external_id": "U-0220",
+      "real_id": "579c18ea-7f35-41ec-b9fb-e1aa70711cfd"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0221",
+      "fixture_external_key": "unit-la-pura-u-0221",
+      "real_external_id": "U-0221",
+      "real_id": "8ed528da-5078-4b9a-ae42-d844d36c1f31"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0222",
+      "fixture_external_key": "unit-la-pura-u-0222",
+      "real_external_id": "U-0222",
+      "real_id": "a7edc73b-89fe-402b-a3ef-63759d9eceb4"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0223",
+      "fixture_external_key": "unit-la-pura-u-0223",
+      "real_external_id": "U-0223",
+      "real_id": "2ad988ca-f3cd-48aa-8b2a-c6c3a616d9d8"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0224",
+      "fixture_external_key": "unit-la-pura-u-0224",
+      "real_external_id": "U-0224",
+      "real_id": "739d23ea-e287-4c60-9d2b-9b257017e4f5"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0225",
+      "fixture_external_key": "unit-la-pura-u-0225",
+      "real_external_id": "U-0225",
+      "real_id": "3a9e497f-c9d8-423b-a046-f6c5d9bef393"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0226",
+      "fixture_external_key": "unit-la-pura-u-0226",
+      "real_external_id": "U-0226",
+      "real_id": "3185c93c-a61a-4fd5-9db2-03f4eda1a12d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0227",
+      "fixture_external_key": "unit-la-pura-u-0227",
+      "real_external_id": "U-0227",
+      "real_id": "beb9e7ad-eb53-411b-9593-70218e63a874"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0228",
+      "fixture_external_key": "unit-la-pura-u-0228",
+      "real_external_id": "U-0228",
+      "real_id": "42362e99-a15a-471e-a4e0-dc0fec97973d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0229",
+      "fixture_external_key": "unit-la-pura-u-0229",
+      "real_external_id": "U-0229",
+      "real_id": "964fe32b-eef7-4300-a5be-58a7a8f82039"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0230",
+      "fixture_external_key": "unit-la-pura-u-0230",
+      "real_external_id": "U-0230",
+      "real_id": "8c4fa324-e534-4b94-be09-16d66c6c3057"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0231",
+      "fixture_external_key": "unit-la-pura-u-0231",
+      "real_external_id": "U-0231",
+      "real_id": "53737cdb-57b1-4d63-9134-8ad13ef0ec63"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0232",
+      "fixture_external_key": "unit-la-pura-u-0232",
+      "real_external_id": "U-0232",
+      "real_id": "80697e7a-e50c-4cd8-9c69-561dc8d81f41"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0233",
+      "fixture_external_key": "unit-la-pura-u-0233",
+      "real_external_id": "U-0233",
+      "real_id": "eb7e14ce-1df0-49d1-8392-cb0b235c58d6"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0234",
+      "fixture_external_key": "unit-la-pura-u-0234",
+      "real_external_id": "U-0234",
+      "real_id": "d4d6e8c8-a551-4b71-93e1-a83e711e49cb"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0235",
+      "fixture_external_key": "unit-la-pura-u-0235",
+      "real_external_id": "U-0235",
+      "real_id": "56122f4d-53ae-46ad-8234-5dfb0f915775"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0236",
+      "fixture_external_key": "unit-la-pura-u-0236",
+      "real_external_id": "U-0236",
+      "real_id": "853330ef-9245-49bf-8880-bf1c9f35624b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0237",
+      "fixture_external_key": "unit-la-pura-u-0237",
+      "real_external_id": "U-0237",
+      "real_id": "eee35055-de98-4db6-919e-ba48bf5aa4d3"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0238",
+      "fixture_external_key": "unit-la-pura-u-0238",
+      "real_external_id": "U-0238",
+      "real_id": "30f5ac63-6ad9-4f53-95b6-3e4d2fa36a50"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0239",
+      "fixture_external_key": "unit-la-pura-u-0239",
+      "real_external_id": "U-0239",
+      "real_id": "45d6735b-cdb5-4b23-819a-3948ac2f25db"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0240",
+      "fixture_external_key": "unit-la-pura-u-0240",
+      "real_external_id": "U-0240",
+      "real_id": "95b45997-3d2e-4ebc-b114-cda8fa28398f"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0241",
+      "fixture_external_key": "unit-la-pura-u-0241",
+      "real_external_id": "U-0241",
+      "real_id": "a358f5d4-79fd-4b55-92a6-64d4ce730c3d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0242",
+      "fixture_external_key": "unit-la-pura-u-0242",
+      "real_external_id": "U-0242",
+      "real_id": "ac310730-c600-44aa-8f72-b5bb4395a70b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0243",
+      "fixture_external_key": "unit-la-pura-u-0243",
+      "real_external_id": "U-0243",
+      "real_id": "4d50a042-f753-4a72-84b8-1a84875ea16d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0244",
+      "fixture_external_key": "unit-la-pura-u-0244",
+      "real_external_id": "U-0244",
+      "real_id": "1d8fcb76-b80c-42c0-8d0f-a9b6943b07f7"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0245",
+      "fixture_external_key": "unit-la-pura-u-0245",
+      "real_external_id": "U-0245",
+      "real_id": "8c0c3d9e-40ce-4302-b953-a0494f8f12f0"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0246",
+      "fixture_external_key": "unit-la-pura-u-0246",
+      "real_external_id": "U-0246",
+      "real_id": "29c901c3-7ed4-48e1-b51b-a39c9126ac41"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0247",
+      "fixture_external_key": "unit-la-pura-u-0247",
+      "real_external_id": "U-0247",
+      "real_id": "afe6b0c5-218e-43ac-8b82-8d4a682f383c"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0248",
+      "fixture_external_key": "unit-la-pura-u-0248",
+      "real_external_id": "U-0248",
+      "real_id": "f572cefc-77c1-4d53-8073-570b0bef64e8"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0249",
+      "fixture_external_key": "unit-la-pura-u-0249",
+      "real_external_id": "U-0249",
+      "real_id": "c7bc6562-b5a1-4d9d-8685-454cb5126f1b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0250",
+      "fixture_external_key": "unit-la-pura-u-0250",
+      "real_external_id": "U-0250",
+      "real_id": "3309b81e-dfb7-49d7-957b-17d01e798260"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0251",
+      "fixture_external_key": "unit-la-pura-u-0251",
+      "real_external_id": "U-0251",
+      "real_id": "d3344bfe-4cb4-454e-b7d5-aa43a7fec63a"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0252",
+      "fixture_external_key": "unit-la-pura-u-0252",
+      "real_external_id": "U-0252",
+      "real_id": "b6245f2a-02ab-4edf-b674-3cff74ec0d4b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0253",
+      "fixture_external_key": "unit-la-pura-u-0253",
+      "real_external_id": "U-0253",
+      "real_id": "16557227-32a0-4cd3-a628-d7f7eeb09475"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0254",
+      "fixture_external_key": "unit-la-pura-u-0254",
+      "real_external_id": "U-0254",
+      "real_id": "7151d84c-20f8-4fbe-a197-d3f07eaafda1"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0255",
+      "fixture_external_key": "unit-la-pura-u-0255",
+      "real_external_id": "U-0255",
+      "real_id": "bb11f25f-abff-448f-b650-293921b270fc"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0256",
+      "fixture_external_key": "unit-la-pura-u-0256",
+      "real_external_id": "U-0256",
+      "real_id": "0c5a1232-45a3-4503-9d77-4730bba0c436"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0257",
+      "fixture_external_key": "unit-la-pura-u-0257",
+      "real_external_id": "U-0257",
+      "real_id": "34fc6fc7-47d6-4431-b0a3-c1168b97be0f"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0258",
+      "fixture_external_key": "unit-la-pura-u-0258",
+      "real_external_id": "U-0258",
+      "real_id": "caef621f-c956-4102-ac3d-ae4ebf8e2297"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0259",
+      "fixture_external_key": "unit-la-pura-u-0259",
+      "real_external_id": "U-0259",
+      "real_id": "78dc41c4-b0ef-4b3e-9704-71509b5a468d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0260",
+      "fixture_external_key": "unit-la-pura-u-0260",
+      "real_external_id": "U-0260",
+      "real_id": "98bc9d85-c0b1-4fe4-96db-18ac56386d29"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0261",
+      "fixture_external_key": "unit-la-pura-u-0261",
+      "real_external_id": "U-0261",
+      "real_id": "e8eb9679-6a31-4e61-9177-dc23e2a2fe14"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0262",
+      "fixture_external_key": "unit-la-pura-u-0262",
+      "real_external_id": "U-0262",
+      "real_id": "d9bcbc51-d235-4730-a68c-429f38658af3"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0263",
+      "fixture_external_key": "unit-la-pura-u-0263",
+      "real_external_id": "U-0263",
+      "real_id": "24b1b855-92ce-421a-8891-e533cdc30621"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0264",
+      "fixture_external_key": "unit-la-pura-u-0264",
+      "real_external_id": "U-0264",
+      "real_id": "cc28930e-124a-4f53-9a94-cb2b7b31d655"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0265",
+      "fixture_external_key": "unit-la-pura-u-0265",
+      "real_external_id": "U-0265",
+      "real_id": "eec9c31a-99a9-4daa-a179-6fa4d89faa70"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0266",
+      "fixture_external_key": "unit-la-pura-u-0266",
+      "real_external_id": "U-0266",
+      "real_id": "1e0ed343-8d28-420a-9f99-cf307731be11"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0267",
+      "fixture_external_key": "unit-la-pura-u-0267",
+      "real_external_id": "U-0267",
+      "real_id": "772afa76-0ab4-485f-a824-b93cc51c9f2a"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0268",
+      "fixture_external_key": "unit-la-pura-u-0268",
+      "real_external_id": "U-0268",
+      "real_id": "53f8d6b0-0d91-446d-90bd-35baf40a9f39"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0269",
+      "fixture_external_key": "unit-la-pura-u-0269",
+      "real_external_id": "U-0269",
+      "real_id": "88fa8c63-ed15-4712-a5f2-9d8b0c0eec00"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0270",
+      "fixture_external_key": "unit-la-pura-u-0270",
+      "real_external_id": "U-0270",
+      "real_id": "23c07883-36e1-4bc3-bf4b-110e09cd955b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0271",
+      "fixture_external_key": "unit-la-pura-u-0271",
+      "real_external_id": "U-0271",
+      "real_id": "7e224801-12b9-465e-bbad-fc7d8f1c2379"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0272",
+      "fixture_external_key": "unit-la-pura-u-0272",
+      "real_external_id": "U-0272",
+      "real_id": "aed04037-53f8-4c2a-ae29-4794c2f8bee8"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0273",
+      "fixture_external_key": "unit-la-pura-u-0273",
+      "real_external_id": "U-0273",
+      "real_id": "3212f81c-83bb-410e-92f5-38ecd3379aa5"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0274",
+      "fixture_external_key": "unit-la-pura-u-0274",
+      "real_external_id": "U-0274",
+      "real_id": "5a63d0cd-1ce5-46e3-b9f6-af1c8af68b1d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0275",
+      "fixture_external_key": "unit-la-pura-u-0275",
+      "real_external_id": "U-0275",
+      "real_id": "4bfe069a-477c-417f-83cb-02acb3bf0931"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0276",
+      "fixture_external_key": "unit-la-pura-u-0276",
+      "real_external_id": "U-0276",
+      "real_id": "9c2d54f7-05a4-475c-b8a2-8cc523993f99"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0277",
+      "fixture_external_key": "unit-la-pura-u-0277",
+      "real_external_id": "U-0277",
+      "real_id": "a8db896d-a669-4467-b487-734f209606e0"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0278",
+      "fixture_external_key": "unit-la-pura-u-0278",
+      "real_external_id": "U-0278",
+      "real_id": "7be0e282-abaa-40ae-b5f0-ec91846089bd"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0279",
+      "fixture_external_key": "unit-la-pura-u-0279",
+      "real_external_id": "U-0279",
+      "real_id": "65cea464-8910-4daf-a80f-6f4e705e20b0"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0280",
+      "fixture_external_key": "unit-la-pura-u-0280",
+      "real_external_id": "U-0280",
+      "real_id": "dfaf9b80-3ced-4215-9189-401e67fa17d9"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0281",
+      "fixture_external_key": "unit-la-pura-u-0281",
+      "real_external_id": "U-0281",
+      "real_id": "5a4370ef-6a7f-4b94-acd3-198c727acfc2"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0282",
+      "fixture_external_key": "unit-la-pura-u-0282",
+      "real_external_id": "U-0282",
+      "real_id": "85e49985-c6d5-448a-bb30-626449e471b3"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0283",
+      "fixture_external_key": "unit-la-pura-u-0283",
+      "real_external_id": "U-0283",
+      "real_id": "bacacaca-5a09-4986-986d-3f0308d3768e"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0284",
+      "fixture_external_key": "unit-la-pura-u-0284",
+      "real_external_id": "U-0284",
+      "real_id": "abe70177-eb4c-4cc3-aa9c-468c1a5e139d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0285",
+      "fixture_external_key": "unit-la-pura-u-0285",
+      "real_external_id": "U-0285",
+      "real_id": "c5f3551d-828a-4dc8-8864-05c5ea824c13"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0286",
+      "fixture_external_key": "unit-la-pura-u-0286",
+      "real_external_id": "U-0286",
+      "real_id": "5fff8e28-96c7-4694-a252-e3b00fc1c345"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0287",
+      "fixture_external_key": "unit-la-pura-u-0287",
+      "real_external_id": "U-0287",
+      "real_id": "2f42e9c5-e0b3-4a62-9b3f-8f5eaba28bc5"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0288",
+      "fixture_external_key": "unit-la-pura-u-0288",
+      "real_external_id": "U-0288",
+      "real_id": "35f24b95-2be2-40c2-bf1e-53b08025c005"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0289",
+      "fixture_external_key": "unit-la-pura-u-0289",
+      "real_external_id": "U-0289",
+      "real_id": "2ed23d47-aafd-4f6d-90eb-1de8722913e8"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0290",
+      "fixture_external_key": "unit-la-pura-u-0290",
+      "real_external_id": "U-0290",
+      "real_id": "ecc5c0d0-a6ad-4913-9726-f436f6362fef"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0291",
+      "fixture_external_key": "unit-la-pura-u-0291",
+      "real_external_id": "U-0291",
+      "real_id": "b9c86705-a923-4299-ac0d-af61e3b60321"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0292",
+      "fixture_external_key": "unit-la-pura-u-0292",
+      "real_external_id": "U-0292",
+      "real_id": "92bc9677-6174-487e-b250-2cf62a8521b0"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0293",
+      "fixture_external_key": "unit-la-pura-u-0293",
+      "real_external_id": "U-0293",
+      "real_id": "4e88934d-ef3a-48d7-a8f3-61f7bed321aa"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0294",
+      "fixture_external_key": "unit-la-pura-u-0294",
+      "real_external_id": "U-0294",
+      "real_id": "f509adf7-bb47-42ef-997a-4d74a6952508"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0295",
+      "fixture_external_key": "unit-la-pura-u-0295",
+      "real_external_id": "U-0295",
+      "real_id": "000b4c14-66f0-4707-a81f-f06609a71402"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0296",
+      "fixture_external_key": "unit-la-pura-u-0296",
+      "real_external_id": "U-0296",
+      "real_id": "3e2b1129-c003-4cb1-b391-1715e68e0e7b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0297",
+      "fixture_external_key": "unit-la-pura-u-0297",
+      "real_external_id": "U-0297",
+      "real_id": "dd7b1461-47d5-45ec-8133-005d8675caf8"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0298",
+      "fixture_external_key": "unit-la-pura-u-0298",
+      "real_external_id": "U-0298",
+      "real_id": "33b12e3b-e684-4b04-8c51-47a66e61a1d2"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0299",
+      "fixture_external_key": "unit-la-pura-u-0299",
+      "real_external_id": "U-0299",
+      "real_id": "81e692a7-69cf-4e30-97fb-fedba873e8e0"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0300",
+      "fixture_external_key": "unit-la-pura-u-0300",
+      "real_external_id": "U-0300",
+      "real_id": "925f45fe-69cf-4067-9aab-45cac135c540"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0301",
+      "fixture_external_key": "unit-la-pura-u-0301",
+      "real_external_id": "U-0301",
+      "real_id": "19663bc7-eef9-4fcf-8deb-9716fe5635e5"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0302",
+      "fixture_external_key": "unit-la-pura-u-0302",
+      "real_external_id": "U-0302",
+      "real_id": "7192d17b-6769-4811-9d08-492a4dadaf12"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0303",
+      "fixture_external_key": "unit-la-pura-u-0303",
+      "real_external_id": "U-0303",
+      "real_id": "80138fda-e2a1-4d77-9dc9-2fd39fb8fa79"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0304",
+      "fixture_external_key": "unit-la-pura-u-0304",
+      "real_external_id": "U-0304",
+      "real_id": "acaefb96-76e6-48e3-8a86-78b45d9c5aca"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0305",
+      "fixture_external_key": "unit-la-pura-u-0305",
+      "real_external_id": "U-0305",
+      "real_id": "8df4dbaf-b48c-4171-963b-2f8132cbb49a"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0306",
+      "fixture_external_key": "unit-la-pura-u-0306",
+      "real_external_id": "U-0306",
+      "real_id": "5392b2c4-01ea-47ed-b3ec-6c23b0f16b5c"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0307",
+      "fixture_external_key": "unit-la-pura-u-0307",
+      "real_external_id": "U-0307",
+      "real_id": "b73e6843-8eda-43aa-80b8-23650d2c4628"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0308",
+      "fixture_external_key": "unit-la-pura-u-0308",
+      "real_external_id": "U-0308",
+      "real_id": "4538aff5-bbdf-4b41-a632-7e6241320b50"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0309",
+      "fixture_external_key": "unit-la-pura-u-0309",
+      "real_external_id": "U-0309",
+      "real_id": "e1e72b63-2101-49fc-a017-784a1442f57c"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0310",
+      "fixture_external_key": "unit-la-pura-u-0310",
+      "real_external_id": "U-0310",
+      "real_id": "5997bc57-78b0-45f0-a67f-030d4374c051"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0311",
+      "fixture_external_key": "unit-la-pura-u-0311",
+      "real_external_id": "U-0311",
+      "real_id": "65a69f89-ba3d-443d-bc76-e62a398f1047"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0312",
+      "fixture_external_key": "unit-la-pura-u-0312",
+      "real_external_id": "U-0312",
+      "real_id": "40b65dfe-84dd-46f8-8d48-663f559e7660"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0313",
+      "fixture_external_key": "unit-la-pura-u-0313",
+      "real_external_id": "U-0313",
+      "real_id": "0c7b4e22-bce4-4195-a85e-382d10602ac0"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0314",
+      "fixture_external_key": "unit-la-pura-u-0314",
+      "real_external_id": "U-0314",
+      "real_id": "f4b1ec21-5db2-4240-908c-72af9d941783"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0315",
+      "fixture_external_key": "unit-la-pura-u-0315",
+      "real_external_id": "U-0315",
+      "real_id": "c9d7cf99-a3e7-4bfe-878c-a1e8a74509a9"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0316",
+      "fixture_external_key": "unit-la-pura-u-0316",
+      "real_external_id": "U-0316",
+      "real_id": "014ba6d0-b560-43ff-bf5d-bc1bb63339d4"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0317",
+      "fixture_external_key": "unit-la-pura-u-0317",
+      "real_external_id": "U-0317",
+      "real_id": "92b34a99-62bd-4815-90a9-ad6896d41694"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0318",
+      "fixture_external_key": "unit-la-pura-u-0318",
+      "real_external_id": "U-0318",
+      "real_id": "d46576db-be36-4338-bb6f-c8ca123214d0"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0319",
+      "fixture_external_key": "unit-la-pura-u-0319",
+      "real_external_id": "U-0319",
+      "real_id": "59cf0ab4-0622-49d1-9a4c-d275ab4ac086"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0320",
+      "fixture_external_key": "unit-la-pura-u-0320",
+      "real_external_id": "U-0320",
+      "real_id": "993caecf-7956-4264-b683-17c34b95c0b1"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0321",
+      "fixture_external_key": "unit-la-pura-u-0321",
+      "real_external_id": "U-0321",
+      "real_id": "b884c8f7-c4ae-4836-bc39-5049a4948914"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0322",
+      "fixture_external_key": "unit-la-pura-u-0322",
+      "real_external_id": "U-0322",
+      "real_id": "c918a416-e5b0-451d-a310-6b9672e6a97a"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0323",
+      "fixture_external_key": "unit-la-pura-u-0323",
+      "real_external_id": "U-0323",
+      "real_id": "a938b570-a711-4e6b-964e-ee83f3084ee1"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0324",
+      "fixture_external_key": "unit-la-pura-u-0324",
+      "real_external_id": "U-0324",
+      "real_id": "39e555cf-a3ff-44ec-8943-e886edec3d55"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0325",
+      "fixture_external_key": "unit-la-pura-u-0325",
+      "real_external_id": "U-0325",
+      "real_id": "5151e41f-15e8-4d31-b6fe-537cb1f20adf"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0326",
+      "fixture_external_key": "unit-la-pura-u-0326",
+      "real_external_id": "U-0326",
+      "real_id": "ddf9d84a-fb12-41e4-9cc6-5f60eac8b5ff"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0327",
+      "fixture_external_key": "unit-la-pura-u-0327",
+      "real_external_id": "U-0327",
+      "real_id": "b2036e44-b092-46c3-b4b5-279cf0513cef"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0328",
+      "fixture_external_key": "unit-la-pura-u-0328",
+      "real_external_id": "U-0328",
+      "real_id": "ca42163b-a0cb-4c24-9f95-2fb8ee2237f6"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0329",
+      "fixture_external_key": "unit-la-pura-u-0329",
+      "real_external_id": "U-0329",
+      "real_id": "c23a7961-d306-48db-8b5e-9686df6f2a43"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0330",
+      "fixture_external_key": "unit-la-pura-u-0330",
+      "real_external_id": "U-0330",
+      "real_id": "e4e28816-85d7-47bf-9863-b4804fa47d10"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0331",
+      "fixture_external_key": "unit-la-pura-u-0331",
+      "real_external_id": "U-0331",
+      "real_id": "bb65250a-8463-49b4-b89e-e156b1dc9471"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0332",
+      "fixture_external_key": "unit-la-pura-u-0332",
+      "real_external_id": "U-0332",
+      "real_id": "5087ebff-323b-413a-875e-5167d7769a86"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0333",
+      "fixture_external_key": "unit-la-pura-u-0333",
+      "real_external_id": "U-0333",
+      "real_id": "10fb947f-9d7f-4726-a903-fdea231d5dfb"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0334",
+      "fixture_external_key": "unit-la-pura-u-0334",
+      "real_external_id": "U-0334",
+      "real_id": "9775a2ad-04f7-420c-827c-dd5e8edb9570"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0335",
+      "fixture_external_key": "unit-la-pura-u-0335",
+      "real_external_id": "U-0335",
+      "real_id": "4a63e84f-e764-44f7-886b-356c855ca706"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0336",
+      "fixture_external_key": "unit-la-pura-u-0336",
+      "real_external_id": "U-0336",
+      "real_id": "b403698b-010b-44fd-9725-06ba087e2c4b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0337",
+      "fixture_external_key": "unit-la-pura-u-0337",
+      "real_external_id": "U-0337",
+      "real_id": "d986ccb0-aac0-4333-a11c-0657923c635c"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0338",
+      "fixture_external_key": "unit-la-pura-u-0338",
+      "real_external_id": "U-0338",
+      "real_id": "db28769f-2003-4465-ba4e-8028ffdf1fc4"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0339",
+      "fixture_external_key": "unit-la-pura-u-0339",
+      "real_external_id": "U-0339",
+      "real_id": "887c75f5-1c6a-4919-9651-76c47fad3619"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0340",
+      "fixture_external_key": "unit-la-pura-u-0340",
+      "real_external_id": "U-0340",
+      "real_id": "5a23c706-7615-47f7-adc9-c3deb1f28679"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0341",
+      "fixture_external_key": "unit-la-pura-u-0341",
+      "real_external_id": "U-0341",
+      "real_id": "c7cb43f6-1f38-4095-9ce9-426b6b8aae5f"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0342",
+      "fixture_external_key": "unit-la-pura-u-0342",
+      "real_external_id": "U-0342",
+      "real_id": "40c58468-be4b-42cc-ae1b-741605c04130"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0343",
+      "fixture_external_key": "unit-la-pura-u-0343",
+      "real_external_id": "U-0343",
+      "real_id": "92e78411-7a94-49ea-9953-2fd15b1c4e3c"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0344",
+      "fixture_external_key": "unit-la-pura-u-0344",
+      "real_external_id": "U-0344",
+      "real_id": "0b76d5bb-58b3-4d62-ab1d-0c741d698de3"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0345",
+      "fixture_external_key": "unit-la-pura-u-0345",
+      "real_external_id": "U-0345",
+      "real_id": "7b288e5b-9c4e-4e07-a55f-62e7f02ac6bc"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0346",
+      "fixture_external_key": "unit-la-pura-u-0346",
+      "real_external_id": "U-0346",
+      "real_id": "da42c88d-7b7a-4284-900e-9bf7226dcf1c"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0347",
+      "fixture_external_key": "unit-la-pura-u-0347",
+      "real_external_id": "U-0347",
+      "real_id": "3db92dca-cbdb-4ac7-9d59-f81e910eaedb"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0348",
+      "fixture_external_key": "unit-la-pura-u-0348",
+      "real_external_id": "U-0348",
+      "real_id": "66bda783-5e1c-43e9-914a-38eaca8100b7"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0349",
+      "fixture_external_key": "unit-la-pura-u-0349",
+      "real_external_id": "U-0349",
+      "real_id": "493e4dcf-ceea-4e0a-9c3b-28b79e748dcd"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0350",
+      "fixture_external_key": "unit-la-pura-u-0350",
+      "real_external_id": "U-0350",
+      "real_id": "9700f13e-424a-4a3b-a7d1-a7fde5422fa3"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0351",
+      "fixture_external_key": "unit-la-pura-u-0351",
+      "real_external_id": "U-0351",
+      "real_id": "4dda6064-0fd1-4097-aebf-7ba733444440"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0352",
+      "fixture_external_key": "unit-la-pura-u-0352",
+      "real_external_id": "U-0352",
+      "real_id": "f7e427b1-469a-4850-a761-af5f01088b9b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0353",
+      "fixture_external_key": "unit-la-pura-u-0353",
+      "real_external_id": "U-0353",
+      "real_id": "5732cd2b-9ca5-4c64-b230-4211e78ed6cb"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0354",
+      "fixture_external_key": "unit-la-pura-u-0354",
+      "real_external_id": "U-0354",
+      "real_id": "a596406f-51f6-462f-b2dd-e790564eabc3"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0355",
+      "fixture_external_key": "unit-la-pura-u-0355",
+      "real_external_id": "U-0355",
+      "real_id": "6cf61ad5-5987-4363-aaca-990acb53a6ab"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0356",
+      "fixture_external_key": "unit-la-pura-u-0356",
+      "real_external_id": "U-0356",
+      "real_id": "d437ea74-7950-42e0-831c-7ffcbf032728"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0357",
+      "fixture_external_key": "unit-la-pura-u-0357",
+      "real_external_id": "U-0357",
+      "real_id": "6e14869e-51a5-44c9-ac59-de52d1e426b9"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0358",
+      "fixture_external_key": "unit-la-pura-u-0358",
+      "real_external_id": "U-0358",
+      "real_id": "04266fa6-9b28-4460-a50a-cd9f71cad037"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0359",
+      "fixture_external_key": "unit-la-pura-u-0359",
+      "real_external_id": "U-0359",
+      "real_id": "75f454eb-fb6a-4d83-847c-a63743c88517"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0360",
+      "fixture_external_key": "unit-la-pura-u-0360",
+      "real_external_id": "U-0360",
+      "real_id": "b92a0358-0004-4917-a2cc-ab59ea2b3509"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0361",
+      "fixture_external_key": "unit-la-pura-u-0361",
+      "real_external_id": "U-0361",
+      "real_id": "95fccb4b-5dd0-4d00-8f00-9f43e4baf45b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0362",
+      "fixture_external_key": "unit-la-pura-u-0362",
+      "real_external_id": "U-0362",
+      "real_id": "61aa6292-abd3-4497-a237-ff34d9d36836"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0363",
+      "fixture_external_key": "unit-la-pura-u-0363",
+      "real_external_id": "U-0363",
+      "real_id": "131fb96f-4dfb-4c6b-b1a1-d8d6c4f58635"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0364",
+      "fixture_external_key": "unit-la-pura-u-0364",
+      "real_external_id": "U-0364",
+      "real_id": "568a1995-2607-4c84-baa1-3a504e1f4ae4"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0365",
+      "fixture_external_key": "unit-la-pura-u-0365",
+      "real_external_id": "U-0365",
+      "real_id": "527aaccb-cd85-4a60-bad2-b23c405ef881"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0366",
+      "fixture_external_key": "unit-la-pura-u-0366",
+      "real_external_id": "U-0366",
+      "real_id": "e2e44e81-5bd6-4c97-ba58-e71bac6c13f3"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0367",
+      "fixture_external_key": "unit-la-pura-u-0367",
+      "real_external_id": "U-0367",
+      "real_id": "0fab950f-d732-489f-9d46-62e41e228050"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0368",
+      "fixture_external_key": "unit-la-pura-u-0368",
+      "real_external_id": "U-0368",
+      "real_id": "96e5903e-7144-4ada-99fb-6d4583b954d2"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0369",
+      "fixture_external_key": "unit-la-pura-u-0369",
+      "real_external_id": "U-0369",
+      "real_id": "c91d2cff-475f-4bb8-8b76-c9fa8e0fcd17"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0370",
+      "fixture_external_key": "unit-la-pura-u-0370",
+      "real_external_id": "U-0370",
+      "real_id": "edced756-8811-42f4-ab77-a865f6620c04"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0371",
+      "fixture_external_key": "unit-la-pura-u-0371",
+      "real_external_id": "U-0371",
+      "real_id": "0023d072-2371-48d5-bfb4-723fca00a2a9"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0372",
+      "fixture_external_key": "unit-la-pura-u-0372",
+      "real_external_id": "U-0372",
+      "real_id": "7a03724e-215d-421f-adf2-0f6ea140e620"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0373",
+      "fixture_external_key": "unit-la-pura-u-0373",
+      "real_external_id": "U-0373",
+      "real_id": "556c0a36-0a12-46bb-b0d0-da7a73b65e00"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0374",
+      "fixture_external_key": "unit-la-pura-u-0374",
+      "real_external_id": "U-0374",
+      "real_id": "e5e83f25-e385-48cf-bbcd-ce4938f09134"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0375",
+      "fixture_external_key": "unit-la-pura-u-0375",
+      "real_external_id": "U-0375",
+      "real_id": "14a92b6e-ee89-4ac9-be2f-2a4472200feb"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0376",
+      "fixture_external_key": "unit-la-pura-u-0376",
+      "real_external_id": "U-0376",
+      "real_id": "adcf82b8-7811-431e-b6e1-a5a8177583d7"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0377",
+      "fixture_external_key": "unit-la-pura-u-0377",
+      "real_external_id": "U-0377",
+      "real_id": "4882b07e-fd4e-489e-a8c8-46f58d7cc39b"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0378",
+      "fixture_external_key": "unit-la-pura-u-0378",
+      "real_external_id": "U-0378",
+      "real_id": "fc09d314-3cb7-44b0-9dad-b5b535c0902d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0379",
+      "fixture_external_key": "unit-la-pura-u-0379",
+      "real_external_id": "U-0379",
+      "real_id": "795b7477-8d51-4312-9012-dcf326c0222d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0380",
+      "fixture_external_key": "unit-la-pura-u-0380",
+      "real_external_id": "U-0380",
+      "real_id": "61a64c82-065a-41dd-80b8-d8f49da16be8"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0381",
+      "fixture_external_key": "unit-la-pura-u-0381",
+      "real_external_id": "U-0381",
+      "real_id": "81789912-498f-4f75-a302-63940f0d1c4c"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0382",
+      "fixture_external_key": "unit-la-pura-u-0382",
+      "real_external_id": "U-0382",
+      "real_id": "32c8d2aa-a319-4900-a7cc-5423836e97c9"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0383",
+      "fixture_external_key": "unit-la-pura-u-0383",
+      "real_external_id": "U-0383",
+      "real_id": "d858cac7-fbd9-4c77-95a7-858fd6f4be48"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0384",
+      "fixture_external_key": "unit-la-pura-u-0384",
+      "real_external_id": "U-0384",
+      "real_id": "c7df68af-de47-4c49-b18d-c4f405eb17c7"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0385",
+      "fixture_external_key": "unit-la-pura-u-0385",
+      "real_external_id": "U-0385",
+      "real_id": "c4349b58-1812-43f8-98b3-44a33ea4a6c4"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0386",
+      "fixture_external_key": "unit-la-pura-u-0386",
+      "real_external_id": "U-0386",
+      "real_id": "f8fd8ea3-ca18-44f2-aaf3-afb5a2e97824"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0387",
+      "fixture_external_key": "unit-la-pura-u-0387",
+      "real_external_id": "U-0387",
+      "real_id": "9629a0de-9945-4fe3-b716-b0730f7a6a85"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0388",
+      "fixture_external_key": "unit-la-pura-u-0388",
+      "real_external_id": "U-0388",
+      "real_id": "674f21d6-279b-438a-ad78-41455cd90469"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0389",
+      "fixture_external_key": "unit-la-pura-u-0389",
+      "real_external_id": "U-0389",
+      "real_id": "a6a51c5c-e9a2-4452-bea1-6d390ff6327c"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0390",
+      "fixture_external_key": "unit-la-pura-u-0390",
+      "real_external_id": "U-0390",
+      "real_id": "a5e8219a-8e21-4a3d-960b-de9bd3eb198d"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0391",
+      "fixture_external_key": "unit-la-pura-u-0391",
+      "real_external_id": "U-0391",
+      "real_id": "70a20c25-dd11-42f6-888c-737bab3def83"
+    },
+    {
+      "kind": "unit",
+      "source_row_key": "U-0392",
+      "fixture_external_key": "unit-la-pura-u-0392",
+      "real_external_id": "U-0392",
+      "real_id": "9d11022c-7676-40d4-932b-b169eccacb2a"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0001",
+      "fixture_external_key": "deal-la-pura-d-0001",
+      "real_external_id": "D-0001",
+      "real_id": "a33a3a78-2799-45c5-88bf-b82b4ff128a1"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0003",
+      "fixture_external_key": "deal-la-pura-d-0003",
+      "real_external_id": "D-0002",
+      "real_id": "cfadadd8-35c6-438e-b846-f6ac252a5ea9"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0004",
+      "fixture_external_key": "deal-la-pura-d-0004",
+      "real_external_id": "D-0003",
+      "real_id": "93295637-119f-4ffd-b792-7c19ee945ac9"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0005",
+      "fixture_external_key": "deal-la-pura-d-0005",
+      "real_external_id": "D-0004",
+      "real_id": "532c6d99-5224-4f74-a4ab-4642aec35854"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0006",
+      "fixture_external_key": "deal-la-pura-d-0006",
+      "real_external_id": "D-0005",
+      "real_id": "d1bb9b16-a8b5-40ac-ad64-a3af28336ca1"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0007",
+      "fixture_external_key": "deal-la-pura-d-0007",
+      "real_external_id": "D-0006",
+      "real_id": "a04d8c2d-2faf-4ccc-b201-45aa4f02afa6"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0008",
+      "fixture_external_key": "deal-la-pura-d-0008",
+      "real_external_id": "D-0007",
+      "real_id": "6c68245e-cd9d-4d84-bf30-5ac29b023740"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0010",
+      "fixture_external_key": "deal-la-pura-d-0010",
+      "real_external_id": "D-0008",
+      "real_id": "6c3ef872-9233-41fb-97f9-5d5e558526e6"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0011",
+      "fixture_external_key": "deal-la-pura-d-0011",
+      "real_external_id": "D-0009",
+      "real_id": "9bbb2942-3fb3-4fcf-8e29-4ef649fde695"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0013",
+      "fixture_external_key": "deal-la-pura-d-0013",
+      "real_external_id": "D-0010",
+      "real_id": "0e0aa539-9ef8-47e1-8696-22f1f7c7a278"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0016",
+      "fixture_external_key": "deal-la-pura-d-0016",
+      "real_external_id": "D-0011",
+      "real_id": "3f85d99a-9300-4c3b-9c7f-fde78fbd22ee"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0017",
+      "fixture_external_key": "deal-la-pura-d-0017",
+      "real_external_id": "D-0012",
+      "real_id": "bb989061-02cc-427d-85ee-d82e49679e75"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0020",
+      "fixture_external_key": "deal-la-pura-d-0020",
+      "real_external_id": "D-0013",
+      "real_id": "2b4d466f-95d7-4ed5-b901-278eba8d8ede"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0021",
+      "fixture_external_key": "deal-la-pura-d-0021",
+      "real_external_id": "D-0014",
+      "real_id": "dfe9cca8-8895-4dd3-8fc7-ce647b49f430"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0022",
+      "fixture_external_key": "deal-la-pura-d-0022",
+      "real_external_id": "D-0015",
+      "real_id": "a6843bfc-c845-4195-b8e5-28a9df367ca4"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0024",
+      "fixture_external_key": "deal-la-pura-d-0024",
+      "real_external_id": "D-0016",
+      "real_id": "6d9a9548-b246-4489-941a-2ee1bc2f5da4"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0025",
+      "fixture_external_key": "deal-la-pura-d-0025",
+      "real_external_id": "D-0017",
+      "real_id": "0c5fc6c1-c70c-43cd-a824-7258ebfee554"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0030",
+      "fixture_external_key": "deal-la-pura-d-0030",
+      "real_external_id": "D-0018",
+      "real_id": "dace4e79-2244-498b-b12e-0f9a8f08f4b7"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0033",
+      "fixture_external_key": "deal-la-pura-d-0033",
+      "real_external_id": "D-0019",
+      "real_id": "0f959e5b-3c80-46fa-bd64-9e8af4ab6920"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0036",
+      "fixture_external_key": "deal-la-pura-d-0036",
+      "real_external_id": "D-0020",
+      "real_id": "76b61700-9b54-4ab3-b3d5-e7e5a5e53a57"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0037",
+      "fixture_external_key": "deal-la-pura-d-0037",
+      "real_external_id": "D-0021",
+      "real_id": "648b626a-628f-42c2-b5a9-e672379ad718"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0038",
+      "fixture_external_key": "deal-la-pura-d-0038",
+      "real_external_id": "D-0022",
+      "real_id": "15306269-e814-472e-97de-059d3815217c"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0039",
+      "fixture_external_key": "deal-la-pura-d-0039",
+      "real_external_id": "D-0023",
+      "real_id": "aa13d1bf-f44a-407c-a541-aa1ba045a2a4"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0040",
+      "fixture_external_key": "deal-la-pura-d-0040",
+      "real_external_id": "D-0024",
+      "real_id": "6618b396-ebe6-4f8e-abe1-70bc83f17bd9"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0042",
+      "fixture_external_key": "deal-la-pura-d-0042",
+      "real_external_id": "D-0025",
+      "real_id": "b65c2d69-7506-421c-afba-79d04be35bcf"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0044",
+      "fixture_external_key": "deal-la-pura-d-0044",
+      "real_external_id": "D-0026",
+      "real_id": "2b1e359e-b378-418e-819d-b292f7b100dd"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0045",
+      "fixture_external_key": "deal-la-pura-d-0045",
+      "real_external_id": "D-0027",
+      "real_id": "d19fefad-281c-47fc-9c76-f230dffd6d92"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0047",
+      "fixture_external_key": "deal-la-pura-d-0047",
+      "real_external_id": "D-0028",
+      "real_id": "461847be-957e-4f85-97c6-da2725a59f1e"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0048",
+      "fixture_external_key": "deal-la-pura-d-0048",
+      "real_external_id": "D-0029",
+      "real_id": "c5b774f5-f6cd-4f75-bfe9-ddd40cb0ac98"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0049",
+      "fixture_external_key": "deal-la-pura-d-0049",
+      "real_external_id": "D-0030",
+      "real_id": "cb0c5e08-eceb-4add-8104-ca4b11912c74"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0051",
+      "fixture_external_key": "deal-la-pura-d-0051",
+      "real_external_id": "D-0031",
+      "real_id": "9472db37-77e3-4790-b02f-d636119c4546"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0053",
+      "fixture_external_key": "deal-la-pura-d-0053",
+      "real_external_id": "D-0032",
+      "real_id": "d59cc0b8-446d-4434-8130-2dbe386092e7"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0055",
+      "fixture_external_key": "deal-la-pura-d-0055",
+      "real_external_id": "D-0033",
+      "real_id": "5b8cb71b-5fb2-47a0-8a14-c5285a3ac993"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0056",
+      "fixture_external_key": "deal-la-pura-d-0056",
+      "real_external_id": "D-0034",
+      "real_id": "fdcf7574-8809-4b83-a406-8d7fdc5143e3"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0057",
+      "fixture_external_key": "deal-la-pura-d-0057",
+      "real_external_id": "D-0035",
+      "real_id": "de2d9861-23e1-411d-933b-639df448535d"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0058",
+      "fixture_external_key": "deal-la-pura-d-0058",
+      "real_external_id": "D-0036",
+      "real_id": "c75de86d-978f-43fe-ab72-47051ddfcfa0"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0060",
+      "fixture_external_key": "deal-la-pura-d-0060",
+      "real_external_id": "D-0037",
+      "real_id": "cc013084-dd93-4ac4-b235-77e873408019"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0062",
+      "fixture_external_key": "deal-la-pura-d-0062",
+      "real_external_id": "D-0038",
+      "real_id": "5a68c6ef-82b5-471c-820d-d17076917363"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0063",
+      "fixture_external_key": "deal-la-pura-d-0063",
+      "real_external_id": "D-0039",
+      "real_id": "69f60b32-24cd-4939-8f53-2ff7d53f8ef6"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0064",
+      "fixture_external_key": "deal-la-pura-d-0064",
+      "real_external_id": "D-0040",
+      "real_id": "c92c6a8b-b870-4ea7-82bf-d06fd1458825"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0068",
+      "fixture_external_key": "deal-la-pura-d-0068",
+      "real_external_id": "D-0041",
+      "real_id": "8b7ed617-7cb4-4e3d-952e-3516c9a8daf5"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0069",
+      "fixture_external_key": "deal-la-pura-d-0069",
+      "real_external_id": "D-0042",
+      "real_id": "c2f45327-e213-44b1-b3f4-d32bb4ddec9d"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0070",
+      "fixture_external_key": "deal-la-pura-d-0070",
+      "real_external_id": "D-0043",
+      "real_id": "5035ffb8-5628-4d58-871d-863bf0ee11ea"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0071",
+      "fixture_external_key": "deal-la-pura-d-0071",
+      "real_external_id": "D-0044",
+      "real_id": "fa77b2cc-aa97-4bc7-a134-25c5c25e4e8f"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0073",
+      "fixture_external_key": "deal-la-pura-d-0073",
+      "real_external_id": "D-0045",
+      "real_id": "a22f7ee2-748d-4bd1-8c5a-c42fdc89986a"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0074",
+      "fixture_external_key": "deal-la-pura-d-0074",
+      "real_external_id": "D-0046",
+      "real_id": "99b5c02f-2481-4a9f-85fc-41a3ae18b25e"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0075",
+      "fixture_external_key": "deal-la-pura-d-0075",
+      "real_external_id": "D-0047",
+      "real_id": "56562c86-6efc-47de-81d2-1b4d44bde8b6"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0076",
+      "fixture_external_key": "deal-la-pura-d-0076",
+      "real_external_id": "D-0048",
+      "real_id": "e365c749-2d89-4494-94e5-dec1f5eca8dd"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0077",
+      "fixture_external_key": "deal-la-pura-d-0077",
+      "real_external_id": "D-0049",
+      "real_id": "fe32b33d-a5bf-4cc6-b1ec-6169bc3dd799"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0078",
+      "fixture_external_key": "deal-la-pura-d-0078",
+      "real_external_id": "D-0050",
+      "real_id": "5557b982-1a78-4aff-bc0e-64662d037c28"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0079",
+      "fixture_external_key": "deal-la-pura-d-0079",
+      "real_external_id": "D-0051",
+      "real_id": "5a69e1a1-3dc7-4292-8182-85db2e8009c2"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0080",
+      "fixture_external_key": "deal-la-pura-d-0080",
+      "real_external_id": "D-0052",
+      "real_id": "348fd536-1694-4534-b191-73df0d5dc0c6"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0081",
+      "fixture_external_key": "deal-la-pura-d-0081",
+      "real_external_id": "D-0053",
+      "real_id": "faf71179-9ff4-4bd3-a9c3-4355a99e3291"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0082",
+      "fixture_external_key": "deal-la-pura-d-0082",
+      "real_external_id": "D-0054",
+      "real_id": "94f65087-e9c6-48b2-bcfa-76afae086993"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0084",
+      "fixture_external_key": "deal-la-pura-d-0084",
+      "real_external_id": "D-0055",
+      "real_id": "4f7338dd-00fb-499d-b4e3-ca48e7ae39dd"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0086",
+      "fixture_external_key": "deal-la-pura-d-0086",
+      "real_external_id": "D-0056",
+      "real_id": "a6b3fe22-4c14-4be7-845e-3146e538980f"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0090",
+      "fixture_external_key": "deal-la-pura-d-0090",
+      "real_external_id": "D-0057",
+      "real_id": "7ffaf6a2-c24f-4564-b448-f9702c047c1b"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0092",
+      "fixture_external_key": "deal-la-pura-d-0092",
+      "real_external_id": "D-0058",
+      "real_id": "363d1de4-c8dd-40a0-ac53-060953f982a5"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0094",
+      "fixture_external_key": "deal-la-pura-d-0094",
+      "real_external_id": "D-0059",
+      "real_id": "62ec1572-060b-479c-9964-1cae7c148309"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0095",
+      "fixture_external_key": "deal-la-pura-d-0095",
+      "real_external_id": "D-0060",
+      "real_id": "0cb25b08-7664-4311-b970-b0b5c1ce8e5a"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0097",
+      "fixture_external_key": "deal-la-pura-d-0097",
+      "real_external_id": "D-0061",
+      "real_id": "1bcde70d-5293-4ebb-a7e6-406b0748b7f9"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0099",
+      "fixture_external_key": "deal-la-pura-d-0099",
+      "real_external_id": "D-0062",
+      "real_id": "d46c106e-4b3f-4c35-98fa-debf92dccbbb"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0101",
+      "fixture_external_key": "deal-la-pura-d-0101",
+      "real_external_id": "D-0063",
+      "real_id": "051214ed-ca05-438e-8748-f0b35e170dd1"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0102",
+      "fixture_external_key": "deal-la-pura-d-0102",
+      "real_external_id": "D-0064",
+      "real_id": "c1117393-89d6-4cd9-abdc-5f17db6c319b"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0103",
+      "fixture_external_key": "deal-la-pura-d-0103",
+      "real_external_id": "D-0065",
+      "real_id": "d87b1b73-65c8-4ede-802a-0242d00899d4"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0104",
+      "fixture_external_key": "deal-la-pura-d-0104",
+      "real_external_id": "D-0066",
+      "real_id": "d55ec7df-2e54-46ce-a237-824eb835f9ba"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0105",
+      "fixture_external_key": "deal-la-pura-d-0105",
+      "real_external_id": "D-0067",
+      "real_id": "8999323c-c25e-4131-bf27-0aeca2ccef3f"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0106",
+      "fixture_external_key": "deal-la-pura-d-0106",
+      "real_external_id": "D-0068",
+      "real_id": "cdddf9c1-123f-487a-9e71-20b2a79069b1"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0107",
+      "fixture_external_key": "deal-la-pura-d-0107",
+      "real_external_id": "D-0069",
+      "real_id": "15284c89-9def-45ae-b1d4-1fbec44fbe42"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0108",
+      "fixture_external_key": "deal-la-pura-d-0108",
+      "real_external_id": "D-0070",
+      "real_id": "4a5a0b02-a03f-427f-b45e-3dc1d8c4a519"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0109",
+      "fixture_external_key": "deal-la-pura-d-0109",
+      "real_external_id": "D-0071",
+      "real_id": "70029a7d-2c50-4519-9d37-c9da8568571f"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0114",
+      "fixture_external_key": "deal-la-pura-d-0114",
+      "real_external_id": "D-0072",
+      "real_id": "03dda310-b8b7-4361-981c-e91ac4bc6721"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0115",
+      "fixture_external_key": "deal-la-pura-d-0115",
+      "real_external_id": "D-0073",
+      "real_id": "1c765ac0-1d21-4c71-a053-d86f783b2317"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0117",
+      "fixture_external_key": "deal-la-pura-d-0117",
+      "real_external_id": "D-0074",
+      "real_id": "98c98339-b745-4a3c-bd30-570b6819cc73"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0118",
+      "fixture_external_key": "deal-la-pura-d-0118",
+      "real_external_id": "D-0075",
+      "real_id": "91fabd3b-26c2-4b87-93f9-41a4877c0c05"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0119",
+      "fixture_external_key": "deal-la-pura-d-0119",
+      "real_external_id": "D-0076",
+      "real_id": "37d34163-c03d-4ee4-9dc3-c61eec7c8b3d"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0120",
+      "fixture_external_key": "deal-la-pura-d-0120",
+      "real_external_id": "D-0077",
+      "real_id": "902a6d91-cb75-468a-82a9-dd35bbb34422"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0121",
+      "fixture_external_key": "deal-la-pura-d-0121",
+      "real_external_id": "D-0078",
+      "real_id": "83713fe6-f14f-4b02-a3b8-4ce5dc667661"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0122",
+      "fixture_external_key": "deal-la-pura-d-0122",
+      "real_external_id": "D-0079",
+      "real_id": "14f2a6bd-1b56-445f-bbf0-b910cb46124f"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0123",
+      "fixture_external_key": "deal-la-pura-d-0123",
+      "real_external_id": "D-0080",
+      "real_id": "baa774b4-37ee-4f77-97ca-a1401db06d4a"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0124",
+      "fixture_external_key": "deal-la-pura-d-0124",
+      "real_external_id": "D-0081",
+      "real_id": "4addd503-6ada-46ad-acc0-60272f2339ff"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0125",
+      "fixture_external_key": "deal-la-pura-d-0125",
+      "real_external_id": "D-0082",
+      "real_id": "d4831b8a-44cd-4372-a924-11dc62932018"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0126",
+      "fixture_external_key": "deal-la-pura-d-0126",
+      "real_external_id": "D-0083",
+      "real_id": "6acb241c-92ad-4752-bc46-da15bdb84e1e"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0128",
+      "fixture_external_key": "deal-la-pura-d-0128",
+      "real_external_id": "D-0084",
+      "real_id": "328f79e1-cd59-4bfb-a4a3-5db6d29d22b1"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0129",
+      "fixture_external_key": "deal-la-pura-d-0129",
+      "real_external_id": "D-0085",
+      "real_id": "5b2798ab-8802-4a4a-bbc2-b6f5b87a8842"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0132",
+      "fixture_external_key": "deal-la-pura-d-0132",
+      "real_external_id": "D-0086",
+      "real_id": "c6f1b202-afa4-499a-8554-0316a4667b7b"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0133",
+      "fixture_external_key": "deal-la-pura-d-0133",
+      "real_external_id": "D-0087",
+      "real_id": "ec9604b2-6b9b-4a8e-81eb-f3e521e1ecfd"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0136",
+      "fixture_external_key": "deal-la-pura-d-0136",
+      "real_external_id": "D-0088",
+      "real_id": "e32ccb44-8d66-4c2f-8be9-fb2f909a1cae"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0139",
+      "fixture_external_key": "deal-la-pura-d-0139",
+      "real_external_id": "D-0089",
+      "real_id": "c64ff6c8-226b-46b9-a266-8f2ddc11cffc"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0140",
+      "fixture_external_key": "deal-la-pura-d-0140",
+      "real_external_id": "D-0090",
+      "real_id": "22aba20c-7820-463e-85a8-e3ce4e7c094e"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0141",
+      "fixture_external_key": "deal-la-pura-d-0141",
+      "real_external_id": "D-0091",
+      "real_id": "5bd79093-31bf-4339-9d57-ce2b528791d6"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0142",
+      "fixture_external_key": "deal-la-pura-d-0142",
+      "real_external_id": "D-0092",
+      "real_id": "d833d15e-f8ae-489d-981f-f102db6d01bf"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0143",
+      "fixture_external_key": "deal-la-pura-d-0143",
+      "real_external_id": "D-0093",
+      "real_id": "f9845164-e130-4307-bbf3-5577ba0aa38a"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0144",
+      "fixture_external_key": "deal-la-pura-d-0144",
+      "real_external_id": "D-0094",
+      "real_id": "53546392-3212-4e1d-b3e3-4f5a33d8f53d"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0145",
+      "fixture_external_key": "deal-la-pura-d-0145",
+      "real_external_id": "D-0095",
+      "real_id": "52e9472a-0136-44a1-9efd-5425aa669bf7"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0146",
+      "fixture_external_key": "deal-la-pura-d-0146",
+      "real_external_id": "D-0096",
+      "real_id": "7b5eff92-d886-4712-a797-be61e4de360b"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0148",
+      "fixture_external_key": "deal-la-pura-d-0148",
+      "real_external_id": "D-0097",
+      "real_id": "72e803a2-4ab6-4622-910b-b7e366cdf3a0"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0149",
+      "fixture_external_key": "deal-la-pura-d-0149",
+      "real_external_id": "D-0098",
+      "real_id": "221b831d-5fcd-4954-aacb-9d31f50838e8"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0150",
+      "fixture_external_key": "deal-la-pura-d-0150",
+      "real_external_id": "D-0099",
+      "real_id": "fe9edf7f-d5bb-4544-89d2-4d8b183e853e"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0151",
+      "fixture_external_key": "deal-la-pura-d-0151",
+      "real_external_id": "D-0100",
+      "real_id": "3e3fd55d-2594-4c4c-a478-b6fc2a4b76b2"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0152",
+      "fixture_external_key": "deal-la-pura-d-0152",
+      "real_external_id": "D-0101",
+      "real_id": "1e87ed59-7526-42cf-bdd9-86892cb7765b"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0153",
+      "fixture_external_key": "deal-la-pura-d-0153",
+      "real_external_id": "D-0102",
+      "real_id": "06d449b4-d45e-4f89-a445-67845167e5f0"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0155",
+      "fixture_external_key": "deal-la-pura-d-0155",
+      "real_external_id": "D-0103",
+      "real_id": "516c63d1-07c2-4638-af69-f6c2b7b73c7a"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0158",
+      "fixture_external_key": "deal-la-pura-d-0158",
+      "real_external_id": "D-0104",
+      "real_id": "cebb7a43-2baa-4254-91e2-067c2fc9e59d"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0160",
+      "fixture_external_key": "deal-la-pura-d-0160",
+      "real_external_id": "D-0105",
+      "real_id": "fc458fba-6422-42f0-bb6f-9c4195f57c99"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0161",
+      "fixture_external_key": "deal-la-pura-d-0161",
+      "real_external_id": "D-0106",
+      "real_id": "36df62d5-17e5-457f-9581-8c2fb902d1fe"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0162",
+      "fixture_external_key": "deal-la-pura-d-0162",
+      "real_external_id": "D-0107",
+      "real_id": "06dbfe8e-d6cf-41b0-8e27-a132c220e9b2"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0163",
+      "fixture_external_key": "deal-la-pura-d-0163",
+      "real_external_id": "D-0108",
+      "real_id": "97c1b960-4587-4a7b-a03d-ce9663b6d030"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0164",
+      "fixture_external_key": "deal-la-pura-d-0164",
+      "real_external_id": "D-0109",
+      "real_id": "39a8aaf9-8a77-412a-8b8e-e0f7a1053a91"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0167",
+      "fixture_external_key": "deal-la-pura-d-0167",
+      "real_external_id": "D-0110",
+      "real_id": "3ff2cbfc-df9f-44b2-9283-0ee285dfed7c"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0168",
+      "fixture_external_key": "deal-la-pura-d-0168",
+      "real_external_id": "D-0111",
+      "real_id": "a916cc67-cceb-48b3-aeea-fee5b0b98c42"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0169",
+      "fixture_external_key": "deal-la-pura-d-0169",
+      "real_external_id": "D-0112",
+      "real_id": "0a4c5f56-b5e0-4811-bacc-6e874bef0c95"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0170",
+      "fixture_external_key": "deal-la-pura-d-0170",
+      "real_external_id": "D-0113",
+      "real_id": "285988f4-15e5-4887-a23f-3709265aa236"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0172",
+      "fixture_external_key": "deal-la-pura-d-0172",
+      "real_external_id": "D-0114",
+      "real_id": "0872105c-888b-4c26-8403-9c2bcc858fbd"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0174",
+      "fixture_external_key": "deal-la-pura-d-0174",
+      "real_external_id": "D-0115",
+      "real_id": "72b792a3-2383-43ff-8053-ec012538984b"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0175",
+      "fixture_external_key": "deal-la-pura-d-0175",
+      "real_external_id": "D-0116",
+      "real_id": "58fb0330-7dce-46a9-bae6-0cfa9904bf1a"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0176",
+      "fixture_external_key": "deal-la-pura-d-0176",
+      "real_external_id": "D-0117",
+      "real_id": "a694809b-dfa4-4263-9041-021de3d7d1b5"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0178",
+      "fixture_external_key": "deal-la-pura-d-0178",
+      "real_external_id": "D-0118",
+      "real_id": "cbe7fb7d-3b07-4fd2-8d15-ff3aef40fd0c"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0179",
+      "fixture_external_key": "deal-la-pura-d-0179",
+      "real_external_id": "D-0119",
+      "real_id": "4d6bbe84-bfc8-4774-9cad-821ab8c83f83"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0180",
+      "fixture_external_key": "deal-la-pura-d-0180",
+      "real_external_id": "D-0120",
+      "real_id": "9e504540-fc05-4917-9597-6e18c03ac387"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0181",
+      "fixture_external_key": "deal-la-pura-d-0181",
+      "real_external_id": "D-0121",
+      "real_id": "93ef090b-30c0-4d17-8859-fed2e1f1de4c"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0182",
+      "fixture_external_key": "deal-la-pura-d-0182",
+      "real_external_id": "D-0122",
+      "real_id": "02da071d-9e18-4c02-a42c-ba6bf37787e2"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0184",
+      "fixture_external_key": "deal-la-pura-d-0184",
+      "real_external_id": "D-0123",
+      "real_id": "6e411be3-ac74-4c6e-a7a0-d1fd7ccaa57c"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0185",
+      "fixture_external_key": "deal-la-pura-d-0185",
+      "real_external_id": "D-0124",
+      "real_id": "4ed468d8-0b76-44e8-8a94-9bb10e63ab22"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0187",
+      "fixture_external_key": "deal-la-pura-d-0187",
+      "real_external_id": "D-0125",
+      "real_id": "9e76dd40-1a35-42f8-bf6c-7c0e209adde8"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0188",
+      "fixture_external_key": "deal-la-pura-d-0188",
+      "real_external_id": "D-0126",
+      "real_id": "78fd9237-3073-4cc0-a431-49ef48f0d041"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0189",
+      "fixture_external_key": "deal-la-pura-d-0189",
+      "real_external_id": "D-0127",
+      "real_id": "8e394cf7-7f58-459f-ae5f-d7c88f128a50"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0190",
+      "fixture_external_key": "deal-la-pura-d-0190",
+      "real_external_id": "D-0128",
+      "real_id": "52dc6d16-096a-462c-b830-ce645862a2ae"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0192",
+      "fixture_external_key": "deal-la-pura-d-0192",
+      "real_external_id": "D-0129",
+      "real_id": "0bc35a0a-2313-4083-9993-060c01e844ef"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0193",
+      "fixture_external_key": "deal-la-pura-d-0193",
+      "real_external_id": "D-0130",
+      "real_id": "41d7c748-0075-40d8-89c6-4e544734d882"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0002",
+      "fixture_external_key": "deal-la-pura-d-0002",
+      "real_external_id": "D-0131",
+      "real_id": "59e3697d-c3ab-4568-8b55-51d71d621475"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0009",
+      "fixture_external_key": "deal-la-pura-d-0009",
+      "real_external_id": "D-0132",
+      "real_id": "713f8b21-6b5a-415a-b3ef-2b4d5110630f"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0012",
+      "fixture_external_key": "deal-la-pura-d-0012",
+      "real_external_id": "D-0133",
+      "real_id": "21bac8d9-8f91-4bf9-8fc4-4ed224d73639"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0014",
+      "fixture_external_key": "deal-la-pura-d-0014",
+      "real_external_id": "D-0134",
+      "real_id": "d6f97620-9606-44f0-9415-1e54183b38dc"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0015",
+      "fixture_external_key": "deal-la-pura-d-0015",
+      "real_external_id": "D-0135",
+      "real_id": "3ad6d74c-2b50-42a4-a965-c30d8c3f5516"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0018",
+      "fixture_external_key": "deal-la-pura-d-0018",
+      "real_external_id": "D-0136",
+      "real_id": "144adf3c-2186-4905-97c0-a78ea4126c0c"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0019",
+      "fixture_external_key": "deal-la-pura-d-0019",
+      "real_external_id": "D-0137",
+      "real_id": "c77e5b72-16fe-4d50-96cd-c2abd83a9ce7"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0023",
+      "fixture_external_key": "deal-la-pura-d-0023",
+      "real_external_id": "D-0138",
+      "real_id": "14c9ebf3-0b91-483f-9926-3f81b1f6c875"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0026",
+      "fixture_external_key": "deal-la-pura-d-0026",
+      "real_external_id": "D-0139",
+      "real_id": "a09da705-731f-44cb-8230-35eb042e5ca5"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0027",
+      "fixture_external_key": "deal-la-pura-d-0027",
+      "real_external_id": "D-0140",
+      "real_id": "3bf4cece-efe8-4026-aaac-02f02f8605f2"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0028",
+      "fixture_external_key": "deal-la-pura-d-0028",
+      "real_external_id": "D-0141",
+      "real_id": "75e47654-82ab-45c1-8bcb-6766d0154721"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0029",
+      "fixture_external_key": "deal-la-pura-d-0029",
+      "real_external_id": "D-0142",
+      "real_id": "fb45c9e1-8af8-4dd5-abba-ed81d97b7408"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0031",
+      "fixture_external_key": "deal-la-pura-d-0031",
+      "real_external_id": "D-0143",
+      "real_id": "1ffe251f-9732-45d2-86e2-dfa73dffa4af"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0032",
+      "fixture_external_key": "deal-la-pura-d-0032",
+      "real_external_id": "D-0144",
+      "real_id": "7fc4fc97-7439-406b-abc7-f48970988f03"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0034",
+      "fixture_external_key": "deal-la-pura-d-0034",
+      "real_external_id": "D-0145",
+      "real_id": "0bfb33ac-e3ac-47a2-8fc6-c824d99f46b3"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0035",
+      "fixture_external_key": "deal-la-pura-d-0035",
+      "real_external_id": "D-0146",
+      "real_id": "cc7a39db-610a-4685-930b-02a928b1dcb1"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0041",
+      "fixture_external_key": "deal-la-pura-d-0041",
+      "real_external_id": "D-0147",
+      "real_id": "66375eeb-4b9f-4c8b-8923-babe2df3617b"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0043",
+      "fixture_external_key": "deal-la-pura-d-0043",
+      "real_external_id": "D-0148",
+      "real_id": "0a26ea74-e5b0-495b-bd05-521f149b8225"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0046",
+      "fixture_external_key": "deal-la-pura-d-0046",
+      "real_external_id": "D-0149",
+      "real_id": "5af97f83-34f1-49e2-9805-ec6bd9963784"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0050",
+      "fixture_external_key": "deal-la-pura-d-0050",
+      "real_external_id": "D-0150",
+      "real_id": "8b3d21bc-4ea4-4576-bc23-9a0fa562c50f"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0052",
+      "fixture_external_key": "deal-la-pura-d-0052",
+      "real_external_id": "D-0151",
+      "real_id": "f0cff073-2c74-4f50-981d-77cd9c3790e4"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0054",
+      "fixture_external_key": "deal-la-pura-d-0054",
+      "real_external_id": "D-0152",
+      "real_id": "afefa978-f4c3-4c7a-b42c-fdcb2ac3e1d9"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0059",
+      "fixture_external_key": "deal-la-pura-d-0059",
+      "real_external_id": "D-0153",
+      "real_id": "12b28910-5078-4748-955d-f2d9bb8aa545"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0061",
+      "fixture_external_key": "deal-la-pura-d-0061",
+      "real_external_id": "D-0154",
+      "real_id": "1da1a8ab-7779-4e66-b79f-bff1b800ad75"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0065",
+      "fixture_external_key": "deal-la-pura-d-0065",
+      "real_external_id": "D-0155",
+      "real_id": "90808225-678b-4d99-a961-20be6774479a"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0066",
+      "fixture_external_key": "deal-la-pura-d-0066",
+      "real_external_id": "D-0156",
+      "real_id": "ab021c15-882a-4a0e-afc9-fb1c40c643ce"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0067",
+      "fixture_external_key": "deal-la-pura-d-0067",
+      "real_external_id": "D-0157",
+      "real_id": "3f86af4e-87ed-488d-95a8-768eb727ad40"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0072",
+      "fixture_external_key": "deal-la-pura-d-0072",
+      "real_external_id": "D-0158",
+      "real_id": "e572ec55-e190-415e-b7b3-3054f743fbbd"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0083",
+      "fixture_external_key": "deal-la-pura-d-0083",
+      "real_external_id": "D-0159",
+      "real_id": "7cfc0598-8a40-4003-81d9-3c48288ae4af"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0085",
+      "fixture_external_key": "deal-la-pura-d-0085",
+      "real_external_id": "D-0160",
+      "real_id": "c6c82f0a-b30f-40b9-a960-4d6021768aa1"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0087",
+      "fixture_external_key": "deal-la-pura-d-0087",
+      "real_external_id": "D-0161",
+      "real_id": "16cb7da9-8f08-45d2-8589-1c852b618e8d"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0088",
+      "fixture_external_key": "deal-la-pura-d-0088",
+      "real_external_id": "D-0162",
+      "real_id": "9586b29e-8cef-4e1c-b74d-a22bbad0b454"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0089",
+      "fixture_external_key": "deal-la-pura-d-0089",
+      "real_external_id": "D-0163",
+      "real_id": "cfc769e4-215c-49f0-8d20-99f72eeaa7ac"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0091",
+      "fixture_external_key": "deal-la-pura-d-0091",
+      "real_external_id": "D-0164",
+      "real_id": "51ae252c-505b-4f90-9bbd-75ea2a11dc1d"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0093",
+      "fixture_external_key": "deal-la-pura-d-0093",
+      "real_external_id": "D-0165",
+      "real_id": "21d92b11-e434-4e8a-b956-d39e0c5c2fde"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0096",
+      "fixture_external_key": "deal-la-pura-d-0096",
+      "real_external_id": "D-0166",
+      "real_id": "3241898c-ed77-4320-87d2-fec585c7d792"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0098",
+      "fixture_external_key": "deal-la-pura-d-0098",
+      "real_external_id": "D-0167",
+      "real_id": "fa7e3c98-e5f0-4466-a15e-4a06b1d52da8"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0100",
+      "fixture_external_key": "deal-la-pura-d-0100",
+      "real_external_id": "D-0168",
+      "real_id": "9b2dca7c-756d-4bc6-8870-48e3b8ef2a80"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0110",
+      "fixture_external_key": "deal-la-pura-d-0110",
+      "real_external_id": "D-0169",
+      "real_id": "5d82ac32-18be-4252-b10d-5583cbfe1758"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0111",
+      "fixture_external_key": "deal-la-pura-d-0111",
+      "real_external_id": "D-0170",
+      "real_id": "7910317e-a28b-4227-9dc8-2b6bcce85720"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0112",
+      "fixture_external_key": "deal-la-pura-d-0112",
+      "real_external_id": "D-0171",
+      "real_id": "d45cb89a-4188-45a2-983e-ae9dc47b87f9"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0113",
+      "fixture_external_key": "deal-la-pura-d-0113",
+      "real_external_id": "D-0172",
+      "real_id": "90f99462-588b-4fd5-bffe-c8b9627bc89e"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0116",
+      "fixture_external_key": "deal-la-pura-d-0116",
+      "real_external_id": "D-0173",
+      "real_id": "003fe78b-6137-43eb-9018-3bdc544d8942"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0127",
+      "fixture_external_key": "deal-la-pura-d-0127",
+      "real_external_id": "D-0174",
+      "real_id": "8834eba1-b07a-4a21-971a-2b419d022847"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0130",
+      "fixture_external_key": "deal-la-pura-d-0130",
+      "real_external_id": "D-0175",
+      "real_id": "ecfbaea7-ae1f-4814-81b6-e9fbceae8447"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0131",
+      "fixture_external_key": "deal-la-pura-d-0131",
+      "real_external_id": "D-0176",
+      "real_id": "cc85b285-7d9c-41a3-a241-7180af42eb4e"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0134",
+      "fixture_external_key": "deal-la-pura-d-0134",
+      "real_external_id": "D-0177",
+      "real_id": "507180d1-ff40-4918-a470-0484b106a471"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0135",
+      "fixture_external_key": "deal-la-pura-d-0135",
+      "real_external_id": "D-0178",
+      "real_id": "3d60f0a1-8fad-46b4-931f-23545138a037"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0137",
+      "fixture_external_key": "deal-la-pura-d-0137",
+      "real_external_id": "D-0179",
+      "real_id": "0c676341-2de8-477b-b890-f06d352cedad"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0138",
+      "fixture_external_key": "deal-la-pura-d-0138",
+      "real_external_id": "D-0180",
+      "real_id": "602112d6-5d6f-4c3e-a266-b5e8c45232ae"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0147",
+      "fixture_external_key": "deal-la-pura-d-0147",
+      "real_external_id": "D-0181",
+      "real_id": "0c8f4135-45f3-455d-8661-09af499464bf"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0154",
+      "fixture_external_key": "deal-la-pura-d-0154",
+      "real_external_id": "D-0182",
+      "real_id": "854200c8-6a7d-4e7d-bd84-7a9824b91afc"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0156",
+      "fixture_external_key": "deal-la-pura-d-0156",
+      "real_external_id": "D-0183",
+      "real_id": "f770983a-524f-4d30-9da3-e235135720a9"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0157",
+      "fixture_external_key": "deal-la-pura-d-0157",
+      "real_external_id": "D-0184",
+      "real_id": "7926b1fd-138d-4594-b872-347fd44e7c15"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0159",
+      "fixture_external_key": "deal-la-pura-d-0159",
+      "real_external_id": "D-0185",
+      "real_id": "dcedc7d6-8821-4ca0-9c4a-d7b8079d9ac9"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0165",
+      "fixture_external_key": "deal-la-pura-d-0165",
+      "real_external_id": "D-0186",
+      "real_id": "ec958323-24b7-4368-b981-3e7760fa6e42"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0166",
+      "fixture_external_key": "deal-la-pura-d-0166",
+      "real_external_id": "D-0187",
+      "real_id": "8db36a2b-7bf6-4617-8e4a-522fd9e61b56"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0171",
+      "fixture_external_key": "deal-la-pura-d-0171",
+      "real_external_id": "D-0188",
+      "real_id": "66c5e041-a542-49a1-95e5-5349a7aa1c97"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0173",
+      "fixture_external_key": "deal-la-pura-d-0173",
+      "real_external_id": "D-0189",
+      "real_id": "c98c7cc4-517d-4f35-b1d0-c429ffbdbac7"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0177",
+      "fixture_external_key": "deal-la-pura-d-0177",
+      "real_external_id": "D-0190",
+      "real_id": "389d2187-25f5-43d9-85d8-ec843df98afd"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0183",
+      "fixture_external_key": "deal-la-pura-d-0183",
+      "real_external_id": "D-0191",
+      "real_id": "76912378-2543-481f-a251-7692f838429e"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0186",
+      "fixture_external_key": "deal-la-pura-d-0186",
+      "real_external_id": "D-0192",
+      "real_id": "0c2412ca-08f8-42ac-9796-1121842dc131"
+    },
+    {
+      "kind": "deal",
+      "source_row_key": "D-0191",
+      "fixture_external_key": "deal-la-pura-d-0191",
+      "real_external_id": "D-0193",
+      "real_id": "a65388a3-0e51-48ce-98fe-7d2680e58e45"
+    }
+  ],
+  "real_ids": null,
+  "pass_2_completed_at": "2026-08-31T21:48:39.035225+00:00"
+}

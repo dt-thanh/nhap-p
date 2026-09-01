@@ -12,7 +12,9 @@ vi.mock("../api/client", async (importOriginal) => {
 });
 
 const { api } = await import("../api/client");
-const OverviewPage = (await import("./OverviewPage")).default;
+const overviewModule = await import("./OverviewPage");
+const OverviewPage = overviewModule.default;
+const { deriveCircularAttention } = overviewModule;
 const { SIGNAL_PROJECT_LIMIT } = await import("../utils/signals");
 const { RANKING_PROJECT_LIMIT, UNITS_PER_PROJECT_LIMIT } = await import("../utils/globalUnitRanking");
 
@@ -158,6 +160,10 @@ describe("OverviewPage — hợp đồng API của Signals Center", () => {
     renderPage();
     await screen.findByTestId("signals-list");
 
+    // Report details are now opened on demand instead of rendered beside the
+    // chart; inspect the same real portfolio signal through its category.
+    fireEvent.click(screen.getByTestId("category-legend-watch"));
+
     // 1 lượt danh mục + 1 lượt portfolio + 1 lượt xếp hạng/dự án (tới trần) + 1 lượt hấp thụ/dự án
     // (tới trần tín hiệu). KHÔNG có lượt gọi nào theo từng CĂN.
     await waitFor(() =>
@@ -188,29 +194,34 @@ describe("OverviewPage — hợp đồng API của Signals Center", () => {
     expect(absPaths.some((p) => p.includes(two[1].project_id))).toBe(true);
   });
 
-  it("7a. 5xx trên hấp thụ ⇒ tín hiệu riêng, xếp hạng và dự báo vẫn còn", async () => {
+  it("7a. 5xx trên hấp thụ ⇒ tín hiệu riêng và xếp hạng vẫn còn", async () => {
     routeGet({ "/absorption/summary": Object.assign(new Error("boom"), { status: 500 }) });
     renderPage();
 
-    expect(await screen.findByText(/Không đọc được hấp thụ/)).toBeInTheDocument();
+    await screen.findByTestId("signals-list");
+    fireEvent.click(screen.getByTestId("category-legend-watch"));
+    expect(screen.getAllByText(/Dữ liệu hấp thụ chưa sẵn sàng/).length).toBeGreaterThan(0);
     expect(screen.getByText(/10 căn ở mức xếp hạng thấp/)).toBeInTheDocument();
-    expect(screen.getByText(/Forecasting unavailable/)).toBeInTheDocument();
+    expect(screen.queryByText(/Dự báo/)).not.toBeInTheDocument();
   });
 
   it("7b. 404 trên xếp hạng ⇒ tín hiệu riêng, hấp thụ vẫn còn", async () => {
     routeGet({ "/ranking?": Object.assign(new Error("not found"), { status: 404 }) });
     renderPage();
 
-    expect(await screen.findByText(/Không đọc được xếp hạng/)).toBeInTheDocument();
-    expect(screen.getByText(/Vận tốc bán GỘP 7 ngày thấp hơn 30 ngày/)).toBeInTheDocument();
+    await screen.findByTestId("signals-list");
+    fireEvent.click(screen.getByTestId("category-legend-missing_score"));
+    expect(screen.getByRole("heading", { name: "Báo cáo: Chưa có điểm AHP" })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("category-legend-watch"));
+    expect(screen.getByRole("heading", { name: "Báo cáo: Cần theo dõi" })).toBeInTheDocument();
   });
 
   it("7c. 4xx trên /projects ⇒ critical toàn danh mục", async () => {
     routeGet({ "/v1/projects": Object.assign(new Error("Forbidden"), { status: 403 }) });
     renderPage();
 
-    expect(await screen.findByText("Không đọc được danh mục dự án")).toBeInTheDocument();
-    expect(screen.getByText(/HTTP 403/)).toBeInTheDocument();
+    expect(await screen.findByText(/Không thể tải tín hiệu cần chú ý/)).toBeInTheDocument();
+    expect(screen.queryByTestId("attention-donut")).not.toBeInTheDocument();
   });
 
   it("7d. phản hồi méo mó ⇒ không sinh tín hiệu giả, không ném lỗi", async () => {
@@ -220,13 +231,14 @@ describe("OverviewPage — hợp đồng API của Signals Center", () => {
 
     expect(screen.queryByText(/Vận tốc bán 7 ngày/)).not.toBeInTheDocument();
     expect(screen.queryByText(/căn ở mức xếp hạng thấp/)).not.toBeInTheDocument();
-    expect(screen.getByText(/Forecasting unavailable/)).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("category-legend-watch"));
+    expect(screen.queryByText(/Dự báo/)).not.toBeInTheDocument();
   });
 
   it("7e. mọi nguồn timeout ⇒ vẫn nêu đúng hiện trạng, không sập", async () => {
     api.get.mockRejectedValue(Object.assign(new TypeError("Network request failed"), { status: undefined }));
     renderPage();
-    expect(await screen.findByText("Không đọc được danh mục dự án")).toBeInTheDocument();
+    expect(await screen.findByText(/Không thể tải tín hiệu cần chú ý/)).toBeInTheDocument();
   });
 
   it("8. phần còn lại của Overview không đổi; ô 'Sức khỏe danh mục' cũ đã thành xếp hạng căn", async () => {
@@ -239,7 +251,8 @@ describe("OverviewPage — hợp đồng API của Signals Center", () => {
     expect(screen.queryByRole("heading", { name: "Sức khỏe danh mục" })).not.toBeInTheDocument();
     // Dự án vẫn hiện — nhưng là NGỮ CẢNH của từng căn, không phải một danh sách dự án.
     expect(screen.getAllByText("Harbor Crest").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Chưa có dữ liệu xu hướng tổng hợp đa dự án/)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Xu hướng hấp thụ toàn danh mục" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Tín hiệu cần chú ý" })).toBeInTheDocument();
     // KPI danh mục giữ nguyên và mở rộng thành đúng sáu thẻ theo thứ tự.
     expect(screen.getByText("Tổng dự án")).toBeInTheDocument();
     expect(screen.getByText("Tổng phân khu")).toBeInTheDocument();
@@ -365,7 +378,7 @@ describe("OverviewPage — xếp hạng căn toàn cục (tích hợp)", () => {
   it("G8. 4xx trên /projects ⇒ bảng vào trạng thái lỗi có nút thử lại", async () => {
     routeGet({ "/v1/projects": Object.assign(new Error("Forbidden"), { status: 403 }) });
     renderPage();
-    await screen.findByText("Không đọc được danh mục dự án");
+    await screen.findByText(/Không thể tải tín hiệu cần chú ý/);
     expect(screen.queryByTestId("global-ranking-table")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Thử lại" }).length).toBeGreaterThan(0);
   });
@@ -380,7 +393,7 @@ describe("OverviewPage — xếp hạng căn toàn cục (tích hợp)", () => {
   it("G10. timeout mọi nguồn ⇒ không sập, không hiện bảng rỗng như thể đã xong", async () => {
     api.get.mockRejectedValue(Object.assign(new TypeError("Network request failed"), { status: undefined }));
     renderPage();
-    await screen.findByText("Không đọc được danh mục dự án");
+    await screen.findByText(/Không thể tải tín hiệu cần chú ý/);
     expect(screen.queryByTestId("global-ranking-table")).not.toBeInTheDocument();
   });
 
@@ -413,24 +426,27 @@ describe("OverviewPage — hiển thị ba nhóm tín hiệu", () => {
     expect(screen.getByTestId("signals-loading")).toBeInTheDocument();
   });
 
-  it("hiện đủ tín hiệu hấp thụ, xếp hạng và dự báo", async () => {
+  it("hiện đủ tín hiệu hấp thụ và xếp hạng trong popup", async () => {
     routeGet();
     renderPage();
     await screen.findByTestId("signals-list");
 
-    expect(screen.getByTestId("count-category-absorption")).toHaveTextContent("1");
-    expect(screen.getByTestId("count-category-ranking")).toHaveTextContent("1");
-    expect(screen.getByTestId("count-category-forecasting")).toHaveTextContent("1");
+    expect(screen.getByTestId("signals-list")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("category-legend-watch"));
+    expect(screen.getByRole("heading", { name: "Báo cáo: Cần theo dõi" })).toBeInTheDocument();
+    expect(screen.getAllByText(/Vận tốc bán|mức xếp hạng thấp/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Dự báo/)).not.toBeInTheDocument();
   });
 
-  it("tín hiệu cấp dự án nêu danh tính dự án và liên kết đúng tuyến", async () => {
+  it("tín hiệu cấp dự án nêu danh tính và thông tin hữu ích, không render liên kết chi tiết", async () => {
     routeGet();
     renderPage();
+    await screen.findByTestId("signals-list");
+    fireEvent.click(screen.getByTestId("category-legend-watch"));
     const row = await screen.findByTestId("signal-ranking:low-band-units:syn1-P-001");
     expect(within(row).getByText(/Harbor Crest/)).toBeInTheDocument();
-    fireEvent.click(within(row).getByRole("button"));
-    expect(within(row).getByRole("link", { name: /Mở dự án syn1-P-001/ }))
-      .toHaveAttribute("href", "/projects/syn1-P-001");
+    expect(within(row).getByText(/Số căn ảnh hưởng/)).toBeInTheDocument();
+    expect(within(row).queryByRole("link")).not.toBeInTheDocument();
   });
 
   it("chỉ đọc: không có nút đổi trạng thái tín hiệu", async () => {
@@ -439,6 +455,90 @@ describe("OverviewPage — hiển thị ba nhóm tín hiệu", () => {
     await screen.findByTestId("signals-list");
     expect(screen.getByTestId("signals-readonly-notice")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /ghi nhận|đã xử lý/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("OverviewPage — circular attention chart", () => {
+  it("does not render the report panel until a category is activated", async () => {
+    routeGet();
+    renderPage();
+    await screen.findByTestId("attention-donut");
+    expect(screen.queryByTestId("attention-report-dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText("BÁO CÁO TÍN HIỆU")).not.toBeInTheDocument();
+  });
+
+  it("groups real signals by primary category without inventing scores", () => {
+    const result = deriveCircularAttention([
+      { id: "missing", ruleId: "ranking:never-computed", affectedProjectCount: 1 },
+      { id: "partial", ruleId: "ranking:skipped-units", affectedProjectCount: 2 },
+      { id: "inventory", ruleId: "absorption:sellout-horizon", affectedProjectCount: 1 },
+    ]);
+    expect(result.total).toBe(4);
+    expect(result.categories.map((category) => [category.key, category.count])).toEqual([
+      ["missing_score", 1], ["partial_score", 2], ["inventory_risk", 1],
+    ]);
+  });
+
+  it("renders the donut center count and selects a category from its legend", async () => {
+    routeGet();
+    renderPage();
+    await screen.findByTestId("attention-donut");
+    expect(screen.getByTestId("attention-donut").textContent).toContain("4");
+    const followUp = screen.getByTestId("category-legend-watch");
+    fireEvent.click(followUp);
+    expect(screen.getByRole("heading", { name: "Báo cáo: Cần theo dõi" })).toBeInTheDocument();
+    expect(followUp).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("supports keyboard selection on an accessible donut slice", async () => {
+    routeGet({ "/ranking?": Object.assign(new Error("not found"), { status: 404 }) });
+    renderPage();
+    await screen.findByTestId("attention-donut");
+    const missingSlice = screen.getByTestId("category-slice-missing_score");
+    fireEvent.keyDown(missingSlice, { key: "Enter" });
+    expect(screen.getByRole("heading", { name: "Báo cáo: Chưa có điểm AHP" })).toBeInTheDocument();
+    expect(missingSlice).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("opens category-specific reports and updates the open dialog when switching", async () => {
+    routeGet();
+    renderPage();
+    await screen.findByTestId("attention-donut");
+
+    fireEvent.click(screen.getByTestId("category-legend-inventory_risk"));
+    expect(screen.getByRole("dialog")).toHaveAttribute("aria-labelledby", "attention-report-title");
+    expect(screen.getByRole("dialog")).toHaveFocus();
+    expect(screen.getByRole("heading", { name: "Báo cáo: Nguy cơ tồn kho" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Giải thích theo AHP" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Điểm AHP")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Đề xuất bước tiếp theo" })).not.toBeInTheDocument();
+    const affectedItems = screen.getByRole("heading", { name: "Mục bị ảnh hưởng" }).closest("section");
+    expect(within(affectedItems).queryByRole("link")).not.toBeInTheDocument();
+    expect(within(affectedItems).queryByText("Xem báo cáo chi tiết →")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("category-legend-watch"));
+    expect(screen.getByRole("heading", { name: "Báo cáo: Cần theo dõi" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Báo cáo: Nguy cơ tồn kho" })).not.toBeInTheDocument();
+  });
+
+  it("closes with the close button, Escape, and the backdrop", async () => {
+    routeGet();
+    renderPage();
+    await screen.findByTestId("attention-donut");
+    const trigger = screen.getByTestId("category-legend-watch");
+
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("button", { name: "Đóng báo cáo tín hiệu" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+
+    fireEvent.click(trigger);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByTestId("attention-report-backdrop"));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
 
@@ -476,12 +576,14 @@ describe("OverviewPage — phủ tín hiệu xếp hạng ngoài trần hấp th
 
     // `skipped-units` chỉ dự án này có ⇒ không gộp, nằm thẳng ở cấp cao nhất.
     // Trước đợt sửa, dự án này bị cắt TRƯỚC khi suy nên không có tín hiệu nào.
-    expect(screen.getByTestId(`signal-ranking:skipped-units:${beyond}`)).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("category-legend-partial_score"));
+    expect(screen.getByText(/20 căn không chấm được điểm/)).toBeInTheDocument();
+    expect(screen.getByText(/Phủ điểm AHP: 80\/100 căn/)).toBeInTheDocument();
 
     // `low-band` thì mọi dự án đều có ⇒ đã gộp; bằng chứng riêng nằm trong con.
     // Có nhiều hàng gộp (vận tốc, mức thấp, …) nên phải chỉ đích danh hàng cần mở.
+    fireEvent.click(screen.getByTestId("category-legend-watch"));
     const parent = screen.getByTestId("signal-portfolio:ranking:low-band-units");
-    fireEvent.click(within(parent).getByRole("button", { name: /dự án cùng gặp/ }));
     const kids = screen.getByTestId("signal-children-portfolio:ranking:low-band-units");
     expect(within(kids).getByTestId(`signal-ranking:low-band-units:${beyond}`)).toBeInTheDocument();
   });
@@ -506,6 +608,7 @@ describe("OverviewPage — phủ tín hiệu xếp hạng ngoài trần hấp th
 
     expect(screen.queryByTestId(`signal-absorption:velocity-decreasing:${beyond}`)).not.toBeInTheDocument();
     // …và sự vắng mặt đó được NÓI RA, không để im lặng bị đọc thành "không sao".
+    fireEvent.click(screen.getByTestId("category-legend-watch"));
     expect(screen.getByText(/3 dự án chỉ được quét xếp hạng, chưa quét hấp thụ/)).toBeInTheDocument();
   });
 
@@ -514,6 +617,7 @@ describe("OverviewPage — phủ tín hiệu xếp hạng ngoài trần hấp th
     renderPage();
     await screen.findByTestId("signals-list");
 
+    fireEvent.click(screen.getByTestId("category-legend-watch"));
     expect(screen.getByTestId("signal-aggregate-portfolio:ranking:low-band-units"))
       .toHaveTextContent("3 dự án bị ảnh hưởng");
   });

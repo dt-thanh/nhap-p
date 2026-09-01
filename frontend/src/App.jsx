@@ -2,7 +2,7 @@
 // Router tổng của AbsorbIQ.
 //
 // "/" và "/login", "/register": full-screen, không có AppLayout.
-// Các route còn lại: bọc trong AppLayout gồm topbar và ChatWidget.
+// Các route còn lại: bọc trong AppLayout gồm topbar.
 //
 // MVP1 chưa chặn quyền.
 // MVP3 sẽ thêm ProtectedRoute trước AppLayout.
@@ -19,23 +19,25 @@ import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import AppLayout from "./components/AppLayout";
+import AdvisorAnalysisRoute from "./components/AdvisorAnalysisRoute";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 import DashboardPage from "./pages/DashboardPage";
-import InventoryPage from "./pages/InventoryPage";
 import AgentPage from "./pages/AgentPage";
 import RankingPage from "./pages/RankingPage";
 import RankingDashboardPage from "./pages/RankingDashboardPage";
 import RankingProjectPage from "./pages/RankingProjectPage";
+import ProjectRankingReportPage from "./pages/ProjectRankingReportPage";
+import AreaUnitRankingPage from "./pages/AreaUnitRankingPage";
+import UnitRankingReportPage from "./pages/UnitRankingReportPage";
 import RankingConfigPage from "./pages/RankingConfigPage";
-import ConsultantAdvisoryPage from "./pages/ConsultantAdvisoryPage";
-import ConsultantEvidencePage from "./pages/ConsultantEvidencePage";
+import ExpertAnalysisPage from "./pages/ExpertAnalysisPage";
+import AdvisorAnalysisReviewPage from "./pages/AdvisorAnalysisReviewPage";
 
 import ProjectsPage from "./pages/ProjectsPage";
 import ProjectDetailPage from "./pages/ProjectDetailPage";
 import ProjectDashboardPage from "./pages/ProjectDashboardPage";
 import AreaDetailPage from "./pages/AreaDetailPage";
-import SettingsPage from "./pages/SettingsPage";
 
 import ImportSelectPage from "./pages/ImportSelectPage";
 import UploadPage from "./pages/UploadPage";
@@ -58,18 +60,22 @@ export function AppRoutes() {
           <Route element={<AppLayout />}>
           <Route path="/overview" element={<OverviewPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/ai-agent" element={<AgentPage />} />
           <Route path="/ranking" element={<RankingDashboardPage />} />
           <Route path="/ranking/configs" element={<RankingConfigPage />} />
+          <Route path="/ranking/:projectId/report" element={<ProjectRankingReportPage />} />
+          <Route path="/ranking/:projectId/areas/:areaId" element={<AreaUnitRankingPage />} />
+          <Route path="/ranking/:projectId/areas/:areaId/units/:unitId/report" element={<UnitRankingReportPage />} />
           <Route path="/ranking/:projectId" element={<RankingProjectPage />} />
-          <Route path="/consultant/:consultantId/advisory" element={<ConsultantAdvisoryPage />} />
-          <Route path="/consultant/:consultantId/evidence" element={<ConsultantEvidencePage />} />
+          <Route element={<AdvisorAnalysisRoute capability="advisor_analysis_authoring" />}>
+            <Route path="/expert-analysis" element={<ExpertAnalysisPage />} />
+          </Route>
+          <Route element={<AdvisorAnalysisRoute capability="advisor_analysis_review" />}>
+            <Route path="/advisor-analysis/review" element={<AdvisorAnalysisReviewPage />} />
+          </Route>
 
           {/* Danh sách dự án */}
           <Route path="/projects" element={<ProjectsPage />} />
-
-          <Route path="/settings" element={<SettingsPage />} />
 
           {/* Giới thiệu chi tiết dự án + danh sách phân khu */}
           <Route path="/projects/:externalId" element={<ProjectDetailPage />} />

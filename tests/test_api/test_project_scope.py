@@ -415,6 +415,14 @@ async def test_me_permissions_reports_all(client, two_projects):
     assert response.json()["project_scope"] == "ALL"
 
 
+async def test_me_permissions_is_ceo_false_for_static_admin_token(client, two_projects):
+    """Static dashboard tokens never carry a real per-person identity
+    (`DashboardPrincipal.is_ceo` defaults False for them by design) — even
+    the 'ALL'-scope admin token must not read as CEO."""
+    response = await client.get("/api/v1/me/permissions", headers=_headers(ADMIN_ALL_TOKEN))
+    assert response.json()["is_ceo"] is False
+
+
 # --- Liệt kê bảng định tuyến: không route dữ liệu dự án nào bị sót -------------
 
 

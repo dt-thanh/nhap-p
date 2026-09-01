@@ -66,6 +66,7 @@ export const UNKNOWN_UNIT_LABEL = "Chưa xác định căn";
  * @property {number|null} rank           Hạng TOÀN CỤC, chỉ gán cho căn có điểm
  * @property {number|null} rankInProject  Hạng trong dự án, do backend cấp
  * @property {"desc"} rankDirection
+ * @property {"v2_legacy"|"v3_hierarchical"} rankingFormula  Công thức đã tạo ra score/scorePercent ở trên
  * @property {number|null} weightCoverage
  * @property {number|null} missingFeaturesCount
  * @property {"high"|"medium"|"unknown"} confidence
@@ -130,7 +131,17 @@ export function normalizeUnit(item, context = {}) {
   const project = context.project || {};
   const projectName = nonEmptyString(project.name);
   const areaName = nonEmptyString(item.area_name);
-  const score = toScore(item.score);
+  const rankingFormula = context.rankingFormula === "v3_hierarchical" ? "v3_hierarchical" : "v2_legacy";
+  // Ranking v3: khi dự án đã áp dụng AHP, ưu tiên effective_score (đã trộn
+  // hierarchical_score) thay vì score v2 thuần — nhưng chỉ khi backend thực
+  // sự gửi kèm; thiếu thì rơi về score v2 như cũ, KHÔNG coi là 0.
+  const rawScore = rankingFormula === "v3_hierarchical" && item.effective_score !== null && item.effective_score !== undefined
+    ? item.effective_score
+    : item.score;
+  const rawScorePercent = rankingFormula === "v3_hierarchical" && item.effective_score_percent !== null && item.effective_score_percent !== undefined
+    ? item.effective_score_percent
+    : item.score_percent;
+  const score = toScore(rawScore);
   const missing = missingFeatures(item.contributions);
 
   return {
@@ -146,11 +157,12 @@ export function normalizeUnit(item, context = {}) {
     areaName: areaName || UNKNOWN_AREA_LABEL,
     areaContextAvailable: Boolean(areaName),
     score,
-    scorePercent: toFiniteOrNull(item.score_percent),
+    scorePercent: toFiniteOrNull(rawScorePercent),
     band: nonEmptyString(item.band),
     rank: null, // gán sau khi sắp xếp toàn cục
     rankInProject: toFiniteOrNull(item.rank_in_project),
     rankDirection: RANK_DIRECTION,
+    rankingFormula,
     weightCoverage: toFiniteOrNull(item.weight_coverage),
     missingFeaturesCount: missing,
     confidence: confidenceOf(score, missing),
@@ -285,9 +297,10 @@ export function buildGlobalRanking(entries = [], options = {}) {
         latestComputedAt = computedAt;
       }
     }
+    const rankingFormula = ranking.ranking_formula === "v3_hierarchical" ? "v3_hierarchical" : "v2_legacy";
 
     for (const item of ranking.items) {
-      const row = normalizeUnit(item, { project, computedAt, configVersion });
+      const row = normalizeUnit(item, { project, computedAt, configVersion, rankingFormula });
       if (row) collected.push(row);
     }
   }

@@ -284,6 +284,50 @@ deals = sa.Table(
     sa.Column("updated_at", TS, nullable=False),
 )
 
+# 0043: generic, reusable per-unit enrichment attributes (contextual/reference
+# data — never read by src/ranking/*, see that migration's own docstring and
+# src/ranking/enrichment_guard.py).
+unit_enrichment_attributes = sa.Table(
+    "unit_enrichment_attributes",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("unit_id", UUID, nullable=False),
+    sa.Column("subdivision", sa.Text(), nullable=True),
+    sa.Column("subdivision_raw", sa.Text(), nullable=True),
+    sa.Column("tower", sa.Text(), nullable=True),
+    sa.Column("floor", sa.Integer(), nullable=True),
+    sa.Column("unit_number", sa.Text(), nullable=True),
+    sa.Column("bedrooms", sa.Integer(), nullable=True),
+    sa.Column("bathrooms", sa.Integer(), nullable=True),
+    sa.Column("gross_area_sqm", sa.Numeric(10, 2), nullable=True),
+    sa.Column("net_area_sqm", sa.Numeric(10, 2), nullable=True),
+    sa.Column("standard_price_vnd", sa.Numeric(18, 2), nullable=True),
+    sa.Column("loan_price_vnd", sa.Numeric(18, 2), nullable=True),
+    sa.Column("stacking_price_million_vnd", sa.Numeric(14, 3), nullable=True),
+    sa.Column("agency_name", sa.Text(), nullable=True),
+    sa.Column("price_per_sqm_gross_vnd", sa.Numeric(18, 2), nullable=True),
+    sa.Column("price_per_sqm_net_vnd", sa.Numeric(18, 2), nullable=True),
+    sa.Column("area_efficiency_ratio", sa.Numeric(6, 4), nullable=True),
+    sa.Column("loan_premium_pct", sa.Numeric(6, 3), nullable=True),
+    sa.Column("floor_band", sa.Text(), nullable=True),
+    sa.Column("direction", sa.Text(), nullable=True),
+    sa.Column("balcony_direction", sa.Text(), nullable=True),
+    sa.Column("view", sa.Text(), nullable=True),
+    sa.Column("corner_unit_proxy", sa.Boolean(), nullable=True),
+    sa.Column("physical_features_origin", sa.Text(), nullable=True),
+    sa.Column("agency_name_origin", sa.Text(), nullable=True),
+    sa.Column("data_profile", sa.Text(), nullable=True),
+    sa.Column("is_synthetic", sa.Boolean(), nullable=False),
+    sa.Column("source_system", sa.Text(), nullable=False),
+    sa.Column("source_file", sa.Text(), nullable=False),
+    sa.Column("source_file_sha256", sa.Text(), nullable=False),
+    sa.Column("source_row_key", sa.Text(), nullable=False),
+    sa.Column("import_batch_id", sa.Text(), nullable=False),
+    sa.Column("imported_at", TS, nullable=False),
+    sa.Column("created_at", TS, nullable=False),
+    sa.Column("updated_at", TS, nullable=False),
+)
+
 # --- Phase 3: nền xác thực và lưu payload thô -------------------------------
 
 # Khoá API máy-với-máy (0008). CHỈ chứa hash — khoá thô không tồn tại ở đâu trong
@@ -572,6 +616,13 @@ ranking_configs = sa.Table(
 #
 # `scope_ids` CHỈ để kiểm toán ("lô nào gây ra lần chạy này"). Công việc luôn ở
 # phạm vi TOÀN DỰ ÁN, vì `rank_in_project` dịch chuyển khi bất kỳ căn nào đổi điểm.
+#
+# Ranking v3 (`ranking_v3_composite_enabled`, `src/ranking/service.py`): khi cờ
+# bật VÀ config của run có `hierarchical_weights` VÀ có ít nhất một căn có
+# `hierarchical_score` thật, `rank_in_project`/`rank_in_area` ở bảng
+# `ranking_scores` bên dưới được TÍNH LẠI từ điểm hierarchical (không còn thuần
+# từ `score`) — một ngoại lệ có chủ đích, có cờ, mặc định tắt. Khi tắt (mặc
+# định), hai cột đó vẫn thuần `score` như trước — không đổi gì.
 ranking_runs = sa.Table(
     "ranking_runs",
     metadata,
@@ -582,12 +633,21 @@ ranking_runs = sa.Table(
     sa.Column("scope_type", sa.Text(), nullable=False, server_default=sa.text("'project'")),
     sa.Column("scope_ids", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
     sa.Column("config_version_id", UUID, nullable=True),
+    # 0049: an AHP proposal application owns exactly one bound run.  Normal
+    # sync/manual runs keep this NULL; the partial unique index in migration
+    # 0049 prevents two workers/apply attempts from creating two runs for the
+    # same proposal.
+    sa.Column("ahp_proposal_id", UUID, nullable=True),
     sa.Column("status", sa.Text(), nullable=False, server_default=sa.text("'queued'")),
     sa.Column("attempt", sa.Integer(), nullable=False, server_default=sa.text("0")),
     sa.Column("units_processed", sa.Integer(), nullable=False, server_default=sa.text("0")),
     sa.Column("units_ranked", sa.Integer(), nullable=False, server_default=sa.text("0")),
     sa.Column("units_skipped", sa.Integer(), nullable=False, server_default=sa.text("0")),
     sa.Column("error_summary", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    # 0053: durable identity of the RQ job backing a queued run.  A NULL value
+    # means either dispatch has not succeeded yet or this is a deferred intent;
+    # it is never treated as proof that a healthy worker job disappeared.
+    sa.Column("rq_job_id", sa.Text(), nullable=True),
     sa.Column("enqueued_at", TS, nullable=False),
     sa.Column("started_at", TS, nullable=True),
     sa.Column("finished_at", TS, nullable=True),
@@ -615,9 +675,15 @@ ranking_scores = sa.Table(
     sa.Column("feature_freshness_at", TS, nullable=True),
     sa.Column("computed_at", TS, nullable=False),
     # D29/S8 + D37/S9 (0037): the hierarchical (M/P/A/U) output, additive and
-    # parallel to `score`/`contributions` above — never read or written by
-    # the legacy per-unit scoring path. NULL = not yet hierarchically scored,
-    # or HIGH_RISK legal-gated (§24.4.5) — never a zero/defaulted value.
+    # parallel to `score`/`contributions` above — never WRITTEN by the legacy
+    # per-unit scoring path (that stays exclusively `score`/`rank_in_*` via
+    # `_persist_scores()`). NULL = not yet hierarchically scored, or
+    # HIGH_RISK legal-gated (§24.4.5) — never a zero/defaulted value.
+    # Ranking v3 (`ranking_v3_composite_enabled`): this column IS read, by
+    # `_apply_v3_composite_ranks()` in `src/ranking/service.py`, to re-derive
+    # `rank_in_project`/`rank_in_area` above when eligible — see the comment
+    # on `ranking_runs` above. Still never written by anything but the
+    # hierarchical step itself.
     sa.Column("hierarchical_score", sa.Numeric(6, 4), nullable=True),
     sa.Column("hierarchical_contributions", JSONB, nullable=True),
 )
@@ -730,6 +796,34 @@ ranking_weight_proposals = sa.Table(
     sa.Column("updated_at", TS, nullable=False),
     # PR-2/D38 (0038): 'weight' (default, existing rows) | 'value' (new).
     sa.Column("assertion_kind", sa.Text(), nullable=False),
+    # 0049: 'qualitative_analysis' (default, every historical row, both
+    # assertion_kinds) | 'ahp_ranking_proposal' (new — Advisor-authored
+    # hierarchy package; only this kind may carry the three columns below).
+    sa.Column("proposal_type", sa.Text(), nullable=False),
+    # `none_as_null=True`: a Python `None` here must bind as a true SQL NULL,
+    # not the JSONB scalar `null` — `ck_rwp_ahp_fields_only_for_ahp_type`
+    # checks `IS NULL`, which `'null'::jsonb` (SQLAlchemy JSONB's default
+    # none-handling) does NOT satisfy (`'null'::jsonb IS NULL` is false).
+    sa.Column("proposed_hierarchy_snapshot", JSONB(none_as_null=True), nullable=True),
+    sa.Column("ahp_application_status", sa.Text(), nullable=True),
+    sa.Column("applied_ranking_run_id", UUID, nullable=True),
+)
+
+# 0050: immutable, proposal-scoped embeddings for optional AHP criterion
+# rationales.  These are not evidence-document chunks: a rationale is authored
+# proposal content and becomes searchable only after the proposal is submitted.
+ranking_proposal_rationale_chunks = sa.Table(
+    "ranking_proposal_rationale_chunks",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("proposal_id", UUID, nullable=False),
+    sa.Column("criterion_key", sa.Text(), nullable=False),
+    sa.Column("grain", sa.Text(), nullable=False),
+    sa.Column("chunk_text", sa.Text(), nullable=False),
+    sa.Column("embedding_model", sa.Text(), nullable=False),
+    sa.Column("embedding", Vector(1536), nullable=False),
+    sa.Column("created_at", TS, nullable=False),
+    sa.Column("metadata", JSONB, nullable=False),
 )
 
 ranking_feature_justifications = sa.Table(
@@ -759,12 +853,47 @@ ranking_feature_justifications = sa.Table(
     sa.Column("expires_at", TS, nullable=True),
     sa.Column("external_source_citation", sa.Text(), nullable=True),
     sa.Column("author_subject", sa.Text(), nullable=True),
+    # 0046: which rubric VERSION/band the expert graded against — NULL for
+    # weight-mode rows and for value-mode assertions on a feature that does
+    # not require a rubric. Both-or-neither (`ck_rfj_rubric_pair`).
+    sa.Column("rubric_id", UUID, nullable=True),
+    sa.Column("rubric_band_value", sa.Numeric(5, 4), nullable=True),
+)
+
+# 0046: versioned evidence-to-value rubrics for qualitative assertions.
+# Append-only (`ranking_governance_append_only_guard`) — a revision is a NEW
+# row with a higher `rubric_version`, never an edit; "current" rubric for a
+# feature = the row with the highest `rubric_version` for that feature.
+ranking_feature_rubrics = sa.Table(
+    "ranking_feature_rubrics",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("feature_definition_id", UUID, nullable=False),
+    sa.Column("rubric_version", sa.Integer(), nullable=False),
+    sa.Column("created_by", sa.Text(), nullable=False),
+    sa.Column("created_at", TS, nullable=False),
+)
+
+ranking_feature_rubric_bands = sa.Table(
+    "ranking_feature_rubric_bands",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("rubric_id", UUID, nullable=False),
+    sa.Column("band_value", sa.Numeric(5, 4), nullable=False),
+    sa.Column("label", sa.Text(), nullable=False),
+    sa.Column("evidence_requirement", sa.Text(), nullable=False),
+    sa.Column("display_order", sa.Integer(), nullable=False),
 )
 
 ranking_evidence_documents = sa.Table(
     "ranking_evidence_documents",
     metadata,
     sa.Column("id", UUID, primary_key=True),
+    # 0047: ownership of a standalone expert report is its authorized project,
+    # not an optional proposal that may later be rejected or superseded.
+    # Nullable only for historical rows created before project ownership existed.
+    sa.Column("project_id", UUID, nullable=True),
+    sa.Column("area_id", UUID, nullable=True),
     sa.Column("proposal_id", UUID, nullable=True),
     sa.Column("uploaded_by_expert_id", UUID, nullable=False),
     sa.Column("original_filename", sa.Text(), nullable=False),
@@ -781,6 +910,18 @@ ranking_evidence_document_features = sa.Table(
     metadata,
     sa.Column("document_id", UUID, primary_key=True),
     sa.Column("feature_justification_id", UUID, primary_key=True),
+)
+
+# 0052: immutable association for reusing a lifecycle-ready project document
+# as evidence of a specific proposal.  This deliberately does not mutate the
+# append-only document's registration-time ``proposal_id``.
+ranking_proposal_evidence_links = sa.Table(
+    "ranking_proposal_evidence_links",
+    metadata,
+    sa.Column("proposal_id", UUID, primary_key=True),
+    sa.Column("document_id", UUID, primary_key=True),
+    sa.Column("linked_by_expert_id", UUID, nullable=False),
+    sa.Column("created_at", TS, nullable=False),
 )
 
 ranking_evidence_document_chunks = sa.Table(
@@ -803,7 +944,24 @@ ranking_evidence_extraction_attempts = sa.Table(
     sa.Column("id", UUID, primary_key=True),
     sa.Column("document_id", UUID, nullable=False),
     sa.Column("status", sa.Text(), nullable=False),
+    # 0054: bounded, machine-readable terminal failure classification.  NULL
+    # is retained for historical pending/succeeded rows.
+    sa.Column("error_code", sa.Text(), nullable=True),
     sa.Column("error_summary", sa.Text(), nullable=True),
+    sa.Column("created_at", TS, nullable=False),
+)
+
+ranking_evidence_document_lifecycle_events = sa.Table(
+    "ranking_evidence_document_lifecycle_events",
+    metadata,
+    sa.Column("id", UUID, primary_key=True),
+    sa.Column("document_id", UUID, nullable=False),
+    # 'archived' | 'deleted' | 'restored'. Current lifecycle state of a
+    # document is the LATEST row here (append-only, mirrors
+    # ranking_evidence_extraction_attempts) — 'active' when no row exists.
+    sa.Column("event_type", sa.Text(), nullable=False),
+    sa.Column("actor_expert_id", UUID, nullable=False),
+    sa.Column("reason", sa.Text(), nullable=True),
     sa.Column("created_at", TS, nullable=False),
 )
 
@@ -820,6 +978,10 @@ ranking_proposal_reviews = sa.Table(
     # only. NULL for every weight-mode review (unchanged behavior).
     sa.Column("reviewer_subject", sa.Text(), nullable=True),
     sa.Column("reviewer_is_ceo", sa.Boolean(), nullable=True),
+    # 0048: immutable record of the acknowledgement required for a new CEO
+    # approval.  NULL is deliberately retained for reviews created before
+    # this field existed; no historical review is rewritten.
+    sa.Column("evidence_review_acknowledged", sa.Boolean(), nullable=True),
 )
 
 ranking_config_audit_events = sa.Table(
@@ -828,6 +990,7 @@ ranking_config_audit_events = sa.Table(
     sa.Column("id", UUID, primary_key=True),
     sa.Column("ranking_config_id", UUID, nullable=True),
     sa.Column("proposal_id", UUID, nullable=True),
+    sa.Column("ranking_run_id", UUID, nullable=True),
     sa.Column("actor_expert_id", UUID, nullable=True),
     sa.Column("actor_identity_subject", sa.Text(), nullable=False),
     sa.Column("event_type", sa.Text(), nullable=False),

@@ -34,8 +34,6 @@ export const listInventoryScoped = (externalProjectId, params = {}) =>
     `${V1}/inventory?${new URLSearchParams({ external_project_id: externalProjectId, ...params })}`,
   );
 
-export const bootstrapInventoryDefault = () => api.post(`${V1}/inventory/bootstrap-default`);
-
 /** Live domain snapshot used by the project dashboard's operational metrics. */
 export const getMarketDashboard = (externalProjectId) =>
   api.get(`${V1}/market/dashboard?${new URLSearchParams({ project_id: externalProjectId })}`);
@@ -48,9 +46,41 @@ export const listDealsScoped = (externalProjectId, params = {}) =>
 /** Kết quả xếp hạng ĐANG LƯU. Không tính lại — xem `runRanking`.
  *  -> { computed_at, config_version, units_ranked, units_skipped, band_counts,
  *       items: [{ unit_code, score, score_percent, band, rank_in_project,
- *                 rank_in_area, contributions: [...] }], total, disclaimer } */
+ *                 rank_in_area, contributions: [...],
+ *                 hierarchical }], total, disclaimer }
+ *
+ *  PR-7: `items[].hierarchical` is `null` unless the backend's
+ *  `hierarchical_read_enabled` flag is on AND a result is persisted for
+ *  that unit — never assume it is present. When set, its shape is
+ *  `{ available, reason, score, score_mode, top_level_weight_coverage,
+ *     configured_grain_weights, effective_grain_weights, eligible_grains,
+ *     excluded_grains, grains: { market, project, area, unit },
+ *     legal_gate, comparability_warning, cutoff_at, computed_at,
+ *     config_version_id, disclosure }` — see
+ *     `src/models/schemas.py::HierarchicalUnitOut` for the exact contract. */
 export const getRanking = (externalProjectId, params = {}) =>
   api.get(`${V1}/ranking?${new URLSearchParams({ external_project_id: externalProjectId, ...params })}`);
+
+/** Read-only AHP/hierarchical report. Its contract contains unit-level results
+ * only and deliberately has no project-level score or aggregation. */
+export const getProjectRankingReport = (externalProjectId) =>
+  api.get(`${V1}/ranking/projects/${encodeURIComponent(externalProjectId)}/report`);
+
+/** Read-only persisted AHP report for one canonical project/area/unit scope. */
+export const getUnitRankingReport = (externalProjectId, externalAreaId, externalUnitId) =>
+  api.get(
+    `${V1}/ranking/projects/${encodeURIComponent(externalProjectId)}`
+      + `/areas/${encodeURIComponent(externalAreaId)}`
+      + `/units/${encodeURIComponent(externalUnitId)}/report`,
+  );
+
+/** Strictly scoped report chat. The backend locks context to this external ID
+ * and validates the report's current ranking run before invoking the model. */
+export const chatAboutProjectRankingReport = (externalProjectId, message, rankingRunId = null) =>
+  api.post(`${V1}/ranking/projects/${encodeURIComponent(externalProjectId)}/report/chat`, {
+    message,
+    ranking_run_id: rankingRunId,
+  }, { forceReal: true });
 
 /** Tính lại xếp hạng rồi trả về CÙNG hình dạng với `getRanking`, nên nơi gọi
  *  không phải gọi tiếp một lượt đọc nữa. Cần vai trò pipeline_operator trở lên. */
@@ -487,60 +517,72 @@ export async function fileErrors(id) {
 export const fileErrorsCsvUrl = (id) =>
   `/api${V1}/files/${id}/errors.csv`;
 
-// ---------- AI Agent chat ----------
-
-/** Gửi câu hỏi tới AI agent. */
-export const chatWithAgent = (message, projectId) => {
+export const chatWithAgent = (message, projectId, sessionId) => {
   const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
-  return api.post(`/v1/chat${query}`, { message }, { forceReal: true });
+  return api.post(`${V1}/agent/chat${query}`, { message, session_id: sessionId || undefined });
 };
 
-// ---------- Phase 6: đề xuất tư vấn dựa trên xếp hạng, CHỜ DUYỆT -------------
-// `AGENTS.md` — bước duyệt người là bắt buộc, không tuỳ chọn. Không hàm nào ở
-// đây coi một đề xuất là "cuối cùng" trước khi `approveRecommendation` chạy.
-
-/** project_id/area_id là external_id (Mini CRM), area_id không bắt buộc.
- * -> { recommendation_id, project_id, area_id, status: "pending_approval",
- *      ranking_run_id, summary, recommended_actions, generated_at, ... } */
-export const createRecommendation = (projectId, areaId) =>
-  api.post(`${V1}/agent/recommendations`, { project_id: projectId, area_id: areaId ?? null });
-
-/** Đọc lại một đề xuất — dùng để theo dõi status sau khi duyệt/từ chối. */
-export const getRecommendation = (recommendationId) =>
-  api.get(`${V1}/agent/recommendations/${recommendationId}`);
-
-/** -> đề xuất với status: "approved", decided_by/decided_at/decision_reason đã điền. */
-export const approveRecommendation = (recommendationId, reason, actor) =>
-  api.post(`${V1}/agent/recommendations/${recommendationId}/approve`, { actor, reason });
-
-/** -> đề xuất với status: "rejected". */
-export const rejectRecommendation = (recommendationId, reason, actor) =>
-  api.post(`${V1}/agent/recommendations/${recommendationId}/reject`, { actor, reason });
-
-export const listRecommendations = (projectId, limit = 20) =>
-  api.get(`${V1}/agent/recommendations?project_id=${encodeURIComponent(projectId)}&limit=${limit}`);
-
-export const executeRecommendation = (recommendationId, actor) =>
-  api.post(`${V1}/agent/recommendations/${recommendationId}/execute`, { actor, confirmed: true });
+export const getAgentSession = (sessionId) =>
+  api.get(`${V1}/agent/sessions/${encodeURIComponent(sessionId)}`);
 
 // ---------- Expert governance / evidence ---------------------------------
 
-export const registerExpert = (body) => api.post(`${V1}/governance/experts`, body);
+// D18: actor/uploader/reviewer identity is now ALWAYS derived server-side
+// from the authenticated principal (never a client-supplied field) — none of
+// the functions below send an identity field in the request body anymore.
+export const registerExpert = (body = {}) => api.post(`${V1}/governance/experts`, body);
 export const getExpert = (expertId) => api.get(`${V1}/governance/experts/${encodeURIComponent(expertId)}`);
 export const listGovernanceProposals = (params = {}) =>
   api.get(`${V1}/governance/proposals?${new URLSearchParams(params)}`);
 export const createGovernanceProposal = (body) => api.post(`${V1}/governance/proposals`, body);
 export const getGovernanceProposal = (proposalId) =>
   api.get(`${V1}/governance/proposals/${encodeURIComponent(proposalId)}`);
+export const listGovernanceReviews = (proposalId) =>
+  api.get(`${V1}/governance/proposals/${encodeURIComponent(proposalId)}/reviews`);
 export const setGovernanceProposalConfig = (proposalId, body) =>
   api.patch(`${V1}/governance/proposals/${encodeURIComponent(proposalId)}/config`, body);
-export const submitGovernanceProposal = (proposalId, body) =>
-  api.post(`${V1}/governance/proposals/${encodeURIComponent(proposalId)}/submit`, body);
+export const submitGovernanceProposal = (proposalId) =>
+  api.post(`${V1}/governance/proposals/${encodeURIComponent(proposalId)}/submit`);
+// 0049 — distinct narrow surface, never the generic `createGovernanceProposal`/
+// `setGovernanceProposalConfig` above: `base_config_id` is always resolved
+// server-side for this proposal_type, never client-supplied.
+export const createAhpProposal = (projectId) =>
+  api.post(`${V1}/governance/advisor-analysis/ahp-proposals`, { project_id: projectId });
+export const saveAhpProposalDraft = (proposalId, body) =>
+  api.patch(`${V1}/governance/advisor-analysis/ahp-proposals/${encodeURIComponent(proposalId)}/hierarchy`, body);
+export const getAhpProposalRationale = (proposalId, params = {}) =>
+  api.get(`${V1}/governance/advisor-analysis/ahp-proposals/${encodeURIComponent(proposalId)}/rationale?${new URLSearchParams(params)}`);
+export const withdrawGovernanceProposal = (proposalId) =>
+  api.post(`${V1}/governance/proposals/${encodeURIComponent(proposalId)}/withdraw`);
+export const publishGovernanceProposal = (proposalId) =>
+  api.post(`${V1}/governance/proposals/${encodeURIComponent(proposalId)}/publish`);
 export const listJustifications = (proposalId) =>
   api.get(`${V1}/governance/proposals/${encodeURIComponent(proposalId)}/justifications`);
 export const upsertJustification = (proposalId, body) =>
   api.post(`${V1}/governance/proposals/${encodeURIComponent(proposalId)}/justifications`, body);
 export const registerEvidence = (body) => api.post(`${V1}/governance/evidence`, body);
+export const uploadEvidenceDocument = (file, { projectId, areaId, proposalId } = {}) => {
+  const fd = new FormData();
+  fd.append("file", file);
+  if (projectId) fd.append("project_id", projectId);
+  if (areaId) fd.append("area_id", areaId);
+  if (proposalId) fd.append("proposal_id", proposalId);
+  return api.post(`${V1}/governance/evidence/upload`, fd);
+};
+export const getExpertAnalysisOverview = (projectId) =>
+  api.get(`${V1}/governance/projects/${encodeURIComponent(projectId)}/expert-analysis-overview`);
+export const getRankingV3Coverage = (projectId) =>
+  api.get(`${V1}/governance/projects/${encodeURIComponent(projectId)}/ranking-v3-coverage`);
+export const getAdvisorAnalysisReviewQueue = ({ limit = 25, offset = 0 } = {}) =>
+  api.get(`${V1}/governance/advisor-analysis/review-queue?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`);
+export const getAdvisorAnalysisReviewDetail = (proposalId) =>
+  api.get(`${V1}/governance/advisor-analysis/review-queue/${encodeURIComponent(proposalId)}`);
+export const listEvidenceDocuments = ({ projectId, uploadedByExpertId } = {}) => {
+  const params = new URLSearchParams();
+  if (projectId) params.set("project_id", projectId);
+  if (uploadedByExpertId) params.set("uploaded_by_expert_id", uploadedByExpertId);
+  return api.get(`${V1}/governance/evidence?${params}`);
+};
 export const linkEvidence = (body) => api.post(`${V1}/governance/evidence/link`, body);
 export const listEvidenceForJustification = (justificationId) =>
   api.get(`${V1}/governance/justifications/${encodeURIComponent(justificationId)}/evidence`);
@@ -548,8 +590,41 @@ export const requestEvidenceExtraction = (documentId) =>
   api.post(`${V1}/governance/evidence/${encodeURIComponent(documentId)}/extract`);
 export const listEvidenceChunks = (documentId) =>
   api.get(`${V1}/governance/evidence/${encodeURIComponent(documentId)}/chunks`);
+export const archiveEvidenceDocument = (documentId, reason) =>
+  api.post(`${V1}/governance/evidence/${encodeURIComponent(documentId)}/archive`, { reason: reason || null });
+export const restoreEvidenceDocument = (documentId, reason) =>
+  api.post(`${V1}/governance/evidence/${encodeURIComponent(documentId)}/restore`, { reason: reason || null });
+export const deleteEvidenceDocument = (documentId, reason) =>
+  api.post(`${V1}/governance/evidence/${encodeURIComponent(documentId)}/delete`, { reason: reason || null });
 export const submitGovernanceReview = (proposalId, body) =>
   api.post(`${V1}/governance/proposals/${encodeURIComponent(proposalId)}/reviews`, body);
+export const askExpertDocuments = (body) => api.post(`${V1}/governance/evidence/ask`, body);
+export const listAuditEvents = ({ proposalId, rankingConfigId } = {}) => {
+  const params = new URLSearchParams();
+  if (proposalId) params.set("proposal_id", proposalId);
+  if (rankingConfigId) params.set("ranking_config_id", rankingConfigId);
+  return api.get(`${V1}/governance/audit-events?${params}`);
+};
+export const previewRankingConfig = (externalProjectId, body) =>
+  api.post(`${V1}/ranking/projects/${encodeURIComponent(externalProjectId)}/preview`, body);
+export const computeHierarchicalAhpWeights = (body) =>
+  api.post(`${V1}/ranking/ahp/hierarchical-weights`, body);
+
+// ---------- Rubric định tính (0046) — feature-definitions/feature-rubrics --
+
+/** Danh mục đặc trưng ĐANG HOẠT ĐỘNG — nguồn duy nhất để lấy feature_definition_id,
+ *  không bao giờ hardcode UUID ở frontend. `grain` tuỳ chọn: "market" | "project" |
+ *  "area" | "unit". */
+export const listFeatureDefinitions = (grain) =>
+  api.get(`${V1}/governance/feature-definitions${grain ? `?grain=${encodeURIComponent(grain)}` : ""}`);
+
+/** Rubric HIỆN HÀNH (phiên bản cao nhất) của một đặc trưng, hoặc null nếu chưa có. */
+export const getCurrentFeatureRubric = (featureDefinitionId) =>
+  api.get(`${V1}/governance/feature-rubrics/current?feature_definition_id=${encodeURIComponent(featureDefinitionId)}`);
+
+/** Toàn bộ lịch sử phiên bản rubric của một đặc trưng (cũ nhất trước). */
+export const listFeatureRubrics = (featureDefinitionId) =>
+  api.get(`${V1}/governance/feature-rubrics?feature_definition_id=${encodeURIComponent(featureDefinitionId)}`);
 
 // ---------- Chọn ngữ cảnh nạp dữ liệu: Dự án → Phân khu ----------
 // Giải quyết xung đột merge: `listProjects` đã khai ở trên với hợp đồng thật của
@@ -577,31 +652,3 @@ export async function listProjectZones(projectId) {
     status: row.status ?? null,
   }));
 }
-
-// ---------- Ảnh bìa trong Cài đặt (admin) ---------------------------------
-// Backend nhận multipart nên gửi FormData, không gửi JSON. POST đặt ảnh hiện
-// tại nên cùng một action dùng được cho tải mới và thay ảnh.
-
-const settingsImageBase = (kind, id) =>
-  `${V1}/settings/${kind === "project" ? "projects" : "areas"}/${id}/cover-image`;
-
-const imageForm = (file) => {
-  const fd = new FormData();
-  fd.append("file", file);
-  return fd;
-};
-
-/** Tải hoặc thay ảnh bìa dự án. */
-export const uploadProjectCoverImage = (projectId, file) =>
-  api.post(settingsImageBase("project", projectId), imageForm(file));
-
-/** Tải hoặc thay ảnh bìa phân khu. */
-export const uploadAreaCoverImage = (areaId, file) =>
-  api.post(settingsImageBase("area", areaId), imageForm(file));
-
-/** Xoá ảnh bìa khỏi Cloudinary và bỏ tham chiếu trong DB. */
-export const removeProjectCoverImage = (projectId) =>
-  api.del(settingsImageBase("project", projectId));
-
-export const removeAreaCoverImage = (areaId) =>
-  api.del(settingsImageBase("area", areaId));

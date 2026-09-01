@@ -50,6 +50,14 @@ from src.db import get_engine
 # nên coi như hằng số bất biến của dự án.
 NS_SEED = uuid.UUID("3f2b71a4-9c8d-5e10-b6a7-0d4c1e93f27b")
 
+# Non-CRM lineage — obviously distinct from any real Mini CRM instance id
+# (`mini-crm-dev`) and from the other dev-only fixtures' identities
+# (`crm_real_data_fixture`/`ai-dev-fixture`, `synthetic_demo`/
+# `synthetic-demo-2026`), so a `projects`/`areas` row from this script can
+# never be mistaken for real synced data or another fixture's data.
+SEED_DEV_SOURCE_SYSTEM = "seed_dev_fixture"
+SEED_DEV_SOURCE_INSTANCE_ID = "seed-dev-local"
+
 BASE_DATE = date(2025, 4, 1)
 BASE_TS = datetime(2025, 4, 1, 3, 0, tzinfo=UTC)
 
@@ -348,6 +356,12 @@ def build_dataset() -> list[tuple[str, list[dict[str, Any]]]]:
                 "reviewed_by": u[reviewer] if reviewer else None,
                 "reviewed_at": ts(-290) if reviewer else None,
                 "review_reason": reason,
+                # Non-CRM lineage stamp — this row must never be mistaken for
+                # a real Mini CRM-synced project, and must never be
+                # untraceable (source_system IS NULL).
+                "external_id": key,
+                "source_system": SEED_DEV_SOURCE_SYSTEM,
+                "source_instance_id": SEED_DEV_SOURCE_INSTANCE_ID,
             }
         )
 
@@ -377,6 +391,10 @@ def build_dataset() -> list[tuple[str, list[dict[str, Any]]]]:
                 "reviewed_by": u["admin-1"] if status in {"active", "rejected", "archived"} else None,
                 "reviewed_at": ts(-275) if status in {"active", "rejected", "archived"} else None,
                 "review_reason": ("Diện tích khai báo không khớp bản vẽ được duyệt." if status == "rejected" else None),
+                # Non-CRM lineage stamp — see the matching comment on `projects` above.
+                "external_id": key,
+                "source_system": SEED_DEV_SOURCE_SYSTEM,
+                "source_instance_id": SEED_DEV_SOURCE_INSTANCE_ID,
             }
         )
 
@@ -851,10 +869,26 @@ async def counts(tables: list[str], engine: AsyncEngine | None = None) -> dict[s
         }
 
 
+def _assert_development_confirmed(confirmed: bool) -> None:
+    """`seed_dev.py` creates `projects`/`areas` rows stamped with a non-CRM
+    lineage (`source_system='seed_dev_fixture'`) for exercising non-domain
+    dev/test surfaces (users, forecasts, audit logs, ...). It must never run
+    unconfirmed or outside development — see AGENTS.md's "MiniCRM is the sole
+    owner of Project/Area/Unit/Deal" invariant."""
+    import os
+
+    app_env = os.getenv("APP_ENV", "").strip().lower()
+    if app_env and app_env != "development":
+        raise RuntimeError(f"seed_dev.py refuses to run outside development (APP_ENV={app_env!r})")
+    if not confirmed:
+        raise RuntimeError("seed_dev.py requires --confirm-seed to write (this is a write, not a preview)")
+
+
 async def _main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Nạp dữ liệu mẫu dev/test.")
     parser.add_argument("--reset", action="store_true", help="Xoá các bản ghi do seed tạo rồi nạp lại.")
     parser.add_argument("--counts", action="store_true", help="Chỉ in số dòng hiện có, không ghi gì.")
+    parser.add_argument("--confirm-seed", action="store_true", help="Bắt buộc để ghi — bảo vệ khỏi ghi ngoài ý muốn.")
     args = parser.parse_args(argv)
 
     names = [name for name, _ in build_dataset()]
@@ -863,6 +897,8 @@ async def _main(argv: list[str]) -> int:
         for name, n in (await counts(names)).items():
             print(f"{name:22s} {n}")
         return 0
+
+    _assert_development_confirmed(args.confirm_seed)
 
     written = await seed(reset=args.reset)
     actual = await counts(names)

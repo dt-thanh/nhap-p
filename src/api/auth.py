@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from src.config import get_settings
 from src.services import oidc
-from src.services.dashboard_auth import authenticate_dashboard
+from src.services.dashboard_auth import authenticate_dashboard, resolve_role_presentation
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -47,7 +47,13 @@ def _safe_return_to(candidate: str | None) -> str:
 
 
 def _ui_base() -> str:
-    return get_settings().cors_origins.split(",")[0].strip()
+    """Canonical frontend origin for OIDC success/error/logout redirects.
+
+    CORS_ORIGINS is an access-control allow-list and may be ordered for
+    operational reasons; it must not decide where an authenticated browser is
+    sent.  FRONTEND_BASE_URL is validated when settings are loaded.
+    """
+    return get_settings().frontend_base_url
 
 
 @router.get("/login")
@@ -143,8 +149,12 @@ async def me(
     absorbiq_session: str | None = Cookie(default=None, alias=oidc.SESSION_COOKIE),
 ) -> JSONResponse:
     principal = await authenticate_dashboard(authorization, absorbiq_session)
+    presentation = resolve_role_presentation(principal)
     payload: dict = {
-        "role": principal.role,
+        "role": presentation.role,
+        "role_code": presentation.role_code,
+        "role_label": presentation.role_label,
+        "capabilities": presentation.capabilities.as_dict(),
         "project_scope": "ALL"
         if principal.project_scope == "ALL"
         else sorted(principal.project_scope),

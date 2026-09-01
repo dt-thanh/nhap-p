@@ -18,15 +18,19 @@ Ba bất biến:
 
 from __future__ import annotations
 
+import uuid
+from datetime import UTC, date, datetime
+
 import pytest
 import pytest_asyncio
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from src.models.tables import ranking_runs
+from src.models.tables import projects, ranking_configs, ranking_runs
 from src.services.ranking_trigger import trigger_ranking, trigger_ranking_all_projects
 from tests.conftest import db_skip_reason
-from tests.test_agent_e2e import PROJECT_ID, _insert_config, _insert_dataset
+
+PROJECT_ID = uuid.uuid4()
 
 _SKIP = db_skip_reason()
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(bool(_SKIP), reason=_SKIP or "")]
@@ -46,16 +50,48 @@ class FakeQueue:
         return type("Job", (), {"id": f"job-{len(self.calls)}"})()
 
 
+async def _insert_project_and_config(factory) -> None:
+    now = datetime.now(UTC)
+    async with factory() as session:
+        await session.execute(
+            sa.insert(projects).values(
+                id=PROJECT_ID,
+                name="Trigger Test Project",
+                launch_date=date(2026, 1, 1),
+                created_at=now,
+                updated_at=now,
+                absorption_calculator="legacy_aggregate",
+                external_id=f"P-TRIGGER-{uuid.uuid4().hex[:8]}",
+                source_system="mini_crm",
+                source_instance_id="test",
+            )
+        )
+        await session.execute(
+            sa.insert(ranking_configs).values(
+                id=uuid.uuid4(),
+                version=1,
+                status="published",
+                weights={"unit_available": {"weight": 1.0, "direction": "positive", "missing_value_policy": "skip"}},
+                min_weight_coverage=0.5,
+                note="trigger test",
+                created_by="test",
+                created_at=now,
+                published_by="test",
+                published_at=now,
+            )
+        )
+        await session.commit()
+
+
 @pytest_asyncio.fixture
 async def wired(truncate_all, monkeypatch):
     factory = async_sessionmaker(truncate_all, expire_on_commit=False)
     queue = FakeQueue()
     for target in ("src.ranking.service.get_session_factory", "src.services.ranking_trigger.get_session_factory"):
         monkeypatch.setattr(target, lambda f=factory: f, raising=False)
-    monkeypatch.setattr("src.services.ranking_trigger.get_queue", lambda *_a, **_k: queue, raising=False)
+    monkeypatch.setattr("src.services.ranking_dispatch.get_queue", lambda *_a, **_k: queue, raising=False)
 
-    await _insert_config(factory)
-    await _insert_dataset(factory)
+    await _insert_project_and_config(factory)
     return {"factory": factory, "queue": queue}
 
 

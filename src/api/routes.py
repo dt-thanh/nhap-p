@@ -1,17 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from src.agents.advisory_tools import _infer_project_id_from_message, run_advisory_agent
-from src.logging_config import get_logger, new_error_id
+from src.logging_config import get_logger
 from src.models.schemas import (
-    ChatRequest,
-    ChatResponse,
     PhaseAddRequest,
     PhaseChangeRequest,
     ProposalDecisionRequest,
     ProposalGenerateRequest,
     ScenarioRunRequest,
 )
-from src.services.ai import AIServiceError
 from src.services.dashboard_auth import DashboardPrincipal, require_project_in_scope, require_role
 from src.services.market import market_repository
 
@@ -27,47 +23,6 @@ def _allowed_external_ids(principal: DashboardPrincipal):
 def _enforce_requested_project_scope(principal: DashboardPrincipal, project_id: str | None) -> None:
     if project_id:
         require_project_in_scope(principal, project_id)
-
-
-@router.post("/chat", response_model=ChatResponse)
-async def chat(
-    request: ChatRequest,
-    project_id: str | None = Query(default=None, description="Project external_id or internal UUID"),
-    principal: DashboardPrincipal = Depends(require_viewer),
-) -> ChatResponse:
-    """GPT plans read-only tools and synthesizes their scoped DB results."""
-    # A project named in the latest question is stronger intent than a stale
-    # project selector in the UI.
-    mentioned_project_id = await _infer_project_id_from_message(
-        request.message, allowed_external_ids=_allowed_external_ids(principal)
-    )
-    resolved_project_id = mentioned_project_id or project_id
-    _enforce_requested_project_scope(principal, resolved_project_id)
-    try:
-        response, tool_calls, sources, usage = await run_advisory_agent(
-            request.message, resolved_project_id, allowed_external_ids=_allowed_external_ids(principal)
-        )
-        return ChatResponse(
-            response=response,
-            analysis="",
-            status="completed",
-            usage=usage,
-            tool_calls=tool_calls,
-            sources=sources,
-            suggested_actions=["So sánh các phân khu", "Top căn nên ưu tiên", "Tạo đề xuất bán hàng"],
-            resolved_project_id=resolved_project_id,
-        )
-    except AIServiceError as e:
-        raise HTTPException(status_code=e.status_code, detail={"message": e.user_message, "code": e.code}) from e
-    except Exception as e:
-        error_id = new_error_id()
-        log.error("chat.failed", error_id=error_id, error_type=type(e).__name__, exc_info=e)
-        raise HTTPException(status_code=500, detail={"message": "Agent error", "error_id": error_id}) from e
-
-
-@router.get("/status")
-async def agent_status(principal: DashboardPrincipal = Depends(require_viewer)):
-    return {"status": "ready", "agent": "AI tư vấn", "provider": "openai", "data_mode": "database"}
 
 
 @router.get("/market/dashboard")
@@ -175,3 +130,4 @@ async def decide_proposal(
             status_code=409,
             detail={"code": str(exc), "message": "Use /agent/recommendations/{id}/approve for HITL decisions."},
         ) from exc
+

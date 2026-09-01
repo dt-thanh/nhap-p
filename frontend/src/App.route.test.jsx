@@ -35,6 +35,10 @@ vi.mock("./pages/PreviewOverviewPage", () => ({
   default: () => <div data-testid="overview-preview-route">Overview preview route</div>,
 }));
 
+vi.mock("./pages/HomePage", () => ({
+  default: () => <div data-testid="home-route">Home route</div>,
+}));
+
 vi.mock("./api/endpoints", () => ({
   getProjectByExternalId: vi.fn(),
   listAreasScoped: vi.fn(),
@@ -127,6 +131,14 @@ describe("project and area route composition", () => {
     expect(listAreasScoped).toHaveBeenCalledTimes(1);
     expect(getAreaByExternalId).not.toHaveBeenCalled();
     expect(getDashboardTrend).not.toHaveBeenCalled();
+  });
+
+  it("redirects the retired Settings URL through the existing fallback route", async () => {
+    renderAt("/settings");
+
+    expect(await screen.findByTestId("home-route")).toBeInTheDocument();
+    expect(screen.queryByText("Cài đặt")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("app-layout")).not.toBeInTheDocument();
   });
 
   it("registers the shell-free overview preview route", async () => {

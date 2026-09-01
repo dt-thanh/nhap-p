@@ -14,6 +14,21 @@ The deterministic row generator is embedded here intentionally: the production
 API image mounts ``alembic/`` and ``src/`` but not the repository's ``scripts/``
 directory, so an applied migration must not depend on an unmounted CLI module.
 No legacy ``sales_records`` or ``absorption_daily`` rows are written.
+
+``upgrade()`` IS NOW A NO-OP (2026-08-28). Alembic must never auto-seed
+business/domain data on a fresh database. A database that already applied the
+OLD version of this revision is unaffected — Alembic never re-runs an
+already-stamped revision — and ``downgrade()`` below is UNCHANGED, still
+correctly reversing that database's real rows by source identity. The exact
+same generator (independently duplicated, not imported, since this file
+cannot depend on ``scripts/`` at runtime — see above) already existed as an
+explicit, confirmed, dev-only CLI before this change and is unaffected:
+
+    python -m scripts.seed_domain_demo_2026 --dry-run
+    python -m scripts.seed_domain_demo_2026 --confirm-seed
+
+Its output is explicitly non-authoritative (never valid for CRM
+reconciliation or authoritative ranking).
 """
 
 from __future__ import annotations
@@ -336,16 +351,20 @@ def _upsert_batches(bind: sa.Connection, table: sa.Table, rows: list[dict[str, A
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    _assert_safe_target(bind)
-    rows = _plan_rows()
-
-    # Parent rows must exist before their children because all four tables have
-    # real foreign keys.  The entire Alembic revision runs in one transaction.
-    _upsert_batches(bind, projects, rows["projects"])
-    _upsert_batches(bind, areas, rows["areas"])
-    _upsert_batches(bind, units, rows["units"])
-    _upsert_batches(bind, deals, rows["deals"])
+    # `upgrade()` is now a no-op (2026-08-28). Alembic must never auto-seed
+    # business/domain data on a fresh database — see the boxed note in this
+    # file's module docstring. A database that already applied the OLD
+    # version of this revision is unaffected (Alembic never re-runs an
+    # already-stamped revision); `downgrade()` below is UNCHANGED and still
+    # correctly reverses that database's real rows by source identity. The
+    # exact same deterministic generator lives on, unchanged, in the
+    # explicit, confirmed, dev-only CLI this revision already had before
+    # this change: `python -m scripts.seed_domain_demo_2026 --confirm-seed`.
+    print(
+        "=== 0023_seed_domain_demo_2026: upgrade() is now a no-op — "
+        "use `python -m scripts.seed_domain_demo_2026 --confirm-seed` to seed this "
+        "namespace explicitly (never automatic on `alembic upgrade head`). ==="
+    )
 
 
 def _owned_rows(table: sa.Table, external_column: str) -> sa.ColumnElement[bool]:

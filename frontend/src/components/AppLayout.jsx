@@ -1,11 +1,10 @@
 // frontend/src/components/AppLayout.jsx
-// Khung chung cho các trang ĐÃ đăng nhập: sidebar + topbar + ChatWidget.
+// Khung chung cho các trang ĐÃ đăng nhập: sidebar + topbar.
 // HomePage (S00) và LoginPage (S01) KHÔNG dùng khung này (chúng full-screen riêng).
 import React from "react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import Brand from "./Brand";
-import ChatWidget from "./ChatWidget";
 import Icon from "./ui/Icon";
 import LogoutButton from "./LogoutButton";
 import { USE_MOCK } from "../api/client";
@@ -20,8 +19,7 @@ import { useBreakpoint, pick } from "../hooks/useBreakpoint";
 // trùng lặp.
 const NAV = [
   { to: "/overview", label: "Tổng quan", icon: "overview", end: true },
-  { to: "/inventory", label: "Tồn kho", icon: "units", end: true },
-  { to: "/ai-agent", label: "AI tư vấn", icon: "bot", end: true },
+  { to: "/ai-agent", label: "AI Agent", icon: "bot", end: true },
   { to: "/ranking", label: "Xếp hạng", icon: "rate", end: true },
   { to: "/projects", label: "Dự án", icon: "folder" },
 ];
@@ -30,20 +28,31 @@ export default function AppLayout() {
   const { bp, isMobile, isNarrow } = useBreakpoint();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [hoveredNav, setHoveredNav] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [advisorAnalysisAuthoring, setAdvisorAnalysisAuthoring] = useState(false);
+  const [advisorAnalysisReview, setAdvisorAnalysisReview] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const gutter = pick(bp, layout.gutter);
-  const navItems = isAdmin ? [...NAV, { to: "/settings", label: "Cài đặt", icon: "settings", end: true }] : NAV;
+  const navItems = [
+    ...NAV,
+    ...(advisorAnalysisAuthoring ? [{ to: "/expert-analysis", label: "Phân tích cố vấn", icon: "search" }] : []),
+    ...(advisorAnalysisReview ? [{ to: "/advisor-analysis/review", label: "Phê duyệt phân tích cố vấn", icon: "inbox" }] : []),
+  ];
 
   useEffect(() => {
     let active = true;
     getMePermissions()
       .then((permissions) => {
-        if (active) setIsAdmin(permissions?.role === "admin");
+        if (active) {
+          setAdvisorAnalysisAuthoring(Boolean(permissions?.capabilities?.advisor_analysis_authoring));
+          setAdvisorAnalysisReview(Boolean(permissions?.capabilities?.advisor_analysis_review));
+        }
       })
       .catch(() => {
-        if (active) setIsAdmin(false);
+        if (active) {
+          setAdvisorAnalysisAuthoring(false);
+          setAdvisorAnalysisReview(false);
+        }
       });
     return () => {
       active = false;
@@ -157,7 +166,6 @@ export default function AppLayout() {
         </main>
       </div>
 
-      <ChatWidget />
     </div>
   );
 }

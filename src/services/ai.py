@@ -1,5 +1,9 @@
+"""OpenAI-compatible LLM adapter used only for Agent narration."""
+
+from __future__ import annotations
+
 import asyncio
-from types import SimpleNamespace
+from typing import Any
 
 import httpx
 
@@ -7,110 +11,68 @@ from src.config import get_settings
 
 
 class AIServiceError(RuntimeError):
-    def __init__(self, code, user_message, status_code=502):
+    def __init__(self, code: str, user_message: str, status_code: int = 502):
         super().__init__(code)
         self.code = code
         self.user_message = user_message
         self.status_code = status_code
 
 
-def _extract_text(data: dict) -> str:
-    output_text = data.get("output_text")
-    if isinstance(output_text, str) and output_text.strip():
-        return output_text
-
-    chunks: list[str] = []
-    for item in data.get("output", []) or []:
-        if not isinstance(item, dict):
-            continue
-        for content in item.get("content", []) or []:
-            if not isinstance(content, dict):
-                continue
-            if content.get("type") in {"output_text", "text"} and isinstance(content.get("text"), str):
-                chunks.append(content["text"])
-    return "".join(chunks).strip()
-
-
-def _usage(data: dict) -> dict:
-    usage = data.get("usage") or {}
-    if not isinstance(usage, dict):
-        return {}
-    return {
-        **usage,
-        "prompt_tokens": usage.get("input_tokens"),
-        "completion_tokens": usage.get("output_tokens"),
-    }
-
-
-async def generate_content(prompt: str, *, max_output_tokens: int | None = None, thinking_budget: int | None = None):
+async def generate_content(
+    prompt: str,
+    *,
+    system_prompt: str = "",
+    max_output_tokens: int = 800,
+    temperature: float = 0.2,
+) -> tuple[str, dict[str, Any]]:
+    """Call any OpenAI-compatible `/chat/completions` provider."""
     settings = get_settings()
     key = settings.resolved_llm_api_key
     if not key:
-        raise AIServiceError("API_KEY_MISSING", "GPT chưa được cấu hình API key.", 503)
+        raise AIServiceError("API_KEY_MISSING", "Chưa cấu hình LLM API key.", 503)
 
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
     payload = {
         "model": settings.resolved_llm_model,
-        "input": prompt,
-        "temperature": settings.llm_temperature,
-        "store": False,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_output_tokens,
     }
-    if max_output_tokens is not None:
-        payload["max_output_tokens"] = max_output_tokens
-    if thinking_budget is not None and settings.resolved_llm_model.startswith(("gpt-5", "o")):
-        effort = "low" if thinking_budget == 0 else "medium"
-        payload["reasoning"] = {"effort": effort}
 
     for attempt in range(2):
         try:
-            timeout = httpx.Timeout(45.0, connect=10.0)
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client:
                 response = await client.post(
-                    "https://api.openai.com/v1/responses",
+                    settings.llm_base_url.rstrip("/") + "/chat/completions",
                     headers={"Authorization": f"Bearer {key}"},
                     json=payload,
                 )
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
-            if attempt < 1:
-                await asyncio.sleep(2**attempt)
+            if attempt == 0:
+                await asyncio.sleep(1)
                 continue
-            raise AIServiceError("NETWORK_ERROR", "Không thể kết nối GPT. Vui lòng thử lại.", 503) from exc
+            raise AIServiceError("NETWORK_ERROR", "Không thể kết nối LLM.", 503) from exc
 
-        if response.status_code in {429, 500, 502, 503, 504} and attempt < 1:
-            await asyncio.sleep(2**attempt)
+        if response.status_code in {429, 500, 502, 503, 504} and attempt == 0:
+            await asyncio.sleep(1)
             continue
         if response.status_code == 401:
-            raise AIServiceError("INVALID_API_KEY", "API key GPT không hợp lệ hoặc đã bị thu hồi.", 401)
+            raise AIServiceError("INVALID_API_KEY", "LLM API key không hợp lệ hoặc đã bị thu hồi.", 401)
         if response.status_code == 403:
-            raise AIServiceError("PERMISSION_DENIED", "API key GPT không có quyền sử dụng model đã chọn.", 403)
+            raise AIServiceError("PERMISSION_DENIED", "API key không có quyền dùng model đã chọn.", 403)
         if response.status_code == 429:
-            raise AIServiceError(
-                "RESOURCE_EXHAUSTED",
-                "GPT đã hết hạn mức request/token. Vui lòng chờ rồi thử lại hoặc kiểm tra quota.",
-                429,
-            )
-        if response.status_code in {500, 502, 503, 504}:
-            raise AIServiceError("SERVICE_UNAVAILABLE", "GPT đang tạm thời quá tải. Vui lòng thử lại.", 503)
+            raise AIServiceError("RESOURCE_EXHAUSTED", "LLM đang hết hạn mức request/token.", 429)
         if response.status_code >= 400:
-            raise AIServiceError("LLM_ERROR", "GPT không thể xử lý yêu cầu lúc này.", response.status_code)
+            raise AIServiceError("LLM_ERROR", "LLM không thể xử lý yêu cầu lúc này.", response.status_code)
 
         data = response.json()
-        status = data.get("status")
-        if status == "incomplete":
-            raise AIServiceError("TOKEN_LIMIT", "GPT đã dùng hết token đầu ra. Hãy rút gọn dữ liệu đầu vào.", 422)
-        text = _extract_text(data)
-        if not text:
-            raise AIServiceError("EMPTY_RESPONSE", "GPT không trả về nội dung phù hợp.")
-        return text, _usage(data)
+        choices = data.get("choices") or []
+        content = choices[0].get("message", {}).get("content") if choices else None
+        if not isinstance(content, str) or not content.strip():
+            raise AIServiceError("EMPTY_RESPONSE", "LLM không trả về nội dung phù hợp.")
+        return content.strip(), data.get("usage") or {}
 
-    raise AIServiceError("LLM_ERROR", "GPT tạm thời không khả dụng.", 503)
-
-
-class OpenAIChatLLM:
-    """Small adapter with the `ainvoke()` shape used by LangGraph nodes/tests."""
-
-    def __init__(self, model_name: str):
-        self.model_name = model_name
-
-    async def ainvoke(self, prompt: str):
-        text, usage = await generate_content(prompt)
-        return SimpleNamespace(content=text, response_metadata={"usage": usage})
+    raise AIServiceError("LLM_ERROR", "LLM tạm thời không khả dụng.", 503)

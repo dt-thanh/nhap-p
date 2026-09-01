@@ -104,6 +104,7 @@ EXTRA_TRUNCATE_TABLES: tuple[str, ...] = (
     # `ranking_weight_proposals`/`expert_profiles`; `ranking_feature_justifications`
     # trỏ `ranking_weight_proposals` + `ranking_feature_definitions`.
     "ranking_evidence_document_features",
+    "ranking_proposal_evidence_links",
     "ranking_config_audit_events",
     "ranking_proposal_reviews",
     # 0035 (§21.4): chunks + log trạng thái trích xuất đều trỏ

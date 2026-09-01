@@ -11,7 +11,6 @@ import { color, size, radius, shadow, space, font } from "../styles/tokens";
 import { Skeleton } from "../components/ui/States";
 import Icon from "../components/ui/Icon";
 import GlobalKeyframes from "../components/ui/GlobalKeyframes";
-import { DASHBOARD_TEXT } from "../components/dashboard/labels";
 
 const UNAVAILABLE = "Chưa có dữ liệu";
 
@@ -284,15 +283,6 @@ function ProjectCard({ project, navigate }) {
           </div>
         </div>
       </button>
-      <div style={S.cardActions}>
-        {hasIdentity ? (
-          <button type="button" style={S.dashboardButton} onClick={() => navigate(`/projects/${externalId}/dashboard`)}>
-            {DASHBOARD_TEXT.openDashboard}
-          </button>
-        ) : (
-          <span style={S.unavailableAction}>{DASHBOARD_TEXT.unavailableDashboard}: {UNAVAILABLE}</span>
-        )}
-      </div>
     </article>
   );
 }
@@ -394,9 +384,6 @@ const S = {
   metaGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: space(3), borderTop: `1px solid ${color.border}`, marginTop: space(4), paddingTop: space(3) },
   metaLabel: { display: "block", color: color.muted, fontSize: 11, marginBottom: 2 },
   metaValue: { display: "block", color: color.body, fontSize: size.tiny, fontWeight: 600 },
-  cardActions: { borderTop: `1px solid ${color.border}`, padding: `${space(3)}px ${space(4)}px`, display: "flex", justifyContent: "flex-end" },
-  dashboardButton: { background: color.accent, color: "#fff", border: "none", borderRadius: radius.sm, padding: `${space(2)}px ${space(3)}px`, fontSize: size.tiny, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
-  unavailableAction: { color: color.muted, fontSize: size.tiny },
   skeletonCard: { background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.md, overflow: "hidden" },
   skeletonBody: { display: "flex", flexDirection: "column", gap: space(2), padding: space(4) },
   stateWrap: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: `${space(12)}px ${space(4)}px`, gap: space(3) },

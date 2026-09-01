@@ -54,7 +54,7 @@ export default function ImportSelectPage() {
     <div style={{ ...S.wrap, padding: `${space(7)}px ${gutter}px ${space(16)}px` }}>
       <header style={S.head}>
         <h1 style={S.h1}>Nạp dữ liệu</h1>
-        <p style={S.sub}>Chọn dự án và phân khu trước khi tải file bán hàng &amp; tồn kho.</p>
+        <p style={S.sub}>Chọn dự án và phân khu trước khi tải file dữ liệu.</p>
       </header>
 
       {/* thanh tiến trình 3 bước */}

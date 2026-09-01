@@ -140,7 +140,7 @@ describe("integration pages", () => {
     expect(container.querySelector('img[src="/cover-b.jpg"]')).not.toBeInTheDocument();
   });
 
-  it("renders the real launch date and navigates the dashboard with external_id", async () => {
+  it("renders the project card without the dashboard CTA", async () => {
     listProjects.mockResolvedValue([
       { project_id: "uuid-a", external_id: "project-a", name: "Ocean Park 1", launch_date: "2026-01-01", status: "active" },
     ]);
@@ -157,8 +157,11 @@ describe("integration pages", () => {
       expect(element).toHaveTextContent(/2026/);
       return element;
     })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Xem bảng điều khiển" }));
-    expect(screen.getByTestId("current-path")).toHaveTextContent("/projects/project-a/dashboard");
+    expect(screen.getByRole("button", { name: /Ocean Park 1/ })).toBeInTheDocument();
+    expect(screen.getByText("Mã dự án: project-a")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Xem bảng điều khiển" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Ocean Park 1/ }));
+    expect(screen.getByTestId("current-path")).toHaveTextContent("/projects/project-a");
     expect(listProjects).toHaveBeenCalledTimes(1);
   });
 

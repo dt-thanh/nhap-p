@@ -46,22 +46,24 @@ from src.models.schemas import (
     AreaOut,
     ImageDetail,
     MePermissionsOut,
+    PortfolioSummaryOut,
     ProjectDetail,
     ProjectSummary,
-    PortfolioSummaryOut,
 )
+from src.models.tables import areas, deals, projects, units, upload_files
 from src.models.tables import areas as areas_table
-from src.models.tables import projects, upload_files, areas, units, deals
 from src.services.absorption import AreaService
 from src.services.dashboard_auth import (
     DashboardPrincipal,
     require_project_in_scope,
     require_role,
+    resolve_role_presentation,
     resolve_scope_project_ids,
 )
 from src.services.domain_absorption import (
     CALCULATOR_DOMAIN,
     CALCULATOR_LEGACY,
+    DomainAbsorptionCalculatorService,
     DomainSalesAnalyticsService,
 )
 from src.services.images import (
@@ -233,7 +235,15 @@ async def _resolve_analytics_scope(
 )
 async def me_permissions(principal: DashboardPrincipal = Depends(require_viewer)) -> MePermissionsOut:
     scope = "ALL" if principal.project_scope == "ALL" else sorted(principal.project_scope)
-    return MePermissionsOut(role=principal.role, project_scope=scope)
+    presentation = resolve_role_presentation(principal)
+    return MePermissionsOut(
+        role=presentation.role,
+        role_code=presentation.role_code,
+        role_label=presentation.role_label,
+        capabilities=presentation.capabilities.as_dict(),
+        project_scope=scope,
+        is_ceo=principal.is_ceo,
+    )
 
 
 @router.get(
@@ -246,7 +256,7 @@ async def get_portfolio_summary(
 ) -> PortfolioSummaryOut:
     async with get_session_factory()() as session:
         scope_ids = await resolve_scope_project_ids(session, principal)
-        
+
         if scope_ids != "ALL" and not scope_ids:
             return PortfolioSummaryOut(
                 project_count=0,
@@ -408,6 +418,10 @@ async def get_project_by_external_id(
             status_code=404,
             detail={"message": f"Không tìm thấy dự án '{external_id}'", "error_code": "PROJECT_NOT_FOUND"},
         )
+    # Reuse the canonical grouped units/deals calculator.  It excludes
+    # tombstoned and blocked units and active sold/reserved deals; no legacy
+    # inventory snapshot or frontend-derived total is exposed as sellable stock.
+    inventory = await DomainAbsorptionCalculatorService(get_session_factory()).compute(row.id)
     return ProjectDetail(
         project_id=str(row.id),
         name=row.name,
@@ -419,6 +433,7 @@ async def get_project_by_external_id(
         created_at=row.created_at,
         external_id=row.external_id,
         source_revision=row.source_revision,
+        available_inventory_count=inventory.units_remaining,
     )
 
 

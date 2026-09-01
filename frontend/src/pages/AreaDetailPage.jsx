@@ -1,5 +1,5 @@
 // frontend/src/pages/AreaDetailPage.jsx
-// S04 — Chi tiết phân khu: tồn kho + giao dịch THẬT (GET /inventory, GET
+// S04 — Chi tiết phân khu: giao dịch + phân loại căn THẬT (GET /inventory, GET
 // /deals, scoped theo external_id của dự án/phân khu — cùng quy ước URL với
 // phần còn lại của app). Trước đây trang này không có lối vào UI nào và tab
 // "Xếp hạng" gọi một stub luôn trả rỗng — giờ trang được điều hướng tới từ
@@ -18,7 +18,6 @@ import { DASHBOARD_TEXT, formatDashboardDate } from "../components/dashboard/lab
 import GlobalKeyframes from "../components/ui/GlobalKeyframes";
 
 const TABS = [
-  { key: "inventory", label: "Tồn kho" },
   { key: "deals", label: "Giao dịch" },
   { key: "ranking", label: "Phân loại căn theo trạng thái" },
 ];
@@ -76,7 +75,7 @@ export default function AreaDetailPage() {
   const navigate = useNavigate();
   const workspace = useOutletContext() || null;
   const inWorkspace = Boolean(workspace);
-  const [tab, setTab] = useState("inventory");
+  const [tab, setTab] = useState("ranking");
 
   const { data: area, loading, error } = useAsync(() => getAreaByExternalId(areaId), [areaId]);
   const trend = useAsync(
@@ -149,7 +148,6 @@ export default function AreaDetailPage() {
         ))}
       </div>
 
-      {tab === "inventory" && <InventoryTab inventory={inventory} />}
       {tab === "deals" && <DealsTab projectId={projectId} areaId={areaId} />}
       {tab === "ranking" && (
         <StatusUnitsSection
@@ -160,52 +158,6 @@ export default function AreaDetailPage() {
         />
       )}
     </>
-  );
-}
-
-function InventoryTab({ inventory: inv }) {
-  const units = inv.data?.units ?? [];
-
-  return (
-    <section style={S.card}>
-      <div style={S.cardHead}>
-        <div>
-          <h2 style={S.h2}>Tồn kho</h2>
-          <p style={S.csub}>Danh sách căn trong phân khu này.</p>
-        </div>
-        {units.length > 0 && <span style={S.count}>{units.length} căn</span>}
-      </div>
-
-      <SectionState loading={inv.loading} error={inv.error} empty={!inv.loading && !inv.error && units.length === 0} onRetry={inv.reload} compact>
-        <div style={S.scroll}>
-          <table style={S.table}>
-            <thead>
-              <tr>
-                <th style={S.th}>Mã căn</th>
-                <th style={S.th}>Loại</th>
-                <th style={S.th}>Trạng thái</th>
-                <th style={S.th}>Giao dịch đang giữ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {units.map((u) => {
-                const st = UNIT_STATUS_BADGE[u.status] || UNIT_STATUS_BADGE.available;
-                return (
-                  <tr key={u.unit_id}>
-                    <td style={{ ...S.td, fontWeight: 600, color: color.ink }}>{u.unit_code}</td>
-                    <td style={S.td}>{u.unit_type}</td>
-                    <td style={S.td}>
-                      <span style={{ ...S.badge, color: st.fg, background: st.bg }}>{st.label}</span>
-                    </td>
-                    <td style={S.td}>{displayDealStatus(u.active_deal_status)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </SectionState>
-    </section>
   );
 }
 

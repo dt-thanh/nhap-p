@@ -27,7 +27,7 @@ pytestmark = pytest.mark.skipif(
     reason="PostgreSQL is unavailable: TEST_DATABASE_URL/DATABASE_URL is not configured",
 )
 
-HEAD_REVISION = "0041_area_grain_scope"
+HEAD_REVISION = "0046_feature_rubrics"
 
 
 def _sync_url(url: str) -> str:
@@ -66,7 +66,7 @@ def scratch_db():
         admin.dispose()
 
 
-def test_exactly_one_head_and_it_is_0041():
+def test_exactly_one_head_and_it_matches_head_revision():
     result = _alembic(TEST_DATABASE_URL, "heads")
     assert result.returncode == 0, result.stderr
     heads = [line.split()[0] for line in result.stdout.splitlines() if line.strip()]
@@ -177,7 +177,13 @@ def test_pr1_pr4_chain_re_upgrades_to_the_identical_head_after_downgrading_to_it
         area_defs = conn.execute(
             sa.text("SELECT COUNT(*) FROM ranking_feature_definitions WHERE grain = 'area'")
         ).scalar()
+        legal_defs = conn.execute(
+            sa.text(
+                "SELECT COUNT(*) FROM ranking_feature_definitions WHERE feature_key = 'project_legal_status'"
+            )
+        ).scalar()
     engine.dispose()
     assert current == HEAD_REVISION
     assert market_defs == 4, "0040's four Market feature definitions must be re-seeded identically"
     assert area_defs == 3, "0041's three Area feature definitions must be re-seeded identically"
+    assert legal_defs == 1, "0042's one Legal feature definition must be re-seeded identically"

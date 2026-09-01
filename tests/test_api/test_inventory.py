@@ -256,6 +256,22 @@ async def test_inventory_returns_counts_derived_from_units_and_deals(client):
     assert by_area["A2"]["units_remaining"] == 1
 
 
+async def test_project_detail_exposes_canonical_available_inventory_count(client):
+    await _seed_stock(client)
+
+    response = await client.get("/api/v1/projects/INV-TEST")
+
+    assert response.status_code == 200
+    assert response.json()["available_inventory_count"] == 1
+
+    # Removing the only currently sellable unit is a real zero, not an
+    # unavailable value; sold/reserved/blocked units never become sellable.
+    await _sync(client, "units", [{"source_record_id": "U-4", "operation": "delete", "source_revision": 99}])
+    after_delete = await client.get("/api/v1/projects/INV-TEST")
+    assert after_delete.status_code == 200
+    assert after_delete.json()["available_inventory_count"] == 0
+
+
 async def test_inventory_filters_by_area(client):
     await _seed_stock(client)
     areas_body = (await client.get(f"/api/v1/inventory?project_id={PROJECT_ID}")).json()["areas"]

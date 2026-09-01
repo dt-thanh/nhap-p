@@ -72,6 +72,140 @@ class DashboardPrincipal:
     project_scope: ProjectScope = frozenset()
     subject: str | None = None
     is_ceo: bool = False
+    # Raw, verified OIDC roles are retained only for action-level policy.  The
+    # collapsed ``role`` remains the authority for the global hierarchy; this
+    # field lets us distinguish CRM.ADVISOR from CRM.Viewer when both collapse
+    # to ``business_viewer``.
+    oidc_roles: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True, slots=True)
+class DashboardCapabilities:
+    """Server-derived UI hints; route dependencies remain authoritative."""
+
+    expert_analysis: bool
+    expert_analysis_authoring: bool
+    global_config: bool
+    ahp_admin: bool
+    ceo_review: bool
+    config_publish: bool
+    ranking_recompute: bool
+    # Advisor Analysis is a separate product surface.  These flags are derived
+    # only from the verified server principal and are UX hints, never API
+    # authority.
+    advisor_analysis_access: bool
+    advisor_analysis_authoring: bool
+    # Distinct from advisor_analysis_authoring (qualitative evidence/rubric
+    # authoring) — gates only the new Advisor-authored AHP hierarchy proposal
+    # draft/submit surface. Same underlying verified-Advisor predicate today;
+    # kept as a separate flag/dependency so the two surfaces can diverge later
+    # without touching the qualitative-only flow's own gate.
+    advisor_analysis_ahp_authoring: bool
+    advisor_analysis_review: bool
+    advisor_analysis_admin: bool
+    advisor_analysis_view_own: bool
+    advisor_analysis_view_submitted: bool
+    advisor_analysis_upload_evidence: bool
+    advisor_analysis_submit: bool
+    advisor_analysis_publish: bool
+
+    def as_dict(self) -> dict[str, bool]:
+        return {
+            "expert_analysis": self.expert_analysis,
+            "expert_analysis_authoring": self.expert_analysis_authoring,
+            "global_config": self.global_config,
+            "ahp_admin": self.ahp_admin,
+            "ceo_review": self.ceo_review,
+            "config_publish": self.config_publish,
+            "ranking_recompute": self.ranking_recompute,
+            "advisor_analysis_access": self.advisor_analysis_access,
+            "advisor_analysis_authoring": self.advisor_analysis_authoring,
+            "advisor_analysis_ahp_authoring": self.advisor_analysis_ahp_authoring,
+            "advisor_analysis_review": self.advisor_analysis_review,
+            "advisor_analysis_admin": self.advisor_analysis_admin,
+            "advisor_analysis_view_own": self.advisor_analysis_view_own,
+            "advisor_analysis_view_submitted": self.advisor_analysis_view_submitted,
+            "advisor_analysis_upload_evidence": self.advisor_analysis_upload_evidence,
+            "advisor_analysis_submit": self.advisor_analysis_submit,
+            "advisor_analysis_publish": self.advisor_analysis_publish,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DashboardRolePresentation:
+    """Safe presentation metadata for an already-authenticated principal.
+
+    ``role`` remains the canonical authorization role. ``role_code`` and
+    ``role_label`` are derived from verified OIDC context, so a generic viewer
+    is never presented as an Advisor merely because both share the read role.
+    """
+
+    role: DashboardRole
+    role_code: str
+    role_label: str
+    capabilities: DashboardCapabilities
+
+
+def is_verified_advisor(principal: DashboardPrincipal) -> bool:
+    """True only for the OIDC-backed Advisor identity used by authoring policy."""
+    return (
+        principal.role == "business_viewer"
+        and bool(principal.subject)
+        and "CRM.ADVISOR" in principal.oidc_roles
+        and (principal.project_scope == "ALL" or bool(principal.project_scope))
+    )
+
+
+def resolve_role_presentation(principal: DashboardPrincipal) -> DashboardRolePresentation:
+    """Return non-authoritative role presentation and capability metadata.
+
+    This function never accepts client input. Its authoring value mirrors the
+    existing ``require_governance_authoring`` policy; sensitive routes retain
+    their own server-side dependencies.
+    """
+    advisor = is_verified_advisor(principal)
+    if advisor:
+        role_code, role_label = "advisor", "Advisor"
+    elif principal.is_ceo:
+        role_code, role_label = "ceo", "CEO"
+    elif principal.role == "business_viewer":
+        role_code, role_label = "viewer", "Business Viewer"
+    elif principal.role == "pipeline_operator" and "CRM.SALES" in principal.oidc_roles:
+        role_code, role_label = "sales", "Sales"
+    elif principal.role == "pipeline_operator":
+        role_code, role_label = "pipeline_operator", "Pipeline Operator"
+    else:
+        role_code, role_label = "admin", "Admin"
+
+    is_admin = principal.role == "admin"
+    is_operator_or_admin = _ROLE_LEVEL[principal.role] >= _ROLE_LEVEL["pipeline_operator"]
+    # CRM.CEO is intentionally not inferred from the collapsed admin role.
+    # There is currently no separately approved non-CEO Admin review policy.
+    ceo_reviewer = principal.is_ceo and principal.role == "admin" and bool(principal.subject)
+    return DashboardRolePresentation(
+        role=principal.role,
+        role_code=role_code,
+        role_label=role_label,
+        capabilities=DashboardCapabilities(
+            expert_analysis=advisor or ceo_reviewer,
+            expert_analysis_authoring=advisor,
+            global_config=is_admin,
+            ahp_admin=is_admin,
+            ceo_review=ceo_reviewer,
+            config_publish=is_admin,
+            ranking_recompute=is_operator_or_admin,
+            advisor_analysis_access=advisor or ceo_reviewer,
+            advisor_analysis_authoring=advisor,
+            advisor_analysis_ahp_authoring=advisor,
+            advisor_analysis_review=ceo_reviewer,
+            advisor_analysis_admin=False,
+            advisor_analysis_view_own=advisor,
+            advisor_analysis_view_submitted=ceo_reviewer,
+            advisor_analysis_upload_evidence=advisor,
+            advisor_analysis_submit=advisor,
+            advisor_analysis_publish=False,
+        ),
+    )
 
 
 def _configured_tokens() -> list[tuple[DashboardRole, str]]:
@@ -137,6 +271,7 @@ async def authenticate_dashboard(
             project_scope=scope,
             subject=claims.get("sub"),
             is_ceo=bool(claims.get("is_ceo", False)),
+            oidc_roles=frozenset(claims.get("oidc_roles") or []),
         )
 
     if settings.app_env == "development" and settings.dev_auth_bypass and authorization is None:
@@ -171,6 +306,7 @@ async def authenticate_dashboard(
             project_scope="ALL" if raw == "ALL" else frozenset(raw),
             subject=identity.subject,
             is_ceo="CRM.CEO" in identity.roles,
+            oidc_roles=identity.roles,
         )
 
     scopes = _scope_map()
@@ -215,6 +351,107 @@ def require_role(minimum: DashboardRole):
         return principal
 
     return dependency
+
+
+def require_governance_authoring():
+    """Authorize the narrow Expert Analysis authoring surface.
+
+    ``CRM.ADVISOR`` and ``CRM.Viewer`` intentionally collapse to the same
+    read role.  Only the explicitly verified Advisor claim may use this
+    authoring surface; operators/admins retain their existing access.
+    Advisor ownership is derived from the verified OIDC subject by the
+    governance router.
+    """
+
+    async def dependency(
+        authorization: str | None = Header(default=None, alias="Authorization"),
+        absorbiq_session: str | None = Cookie(default=None, alias="absorbiq_session"),
+    ) -> DashboardPrincipal:
+        principal = await authenticate_dashboard(authorization, absorbiq_session)
+        if principal.role == "business_viewer" and "CRM.ADVISOR" not in principal.oidc_roles:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "message": "Tài khoản không có quyền soạn phân tích chuyên gia.",
+                    "error_code": "GOVERNANCE_AUTHORING_FORBIDDEN",
+                },
+            )
+        # Existing operator/admin token and OIDC paths retain their prior
+        # access.  Only the newly admitted Advisor path requires a verified
+        # subject because ownership is derived from it below.
+        if principal.role == "business_viewer" and not principal.subject:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "message": "Thao tác soạn phân tích cần danh tính OIDC đã xác thực.",
+                    "error_code": "IDENTITY_REQUIRED",
+                },
+            )
+        return principal
+
+    return dependency
+
+
+def _analysis_forbidden(message: str = "Tài khoản không có quyền truy cập Phân tích cố vấn.") -> HTTPException:
+    """Return one non-enumerating denial shape for the isolated module."""
+    return HTTPException(
+        status_code=403,
+        detail={"message": message, "error_code": "ADVISOR_ANALYSIS_FORBIDDEN"},
+    )
+
+
+def require_advisor_analysis_read():
+    """Allow only a fully qualified, scoped CRM.ADVISOR principal."""
+
+    async def dependency(
+        authorization: str | None = Header(default=None, alias="Authorization"),
+        absorbiq_session: str | None = Cookie(default=None, alias="absorbiq_session"),
+    ) -> DashboardPrincipal:
+        principal = await authenticate_dashboard(authorization, absorbiq_session)
+        if not is_verified_advisor(principal):
+            raise _analysis_forbidden()
+        return principal
+
+    return dependency
+
+
+def require_advisor_analysis_authoring():
+    """Advisor Analysis writes have the same strict persona gate as reads."""
+    return require_advisor_analysis_read()
+
+
+def require_advisor_analysis_ahp_authoring():
+    """Gates ONLY the Advisor-authored AHP hierarchy proposal draft/submit
+    surface — deliberately a separate dependency instance from
+    `require_advisor_analysis_authoring()` (same underlying verified-Advisor
+    predicate today) so the qualitative-only Advisor Analysis flow's own gate
+    can never be accidentally widened by a future change to this one."""
+    return require_advisor_analysis_read()
+
+
+def require_advisor_analysis_reviewer_visibility():
+    """Only a verified CEO may enter the reviewer module at present."""
+
+    async def dependency(
+        authorization: str | None = Header(default=None, alias="Authorization"),
+        absorbiq_session: str | None = Cookie(default=None, alias="absorbiq_session"),
+    ) -> DashboardPrincipal:
+        principal = await authenticate_dashboard(authorization, absorbiq_session)
+        if not (
+            principal.is_ceo
+            and principal.role == "admin"
+            and bool(principal.subject)
+            and (principal.project_scope == "ALL" or bool(principal.project_scope))
+        ):
+            raise _analysis_forbidden()
+        return principal
+
+    return dependency
+
+
+def require_verified_ceo_analysis_review():
+    """CEO approval is distinct from reviewer workspace visibility."""
+    return require_advisor_analysis_reviewer_visibility()
 
 
 def require_ceo():

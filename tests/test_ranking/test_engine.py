@@ -7,7 +7,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from src.ranking.engine import FeatureWeight, UnitFeatureInput, rank_scores, score_unit
+from src.ranking.engine import (
+    FeatureWeight,
+    UnitFeatureInput,
+    UnitScore,
+    effective_rank_scores,
+    rank_scores,
+    score_unit,
+)
 
 WEIGHTS = [
     FeatureWeight(key="a", weight=Decimal("0.5"), direction="positive", missing_value_policy="zero"),
@@ -141,3 +148,82 @@ def test_rank_scores_excludes_skipped_units_from_ranking():
     assert by_id["u1"].rank_in_project == 1
     assert by_id["u2"].rank_in_project is None
     assert by_id["u2"].skipped is True
+
+
+# --- Ranking v3: effective_rank_scores() ------------------------------------
+
+
+def _score(unit_id: str, area_id: str, score, created_at=0) -> UnitScore:
+    return UnitScore(
+        unit_id=unit_id, area_id=area_id, score=score, coverage=Decimal("1"), contributions={},
+        skipped=score is None, skip_reason=None if score is not None else "test", tie_break_created_at=created_at,
+    )
+
+
+def test_effective_rank_scores_reorders_by_hierarchical_value():
+    scores = [
+        _score("u1", "a1", Decimal("0.90")),  # legacy winner
+        _score("u2", "a1", Decimal("0.10")),  # legacy loser, but hierarchical winner
+    ]
+    hierarchical = {"u1": Decimal("0.10"), "u2": Decimal("0.90")}
+
+    ranks = effective_rank_scores(scores, hierarchical)
+
+    assert ranks["u2"] == (1, 1)
+    assert ranks["u1"] == (2, 2)
+
+
+def test_effective_rank_scores_falls_back_to_legacy_score_when_hierarchical_missing():
+    scores = [_score("u1", "a1", Decimal("0.90")), _score("u2", "a1", Decimal("0.10"))]
+    # u2 has no hierarchical value at all (e.g. legal-gated/unavailable) — must
+    # fall back to ITS OWN legacy score, not be excluded or zeroed.
+    hierarchical = {"u1": Decimal("0.20")}
+
+    ranks = effective_rank_scores(scores, hierarchical)
+
+    # u1 effective=0.20, u2 effective=falls back to 0.10 legacy -> u1 still wins
+    assert ranks["u1"] == (1, 1)
+    assert ranks["u2"] == (2, 2)
+
+
+def test_effective_rank_scores_treats_a_genuine_zero_hierarchical_score_as_real_not_missing():
+    """`or`-based fallback would wrongly treat a real 0 as "missing" and fall
+    back to the (higher) legacy score — must not happen."""
+    scores = [_score("u1", "a1", Decimal("0.90")), _score("u2", "a1", Decimal("0.90"))]
+    hierarchical = {"u1": Decimal("0"), "u2": Decimal("0.50")}
+
+    ranks = effective_rank_scores(scores, hierarchical)
+
+    assert ranks["u2"] == (1, 1)  # 0.50 beats a genuine 0
+    assert ranks["u1"] == (2, 2)
+
+
+def test_effective_rank_scores_preserves_deterministic_tie_break():
+    scores = [_score("u2", "a1", Decimal("0.50"), created_at=5), _score("u1", "a1", Decimal("0.50"), created_at=5)]
+    hierarchical = {"u1": Decimal("0.50"), "u2": Decimal("0.50")}
+
+    ranks = effective_rank_scores(scores, hierarchical)
+
+    # Same score, same tie_break_created_at -> unit_id ASC, same as rank_scores() alone.
+    assert ranks["u1"] == (1, 1)
+    assert ranks["u2"] == (2, 2)
+
+
+def test_effective_rank_scores_excludes_skipped_units_same_as_rank_scores():
+    scores = [_score("u1", "a1", Decimal("0.50")), _score("u2", "a1", None)]
+    hierarchical = {"u2": Decimal("0.90")}  # even a real hierarchical value never revives a skipped unit
+
+    ranks = effective_rank_scores(scores, hierarchical)
+
+    assert ranks["u1"] == (1, 1)
+    assert ranks["u2"] == (None, None)
+
+
+def test_effective_rank_scores_never_mutates_the_real_legacy_score():
+    """The substituted score used internally must never leak back into the
+    caller's own `UnitScore` objects — this function only returns rank pairs."""
+    original = _score("u1", "a1", Decimal("0.10"))
+    ranks = effective_rank_scores([original], {"u1": Decimal("0.99")})
+
+    assert original.score == Decimal("0.10")  # untouched
+    assert ranks["u1"] == (1, 1)

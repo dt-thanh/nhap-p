@@ -103,7 +103,7 @@ describe("AgentPage", () => {
   });
 
   it("business_viewer can generate (create+read) but sees an explicit insufficient-role state instead of approve/reject buttons", async () => {
-    getMePermissions.mockResolvedValue({ role: "business_viewer", project_scope: "ALL" });
+    getMePermissions.mockResolvedValue({ role: "business_viewer", role_code: "advisor", role_label: "Advisor", project_scope: "ALL" });
     createRecommendation.mockResolvedValue(PENDING);
     renderPage();
 
@@ -112,6 +112,8 @@ describe("AgentPage", () => {
     expect(createRecommendation).toHaveBeenCalledWith("prj_op1", undefined);
     expect(await screen.findByText(/Chờ duyệt/)).toBeInTheDocument();
     expect(screen.getByText(/không đủ để duyệt\/từ chối/)).toBeInTheDocument();
+    expect(screen.getByText("Advisor")).toBeInTheDocument();
+    expect(screen.queryByText("business_viewer")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Duyệt" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Từ chối" })).not.toBeInTheDocument();
   });
@@ -207,5 +209,49 @@ describe("AgentPage", () => {
     expect(screen.getByText("Rủi ro sử dụng đề xuất")).toBeInTheDocument();
     expect(screen.getByText("Độ phủ tín hiệu đầu vào")).toBeInTheDocument();
     expect(screen.queryByText("Độ tin cậy")).not.toBeInTheDocument();
+  });
+
+  it("renders a structured analyst report only when the assistant response carries report data", async () => {
+    getMePermissions.mockResolvedValue({ role: "business_viewer", project_scope: "ALL" });
+    chatWithAgent.mockResolvedValue({
+      response: "Bản tóm tắt dữ liệu",
+      report: {
+        intent: "priority",
+        scope_name: "La Pura",
+        config_version: 3,
+        scored_units: 2,
+        total_units: 2,
+        total_score: 0.55,
+        rank: 1,
+        metrics: [{ label: "Điểm AHP", value: "0.5500", interpretation: "Điểm ranking đã lưu." }],
+        evidence: [
+          { title: "Điểm AHP", value: "0.5500", interpretation: "Điểm đã lưu." },
+          { title: "Độ phủ ranking", value: "2/2 căn", interpretation: "Đủ phạm vi." },
+          { title: "Giao dịch ghi nhận", value: "0 căn", interpretation: "Chưa ghi nhận trong cửa sổ." },
+          { title: "Tồn kho còn mở", value: "2 căn", interpretation: "Còn trong phạm vi." },
+        ],
+        criteria: [{ name: "unit_available", weight: 0.4, normalized_score: 1, contribution: 0.4 }],
+        items: [{ code: "A-01", scope: "unit", project_name: "La Pura", score: "0.5500", rank: 1, conclusion: "Căn có điểm AHP cao.", href: "/ranking/la-pura/areas/a/units/u/report" }],
+        actions: ["Mở breakdown AHP để kiểm tra các yếu tố đóng góp.", "Đối chiếu trạng thái available/reserved."],
+        links: [{ label: "Xem báo cáo căn →", href: "/ranking/la-pura/report" }],
+      },
+      tool_calls: [],
+      sources: [],
+    });
+    renderPage();
+
+    fireEvent.change(await screen.findByPlaceholderText(/Hỏi về dự án/), { target: { value: "Căn nào nên ưu tiên?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Gửi câu hỏi" }));
+
+    expect(await screen.findByText("BÁO CÁO PHÂN TÍCH")).toBeInTheDocument();
+    expect(screen.getByText("Căn hộ nên ưu tiên tư vấn")).toBeInTheDocument();
+    expect(screen.getByText("Kết luận nhanh")).toBeInTheDocument();
+    expect(screen.getByText("Giải thích theo AHP")).toBeInTheDocument();
+    expect(screen.getByText("Đóng góp = trọng số × điểm chuẩn hóa")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Xem thêm bằng chứng" }));
+    expect(screen.getByText("Tồn kho còn mở")).toBeInTheDocument();
+    const item = screen.getByText("A-01");
+    fireEvent.click(item.closest("button"));
+    expect(screen.getAllByText("Xem báo cáo căn →")).toHaveLength(2);
   });
 });

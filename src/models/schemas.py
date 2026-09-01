@@ -21,6 +21,7 @@ class ChatResponse(BaseModel):
         default=None,
         description="external_id dự án mà agent nhận diện từ câu hỏi hoặc scope hiện tại, nếu có",
     )
+    session_id: str | None = Field(default=None, description="Mã hội thoại để tiếp tục ngữ cảnh")
 
 
 class RecommendationRequest(BaseModel):
@@ -216,7 +217,21 @@ class MePermissionsOut(BaseModel):
     độc lập với những gì endpoint này trả về."""
 
     role: str = Field(..., description="business_viewer | pipeline_operator | admin")
+    role_code: str = Field(..., description="Server-derived product role code, never used for API authorization")
+    role_label: str = Field(..., description="Safe human-readable role label for the UI")
+    capabilities: dict[str, bool] = Field(
+        default_factory=dict,
+        description="Server-derived UI capability hints; API dependencies remain authoritative.",
+    )
     project_scope: str | list[str] = Field(..., description="'ALL' hoặc danh sách external_id các dự án được cấp")
+    is_ceo: bool = Field(
+        default=False,
+        description=(
+            "Real, server-verified CEO signal (CRM.CEO OIDC role) — CHỈ để FE hiện/ẩn khu vực CEO review "
+            "(mandatory-scope item 8); mọi route duyệt vẫn tự kiểm principal.is_ceo lại ở tầng service, "
+            "không bao giờ tin giá trị này một mình."
+        ),
+    )
 
 
 class PortfolioSummaryOut(BaseModel):
@@ -378,6 +393,9 @@ class ProjectDetail(BaseModel):
     created_at: datetime = Field(..., description="Thời điểm tạo (UTC)")
     external_id: str | None = Field(default=None, description="external_id ở Mini CRM — None nếu là dự án di sản")
     source_revision: int | None = Field(default=None, description="Phiên bản nguồn gần nhất đã soi gương")
+    available_inventory_count: int = Field(
+        ..., description="Số căn đang bán được theo bản sao units/deals; đã loại blocked, sold, reserved và tombstone"
+    )
 
 
 class AreaDetail(BaseModel):
@@ -863,10 +881,106 @@ class RankingContributionOut(BaseModel):
     source: str = Field(..., description="resolved | missing_defaulted | missing_skipped")
 
 
+# --- PR-7: hierarchical (M/P/A/U) read disclosure ----------------------------
+#
+# Read-only projection of `ranking_scores.hierarchical_score`/
+# `.hierarchical_contributions` (written by PR-1..PR-6, `src/ranking/service.py`
+# — never by this API). Field names follow the ACTUAL persisted
+# `hierarchical_contributions` shape (`grains`, `legal_gate`), not the earlier
+# speculative `grain_statuses`/`legal_result` naming in
+# `hierarchical_scoring_implementation_plan.md`'s original PR-7 sketch — code
+# wins over that older prose per this repo's own authority order.
+
+
+class HierarchicalEvidenceRefOut(BaseModel):
+    """One evidence document reference for a participating non-CRM grain
+    factor. Opaque ID + permitted metadata only — never a raw filesystem
+    path. `status="unavailable"` when the reference cannot be resolved or
+    authorized, so the UI shows an explicit redacted state instead of a
+    silently broken citation."""
+
+    status: Literal["available", "unavailable"]
+    document_id: str | None = None
+    original_filename: str | None = None
+    mime_type: str | None = None
+    object_storage_key: str | None = None
+
+
+class HierarchicalGrainFreshnessOut(BaseModel):
+    """Effective/expiry window of the value assertion that fed this grain,
+    read from the immutable justification row the run's own snapshot
+    resolved — never a live re-query. `status="unavailable"` when the grain
+    was never resolved (nothing to be fresh or stale)."""
+
+    effective_at: datetime | None = None
+    expires_at: datetime | None = None
+    status: Literal["fresh", "unavailable"]
+
+
+class HierarchicalGrainOut(BaseModel):
+    eligible: bool
+    score: str | None = None
+    coverage: str | None = None
+    exclusion_reason: str | None = None
+    freshness: HierarchicalGrainFreshnessOut | None = None
+    evidence_refs: list[HierarchicalEvidenceRefOut] = Field(default_factory=list)
+    crm_feature_keys: list[str] | None = Field(
+        default=None,
+        description="PR-5 CRM/expert split — only populated for the 'area' grain; None for grains with no split",
+    )
+    expert_feature_keys: list[str] | None = Field(
+        default=None,
+        description="PR-5 CRM/expert split — only populated for the 'area' grain; None for grains with no split",
+    )
+
+
+class HierarchicalLegalGateOut(BaseModel):
+    """D27's HIGH_RISK gate state. Deliberately narrow — no reviewer
+    identity, no raw governance IDs; `status`/`gated`/`reason`/`note` are the
+    entire user-facing meaning of the gate."""
+
+    status: str
+    gated: bool
+    reason: str | None = None
+    note: str | None = None
+
+
+class HierarchicalUnitOut(BaseModel):
+    """`ranking_scores.hierarchical_score`/`.hierarchical_contributions` for
+    one unit, reshaped for display. `available=False` means no persisted
+    hierarchical result exists (or it exists but could not be safely parsed)
+    for this row — a fact about persisted state, never inferred from
+    something else. Every mode-specific field the UI needs to avoid
+    presenting a bare number is populated read-only from that same persisted
+    row; nothing here recomputes or re-selects anything."""
+
+    available: bool
+    reason: str | None = Field(
+        default=None, description="NOT_COMPUTED | DEGRADED — set only when available=False"
+    )
+    score: str | None = None
+    score_mode: str | None = None
+    top_level_weight_coverage: str | None = None
+    configured_grain_weights: dict | None = None
+    effective_grain_weights: dict | None = None
+    eligible_grains: list[str] = Field(default_factory=list)
+    excluded_grains: dict = Field(default_factory=dict)
+    grains: dict[str, HierarchicalGrainOut] = Field(default_factory=dict)
+    legal_gate: HierarchicalLegalGateOut | None = None
+    comparability_warning: str | None = None
+    cutoff_at: str | None = None
+    computed_at: datetime | None = None
+    config_version_id: str | None = None
+    disclosure: str | None = Field(
+        default=None, description="Mandatory, backend-authored disclosure text — never LLM-generated"
+    )
+
+
 class RankedUnitOut(BaseModel):
     """Một căn đã được xếp hạng."""
 
     unit_id: str = Field(..., description="UUID căn")
+    external_unit_id: str | None = Field(default=None, description="Mã căn ổn định ở Mini CRM")
     unit_code: str = Field(..., description="Mã căn")
     unit_type: str = Field(..., description="Loại căn")
     unit_status: str = Field(..., description="available | reserved | sold | blocked")
@@ -877,8 +991,35 @@ class RankedUnitOut(BaseModel):
     band: str | None = Field(default=None, description="high | medium | low — NULL khi không đủ coverage")
     rank_in_project: int = Field(..., description="Hạng trong toàn dự án")
     rank_in_area: int = Field(..., description="Hạng trong phân khu")
+    hierarchical_rank_in_area: int | None = Field(
+        default=None,
+        description="Dense rank theo hierarchical_score đã lưu; NULL khi surface hierarchical không khả dụng",
+    )
+    floor: int | None = Field(default=None, description="Thuộc tính tham khảo, không phải đầu vào ranking")
+    orientation: str | None = Field(default=None, description="Hướng tham khảo, không phải đầu vào ranking")
+    area_sqm: Decimal | None = Field(default=None, description="Diện tích tham khảo")
+    price_vnd: Decimal | None = Field(default=None, description="Giá tham khảo; không phải đầu vào ranking")
     weight_coverage: str = Field(..., description="Tổng trọng số đã dùng để tính điểm")
     contributions: list[RankingContributionOut] = Field(default_factory=list)
+    hierarchical: HierarchicalUnitOut | None = Field(
+        default=None,
+        description=(
+            "PR-7: read-only hierarchical (M/P/A/U) disclosure, NULL when the "
+            "read feature flag is off or no hierarchical result is persisted"
+        ),
+    )
+    effective_score: str | None = Field(
+        default=None,
+        description=(
+            "Ranking v3 (`ranking_v3_composite_enabled`): the score that actually produced "
+            "`rank_in_project`/`rank_in_area` above — `hierarchical_score` when this run's config "
+            "qualified and this unit has one, else the same value as `score`. Additive/display-only: "
+            "`score`/`score_percent`/`band` above are ALWAYS pure legacy, unaffected by this field."
+        ),
+    )
+    effective_score_percent: float | None = Field(
+        default=None, description="`effective_score` on a 0-100 scale, same rounding as `score_percent`."
+    )
 
 
 class RankingOut(BaseModel):
@@ -896,11 +1037,18 @@ class RankingOut(BaseModel):
         default=None,
         description="UUID lần chạy sinh ra kết quả hiện hành; NULL khi chưa từng chạy",
     )
-    state: Literal["ready", "not_run", "insufficient_data"] = Field(
+    state: Literal["ready", "not_run", "queued", "running", "failed", "insufficient_data"] = Field(
         default="not_run",
-        description="ready | not_run | insufficient_data",
+        description="ready | not_run | queued | running | failed | insufficient_data",
     )
-    reason: Literal["RANKING_NOT_RUN", "NO_LIVE_UNITS", "NO_UNITS_MET_COVERAGE"] | None = Field(
+    reason: Literal[
+        "RANKING_NOT_RUN",
+        "RANKING_QUEUED",
+        "RANKING_RUNNING",
+        "RANKING_FAILED",
+        "NO_LIVE_UNITS",
+        "NO_UNITS_MET_COVERAGE",
+    ] | None = Field(
         default=None,
         description="Lý do máy-đọc khi state khác ready",
     )
@@ -921,6 +1069,191 @@ class RankingOut(BaseModel):
     limit: int = Field(..., description="Số bản ghi tối đa mỗi trang")
     offset: int = Field(..., description="Vị trí bắt đầu")
     disclaimer: str = Field(..., description="Văn bản CỐ ĐỊNH, không do LLM sinh — `src/ranking/bands.py`")
+    ranking_formula: Literal["v2_legacy", "v3_hierarchical"] = Field(
+        default="v2_legacy",
+        description=(
+            "v3_hierarchical only when `ranking_v3_composite_enabled` was on AND this run's config "
+            "had hierarchical_weights AND at least one unit got a real hierarchical_score this run — "
+            "i.e. `rank_in_project`/`rank_in_area` above are v3-composite-derived, not plain legacy. "
+            "v2_legacy is the default/safe state (matches every existing consumer's current behavior)."
+        ),
+    )
+    ahp_pending_status: Literal["pending", "awaiting_prior_run", "queued", "running"] | None = Field(
+        default=None,
+        description=(
+            "Set only when this project's most recently approved AHP proposal has a non-terminal "
+            "`ahp_application_status` (i.e. CEO-approved but not yet reflected in `rank_in_project` "
+            "above) — an honest 'AHP applying, not visible yet' signal. NULL in every other case; "
+            "never a new `state`/`reason` value, purely additive."
+        ),
+    )
+
+
+# --- Báo cáo xếp hạng theo dự án (chỉ đọc) ----------------------------------
+#
+# Đây KHÔNG phải điểm cấp dự án. Hệ thống hiện chỉ có kết quả hierarchical/AHP
+# đã lưu ở cấp căn; schema này cố ý không có bất kỳ trường tổng hợp điểm nào.
+
+
+class ProjectRankingReportProjectOut(BaseModel):
+    external_id: str = Field(..., description="external_id chuẩn từ Mini CRM")
+    project_id: str = Field(..., description="UUID nội bộ, chỉ để provenance")
+    name: str
+    status: str
+    source_revision: int | None = None
+
+
+class ProjectRankingReportUnitOut(BaseModel):
+    """Một căn trong báo cáo, chỉ kèm disclosure hierarchical đã lưu.
+
+    Không trả `ranking_scores.score` (điểm legacy) ở surface này để không thể
+    bị nhầm là điểm AHP tổng cấp dự án.
+    """
+
+    unit_id: str
+    unit_code: str
+    unit_type: str
+    unit_status: str
+    area_id: str
+    area_name: str
+    hierarchical: HierarchicalUnitOut | None = None
+
+
+class ProjectRankingAreaOut(BaseModel):
+    """Một phân khu và thống kê trực tiếp từ các điểm AHP cấp căn đã lưu."""
+
+    area_id: str
+    external_id: str | None = None
+    name: str
+    apartment_count: int = 0
+    scored_apartment_count: int = 0
+    average_ahp_score: Decimal | None = None
+
+
+class ProjectRankingReportOut(BaseModel):
+    """Snapshot read-only của kết quả AHP/hierarchical theo căn.
+
+    `stale` là trạng thái đã dành sẵn cho một backend freshness policy được
+    phê duyệt trong tương lai; route hiện không tự suy ra nó từ timestamp.
+    """
+
+    state: Literal["ready", "feature_disabled", "not_run", "unavailable", "stale", "no_scored_units"]
+    reason: str | None = None
+    project: ProjectRankingReportProjectOut
+    ranking_run_id: str | None = None
+    config_version: int | None = None
+    computed_at: datetime | None = None
+    units_ranked: int = 0
+    units_skipped: int = 0
+    unit_results: list[ProjectRankingReportUnitOut] = Field(default_factory=list)
+    areas: list[ProjectRankingAreaOut] = Field(default_factory=list)
+    total_unit_results: int = 0
+    results_truncated: bool = False
+    persisted_hierarchical_results: int = 0
+    persisted_hierarchical_scores: int = 0
+    project_aggregate_defined: Literal[False] = False
+    project_aggregate_disclosure: str = "Điểm AHP tổng cấp dự án chưa được định nghĩa."
+    provenance: dict = Field(default_factory=dict)
+    ranking_formula: Literal["v2_legacy", "v3_hierarchical"] = Field(
+        default="v2_legacy",
+        description="v3_hierarchical when this report's run's `rank_in_project`/`rank_in_area` are "
+        "v3-composite-derived (see `RankingOut.ranking_formula` for the exact eligibility condition).",
+    )
+    hierarchy_status: Literal["not_published", "crm_only", "expert_enriched"] = Field(
+        default="not_published",
+        description=(
+            "not_published: the active config has no hierarchical_weights at all (flat v2 is the "
+            "current live ranking). crm_only: a hierarchical config is published but zero Expert "
+            "criteria are eligible on any scored unit in this report. expert_enriched: at least one "
+            "eligible Market/Project/Area Expert criterion actually contributed somewhere in this "
+            "report. Derived read-only from the active config + persisted contributions — never "
+            "recomputed, never inferred client-side."
+        ),
+    )
+    expert_criteria_applied: list[str] = Field(
+        default_factory=list,
+        description="Sorted, deduped canonical feature keys that actually contributed on at least one "
+        "unit in this report (empty when hierarchy_status is not_published or crm_only).",
+    )
+    score_mode_counts: dict[str, int] = Field(
+        default_factory=dict,
+        description="Count of unit_results by persisted score_mode (unit_only/partial_hierarchical/"
+        "full_hierarchical/legal_gated) — never a single misleading 'the' mode when units differ.",
+    )
+    representative_eligible_grains: list[str] = Field(
+        default_factory=list,
+        description="eligible_grains from the first scored unit's persisted contributions — Market/"
+        "Project/Legal are documented project-wide constants, so this is representative for those; "
+        "Area varies per-area and is shown per-area in `areas` instead.",
+    )
+    representative_excluded_grains: dict = Field(
+        default_factory=dict,
+        description="excluded_grains (with reasons) from the first scored unit — same project-wide-"
+        "constant caveat as representative_eligible_grains.",
+    )
+    representative_effective_grain_weights: dict | None = Field(
+        default=None,
+        description="effective_grain_weights from the first scored unit — disclosure only, never a "
+        "second source of truth for the configured weights.",
+    )
+
+
+class UnitRankingCriterionOut(BaseModel):
+    """Một thành phần thực sự tham gia điểm hierarchical đã lưu."""
+
+    name: str
+    grain: Literal["market", "project", "area", "unit"]
+    weight: Decimal
+    normalized_score: Decimal
+    contribution: Decimal
+
+
+class UnitRankingReportUnitOut(BaseModel):
+    apartment_id: str = Field(..., description="external_unit_id ổn định từ Mini CRM")
+    internal_unit_id: str
+    code: str
+    unit_type: str
+    status: str
+    floor: int | None = None
+    orientation: str | None = None
+    area_sqm: Decimal | None = None
+    price_vnd: Decimal | None = None
+    view: str | None = None
+    contextual_attributes_are_scored: Literal[False] = False
+
+
+class UnitRankingReportOut(BaseModel):
+    """Báo cáo AHP cấp căn, hoàn toàn từ một ranking run đã lưu."""
+
+    state: Literal["ready", "feature_disabled", "not_run", "not_computed", "legal_gated"]
+    reason: str | None = None
+    project: ProjectRankingReportProjectOut
+    area: ProjectRankingAreaOut
+    apartment: UnitRankingReportUnitOut
+    ranking_run_id: str | None = None
+    config_version: int | None = None
+    computed_at: datetime | None = None
+    total_score: Decimal | None = None
+    rank: int | None = None
+    ranked_apartments_in_area: int = 0
+    criteria: list[UnitRankingCriterionOut] = Field(default_factory=list)
+    explanation: str | None = None
+    hierarchical: HierarchicalUnitOut | None = None
+
+
+class ProjectRankingReportChatRequest(ChatRequest):
+    """Chat context is validated against the current read-only report run."""
+
+    ranking_run_id: str | None = Field(default=None, description="run_id do report page đang hiển thị")
+
+
+class ProjectRankingReportChatOut(BaseModel):
+    response: str
+    status: Literal["completed", "unavailable"] = "completed"
+    project_external_id: str
+    ranking_run_id: str | None = None
+    context_locked: Literal[True] = True
+    sources: list[dict] = Field(default_factory=list)
 
 
 class RankingRunOut(BaseModel):
@@ -929,7 +1262,7 @@ class RankingRunOut(BaseModel):
 
     run_id: str = Field(..., description="UUID lần chạy")
     project_id: str = Field(..., description="UUID dự án")
-    status: str = Field(..., description="queued | running | completed | partially_completed | failed | skipped_stale")
+    status: str = Field(..., description="deferred | queued | running | completed | partially_completed | failed | skipped_stale")
     trigger: str = Field(..., description="sync | config_change | survey_snapshot | manual | audit_repair")
     attempt: int = Field(..., description="Số lần đã thử chiếm run này")
     scope_ids: dict = Field(default_factory=dict, description="Phạm vi đã gộp từ các lần kích hoạt")
@@ -994,6 +1327,7 @@ class RankingConfigOut(BaseModel):
     published_by: str | None = None
     published_at: datetime | None = None
     archived_at: datetime | None = None
+    hierarchical_weights: dict | None = None
 
 
 class RankingConfigDraftIn(BaseModel):
@@ -1002,6 +1336,14 @@ class RankingConfigDraftIn(BaseModel):
     note: str = Field(default="")
     created_by: str = Field(..., min_length=1)
     copied_from_version: int | None = None
+    hierarchical_weights: dict | None = Field(
+        default=None,
+        description=(
+            "PR-1 hierarchical (D41) grain configuration — {market, project, area, grain_weights}, "
+            "validated by validate_hierarchical_weights(). Separate from `weights` (legacy unit config); "
+            "omit to leave hierarchical scoring unconfigured for this version, exactly like every prior config."
+        ),
+    )
 
 
 class RankingConfigPublishIn(BaseModel):
@@ -1014,6 +1356,39 @@ class RankingConfigPublishOut(BaseModel):
         default_factory=dict,
         description="Kết quả xếp hàng tính lại cho MỌI dự án (§8.2 — publish là thay đổi toàn cục)",
     )
+
+
+class RankingPreviewIn(BaseModel):
+    weights: dict = Field(..., description="Candidate legacy flat weights — same shape/validation as RankingConfigDraftIn.weights")
+    min_weight_coverage: float = Field(default=0.5, gt=0, le=1)
+
+
+class UnitPreviewDeltaOut(BaseModel):
+    unit_id: str
+    unit_code: str
+    external_unit_id: str
+    area_id: str
+    current_score: str | None = None
+    current_rank: int | None = None
+    preview_score: str | None = None
+    preview_rank: int | None = None
+    score_delta: str | None = None
+    rank_delta: int | None = None
+    top_contributor: str | None = None
+    skipped: bool
+
+
+class RankingPreviewOut(BaseModel):
+    label: str = Field(default="Bản xem trước — chưa được công bố")
+    project_id: str
+    current_config_version: int | None = None
+    sample_size: int
+    units_scored: int
+    units_skipped: int
+    results: list[UnitPreviewDeltaOut]
+    top_gainers: list[UnitPreviewDeltaOut]
+    top_losers: list[UnitPreviewDeltaOut]
+    generated_at: datetime
 
 
 class AHPJudgmentIn(BaseModel):
@@ -1060,6 +1435,62 @@ class AHPWeightsOut(BaseModel):
     note: str = Field(..., description="Vết kiểm toán soạn sẵn — dùng làm `note` khi tạo config")
 
 
+# --- Hierarchical AHP (mandatory-scope item 7) --------------------------------
+#
+# One pairwise level for the grain-weight composition (market/project/area/unit)
+# plus one OPTIONAL level per within-grain criterion set (market/project/area —
+# unit is never assertable). No override path in this first pass (a real,
+# disclosed simplification vs. the flat endpoint's three-tier CR gate):
+# ANY failed level blocks the assembled `hierarchical_weights` output entirely.
+
+
+class HierarchicalAHPGrainLevelIn(BaseModel):
+    judgments: list[AHPJudgmentIn] = Field(..., description="So sánh cặp cho các đặc trưng trong MỘT grain")
+    feature_specs: dict = Field(..., description="{feature_key: {direction, missing_value_policy}}")
+
+
+class HierarchicalAHPWeightsIn(BaseModel):
+    grain_judgments: list[AHPJudgmentIn] = Field(
+        ..., description="Đúng 6 so sánh cho 4 grain cố định: market/project/area/unit"
+    )
+    grain_missing_value_policies: dict[str, str] = Field(
+        ..., description="{grain: missing_value_policy} cho cả 4 grain — không được là 'zero' (D37)"
+    )
+    # market/project/area đều BẮT BUỘC — validate_hierarchical_weights() đòi cả
+    # ba khối này có mặt và không rỗng (HIERARCHICAL_WEIGHTS_KEY_MISSING /
+    # HIERARCHICAL_GRAIN_EMPTY); một grain không có value-mode assertion nào
+    # được PUBLISH tại thời điểm tính điểm là chuyện RUNTIME (loại trừ/renormalize
+    # ở src/ranking/service.py), không phải chuyện được phép bỏ trống ở đây.
+    market: HierarchicalAHPGrainLevelIn
+    project: HierarchicalAHPGrainLevelIn
+    area: HierarchicalAHPGrainLevelIn
+
+
+class HierarchicalAHPLevelOut(BaseModel):
+    level: str
+    raw_weights: dict = Field(..., description="Trọng số đầy đủ chữ số cho level này, trước khi làm tròn")
+    lambda_max: str
+    consistency_index: str
+    consistency_ratio: str
+    threshold: str
+    consistent: bool
+    hotspots: list[AHPHotspotOut]
+
+
+class HierarchicalAHPWeightsOut(BaseModel):
+    hierarchical_weights: dict | None = Field(
+        default=None,
+        description=(
+            "Sẵn sàng POST thẳng vào `hierarchical_weights` của /ranking/configs — "
+            "CHỈ có giá trị khi all_consistent=true; None nếu bất kỳ level nào CR vượt ngưỡng."
+        ),
+    )
+    levels: list[HierarchicalAHPLevelOut]
+    all_consistent: bool
+    failed_levels: list[str] = Field(default_factory=list)
+    note: str = Field(..., description="Vết kiểm toán soạn sẵn — dùng làm `note` khi tạo config")
+
+
 # --- Governance (0033/0034 service layer, P5) --------------------------------
 
 
@@ -1075,7 +1506,11 @@ class ExpertProfileOut(BaseModel):
 
 
 class ExpertProfileIn(BaseModel):
-    identity_subject: str = Field(..., min_length=1, description="Danh tính ổn định của chuyên gia — caller tự khai")
+    """`identity_subject` is deliberately ABSENT (D18) — it is always derived
+    server-side from the authenticated principal's verified OIDC `subject`,
+    never accepted from the request body. Only descriptive, non-identity
+    profile fields are caller-suppliable here."""
+
     organization: str | None = None
     title: str | None = None
     expertise_summary: str | None = None
@@ -1096,28 +1531,98 @@ class ProposalOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     assertion_kind: str = Field(default="weight", description="weight|value (PR-2)")
+    # 0049 — additive, defaults keep every historical row's shape unchanged.
+    proposal_type: str = Field(
+        default="qualitative_analysis", description="qualitative_analysis|ahp_ranking_proposal"
+    )
+    ahp_application_status: str | None = Field(
+        default=None,
+        description="pending|awaiting_prior_run|queued|running|applied|failed — only for ahp_ranking_proposal",
+    )
+    applied_ranking_run_id: str | None = None
 
 
 class ProposalCreateIn(BaseModel):
     base_config_id: str | None = Field(default=None, description="Bắt buộc cho assertion_kind='weight'")
     project_id: str
-    created_by_expert_id: str | None = Field(
-        default=None,
-        description="assertion_kind='weight': bắt buộc, caller tự khai (D18, không đổi). "
-        "assertion_kind='value': BỊ BỎ QUA — danh tính luôn suy từ principal đã xác thực (PR-2)",
-    )
     assertion_kind: str = Field(default="weight", description="weight|value (PR-2, D37/D38)")
     scope_type: str = Field(default="project", description="value-mode: project|area|market")
     area_id: str | None = Field(default=None, description="Bắt buộc khi scope_type='area'")
 
+    # `created_by_expert_id` is deliberately ABSENT (D18) — authorship always
+    # derives from the authenticated principal's OIDC subject, for BOTH
+    # assertion kinds, never from a client-supplied field.
+
 
 class ProposalSetConfigIn(BaseModel):
     proposed_config_id: str
-    actor_expert_id: str
+
+    # `actor_expert_id` is deliberately ABSENT (D18) — see ProposalCreateIn.
 
 
-class ProposalActionIn(BaseModel):
-    actor_expert_id: str = Field(..., min_length=1)
+class AdvisorAhpProposalCreateIn(BaseModel):
+    """0049 — creates a `proposal_type='ahp_ranking_proposal'` draft. Only
+    `project_id` is accepted: `base_config_id` is always the currently
+    published config, resolved server-side (never client-supplied), and
+    `assertion_kind`/`scope_type`/`area_id` are always forced to
+    `'weight'`/`'project'`/`None` for this proposal type."""
+
+    project_id: str
+
+
+class AdvisorAhpDraftIn(BaseModel):
+    """0049 — Advisor's own hierarchy draft, saved (and re-savable, each call
+    overwriting the prior draft) before submit. Exactly one of
+    `direct_hierarchical_weights` (already-composed, e.g. copied from an
+    existing published config) or `pairwise_input` (raw AHP judgments,
+    computed and CI/CR-checked server-side) must be given, matching `mode`."""
+
+    mode: str = Field(..., description="direct|pairwise")
+    direct_hierarchical_weights: dict | None = Field(
+        default=None, description="Required when mode='direct' — a complete hierarchical_weights block"
+    )
+    pairwise_input: HierarchicalAHPWeightsIn | None = Field(
+        default=None, description="Required when mode='pairwise' — raw judgments for all 4 levels"
+    )
+
+
+class AdvisorAhpDraftOut(ProposalOut):
+    """`ProposalOut` plus the Advisor's own draft snapshot — so a
+    draft-save response can show the just-computed weights/CI/CR back
+    without a second round-trip."""
+
+    proposed_hierarchy_snapshot: dict | None = None
+
+
+class AhpApplicationRetryIn(BaseModel):
+    """CEO's auditable retry reason; no client lifecycle/config fields."""
+
+    reason: str = Field(..., min_length=10, max_length=1000)
+
+
+class RankingRunReconcileIn(BaseModel):
+    reason: str = Field(..., min_length=10, max_length=1000)
+
+
+class RankingRunReconcileOut(BaseModel):
+    changed: bool
+    reason_code: str
+    run_id: str
+    status: str
+
+
+class AhpProposalRationaleOut(BaseModel):
+    """Read-only, proposal-scoped rationale retrieval record (0050)."""
+
+    id: str
+    proposal_id: str
+    criterion_key: str
+    grain: str
+    weight: str | None = None
+    rationale: str | None = None
+    chunk_text: str
+    created_at: datetime
+    similarity: float | None = None
 
 
 class JustificationOut(BaseModel):
@@ -1142,6 +1647,8 @@ class JustificationOut(BaseModel):
     effective_at: datetime | None = None
     expires_at: datetime | None = None
     external_source_citation: str | None = None
+    rubric_id: str | None = None
+    rubric_band_value: str | None = None
 
 
 class JustificationIn(BaseModel):
@@ -1154,21 +1661,91 @@ class JustificationIn(BaseModel):
     expected_effect: str = Field(..., description="increase|decrease|neutral|context_dependent")
     confidence: str = Field(..., description="low|medium|high")
     limitations: str = Field(..., min_length=1)
-    created_by_expert_id: str | None = Field(
-        default=None,
-        description="assertion_kind='weight': bắt buộc. assertion_kind='value': BỊ BỎ QUA, suy từ principal (PR-2)",
-    )
     assertion_kind: str = Field(default="weight", description="weight|value (PR-2)")
+
+    # `created_by_expert_id` is deliberately ABSENT (D18) — authorship always
+    # derives from the authenticated principal's OIDC subject, for BOTH
+    # assertion kinds.
     raw_value: str | None = Field(default=None, description="value-mode: Decimal string, giá trị thô")
-    normalized_value: str | None = Field(default=None, description="value-mode: Decimal string trong [0,1]")
+    normalized_value: str | None = Field(
+        default=None,
+        description="value-mode: Decimal string trong [0,1] — KHÔNG dùng cùng lúc với rubric_id (0046)",
+    )
     categorical_value: str | None = None
     effective_at: datetime | None = None
     expires_at: datetime | None = None
     external_source_citation: str | None = Field(default=None, description="Bắt buộc khi scope_type='market'")
+    rubric_id: str | None = Field(
+        default=None, description="0046: chọn một rubric (thường là bản hiện tại) cho đặc trưng này"
+    )
+    rubric_band_value: str | None = Field(
+        default=None, description="0046: mức band đã chọn (0.00/0.25/0.50/0.75/1.00) — phải khớp một band có thật của rubric_id"
+    )
+
+
+# --- Rubric (0046) -------------------------------------------------------------
+
+
+class RubricBandIn(BaseModel):
+    value: str = Field(..., description="Một trong 0.00/0.25/0.50/0.75/1.00")
+    label: str = Field(..., min_length=1)
+    evidence_requirement: str = Field(..., min_length=1)
+
+
+class RubricBandOut(BaseModel):
+    id: str
+    band_value: str
+    label: str
+    evidence_requirement: str
+    display_order: int
+
+
+class FeatureRubricIn(BaseModel):
+    feature_definition_id: str
+    bands: list[RubricBandIn] = Field(..., description="Đúng 5 band, ở 0.00/0.25/0.50/0.75/1.00")
+
+
+class FeatureRubricOut(BaseModel):
+    id: str
+    feature_definition_id: str
+    rubric_version: int
+    created_by: str
+    created_at: datetime
+    bands: list[RubricBandOut]
+
+
+class FeatureDefinitionOut(BaseModel):
+    id: str
+    feature_key: str
+    name: str
+    category: str
+    grain: str
+    value_type: str
+    direction: str
+    missing_policy: str
+
+
+class RankingV3CoverageOut(BaseModel):
+    """Read-only, project-scoped readiness projection for governed V3 values.
+
+    The nested dictionaries intentionally preserve the metadata-driven feature
+    keys returned by the active ranking config; clients must not hard-code the
+    current registry.
+    """
+
+    project_id: str
+    config_version: int | None = None
+    required_features: list[dict] = Field(default_factory=list)
+    project: dict = Field(default_factory=dict)
+    market: dict = Field(default_factory=dict)
+    areas: list[dict] = Field(default_factory=list)
+    evidence_blockers: list[dict] = Field(default_factory=list)
 
 
 class EvidenceDocumentOut(BaseModel):
     id: str
+    project_id: str | None = None
+    area_id: str | None = None
     proposal_id: str | None = None
     uploaded_by_expert_id: str
     original_filename: str
@@ -1176,8 +1753,29 @@ class EvidenceDocumentOut(BaseModel):
     object_storage_key: str
     sha256_checksum: str
     file_size_bytes: int
-    extraction_status: str
+    extraction_status: str = Field(
+        description="Effective status from the latest extraction attempt; this is the readiness contract for UI/API consumers"
+    )
+    registration_extraction_status: str | None = Field(
+        default=None,
+        description="Immutable registration-time metadata retained only for historical audit; do not use for readiness",
+    )
     created_at: datetime
+    lifecycle_status: str = Field(default="active", description="active | archived | deleted (mandatory-scope item 4)")
+    chunk_count: int = Field(default=0, ge=0, description="Persisted chunks; readiness still also requires an embedding")
+    embedded_chunk_count: int = Field(default=0, ge=0, description="Persisted chunks with embeddings; required for readiness")
+    error_code: str | None = Field(default=None, description="Safe effective extraction error code, when terminal failure exists")
+    error_summary: str | None = Field(default=None, description="Bounded safe extraction error summary; never a stack trace or raw document content")
+
+
+class DocumentLifecycleActionIn(BaseModel):
+    reason: str | None = Field(default=None, description="Optional free-text reason, stored on the lifecycle event")
+
+
+class DocumentLifecycleOut(BaseModel):
+    document_id: str
+    lifecycle_status: str
+    reason: str | None = None
 
 
 class EvidenceDocumentRegisterIn(BaseModel):
@@ -1186,18 +1784,39 @@ class EvidenceDocumentRegisterIn(BaseModel):
     the separation `src/services/file_upload.py` already keeps between
     storing bytes and recording a row (see `governance.py::register_evidence_document`)."""
 
+    # Low-level registration remains backward compatible for legacy imports.
+    # Expert Analysis multipart uploads require project_id at the route level.
+    project_id: str | None = None
+    area_id: str | None = None
     proposal_id: str | None = None
-    uploaded_by_expert_id: str
     original_filename: str = Field(..., min_length=1)
     mime_type: str = Field(..., description="application/pdf | text/plain | text/markdown")
     object_storage_key: str = Field(..., min_length=1)
     sha256_checksum: str = Field(..., pattern=r"^[0-9A-Fa-f]{64}$")
     file_size_bytes: int = Field(..., gt=0)
 
+    # `uploaded_by_expert_id` is deliberately ABSENT (D18) — always derived
+    # from the authenticated principal's OIDC subject.
+
+
+class EvidenceUploadOut(EvidenceDocumentOut):
+    reused: bool = Field(
+        default=False,
+        description="True when identical bytes (same sha256) were already stored — the existing row was "
+        "returned, no new file/row was written.",
+    )
+
 
 class EvidenceLinkIn(BaseModel):
     document_id: str
     feature_justification_id: str
+
+
+class ProposalEvidenceLinkIn(BaseModel):
+    """Attach an existing ready document to an AHP proposal without changing
+    the document's immutable registration metadata."""
+
+    document_id: str
 
 
 class EvidenceExtractionOut(BaseModel):
@@ -1208,6 +1827,8 @@ class EvidenceExtractionOut(BaseModel):
 
     document_id: str
     extraction_status: str
+    error_code: str | None = None
+    error_summary: str | None = None
 
 
 class EvidenceChunkOut(BaseModel):
@@ -1221,6 +1842,72 @@ class EvidenceChunkOut(BaseModel):
     created_at: datetime
 
 
+class ExpertAnalysisOverviewOut(BaseModel):
+    """Read-only, project-scoped Expert Analysis status; never exposes run IDs."""
+
+    config_version: int | None = None
+    config_status: str | None = None
+    config_mode: str = "none"
+    documents_ready: int = 0
+    documents_processing: int = 0
+    documents_failed: int = 0
+    proposal_count: int = 0
+    assertion_count: int = 0
+    latest_run_status: str | None = None
+    latest_run_config_version: int | None = None
+    latest_run_finished_at: datetime | None = None
+    next_action: str
+
+
+class ExpertQuestionIn(BaseModel):
+    project_id: str = Field(..., description="Internal project UUID — scopes retrieval to that project's documents")
+    question: str = Field(..., min_length=1)
+    document_ids: list[str] | None = Field(
+        default=None, description="Restrict to these documents; omit to search every document linked to project_id"
+    )
+
+
+class ExpertCitationOut(BaseModel):
+    marker: str
+    document_id: str
+    document_title: str | None = None
+    document_lifecycle_status: str = Field(default="active", description="active | archived | deleted")
+    page: int | None = None
+    citation_type: str = Field(
+        default="quote",
+        description=(
+            "'quote': `quote` is a server-verified, normalized-substring match against the actual "
+            "cited chunk's content. 'summary': the model's text could not be verified verbatim against "
+            "the chunk and is downgraded — never labeled a quote it might not be (mandatory-scope item 2)."
+        ),
+    )
+    quote: str
+    chunk_content_hash: str | None = Field(
+        default=None, description="sha256 of the cited chunk's content, for independent verification"
+    )
+
+
+class ExpertAnswerOut(BaseModel):
+    answer: str | None = None
+    citations: list[ExpertCitationOut] = Field(default_factory=list)
+    insufficient_evidence: bool = False
+    reason: str | None = None
+
+
+class AuditEventOut(BaseModel):
+    id: str
+    ranking_config_id: str | None = None
+    proposal_id: str | None = None
+    actor_expert_id: str | None = None
+    actor_identity_subject: str
+    event_type: str
+    before_status: str | None = None
+    after_status: str | None = None
+    before_state: dict
+    after_state: dict
+    created_at: datetime
+
+
 class ReviewOut(BaseModel):
     id: str
     proposal_id: str
@@ -1228,13 +1915,101 @@ class ReviewOut(BaseModel):
     decision: str
     comment: str
     decided_at: datetime
+    evidence_review_acknowledged: bool | None = None
 
 
 class ReviewIn(BaseModel):
-    reviewer_expert_id: str | None = Field(
-        default=None,
-        description="weight-mode: bắt buộc, caller tự khai (D18, không đổi). "
-        "value-mode: BỊ BỎ QUA — reviewer luôn là principal CEO đã xác thực OIDC (PR-2)",
-    )
-    decision: str = Field(..., description="approved | rejected | request_changes")
+    decision: Literal["approved", "rejected"] = Field(..., description="approved | rejected")
     comment: str = Field(..., min_length=1)
+    evidence_review_acknowledged: bool = Field(
+        default=False,
+        description="Required for approval: the CEO confirms review of persisted evidence.",
+    )
+
+    # `reviewer_expert_id` is deliberately ABSENT (D18) — the reviewer is
+    # always the authenticated principal (must be a verified CEO/OIDC
+    # subject), for BOTH assertion kinds, never a client-supplied field.
+
+
+class AdvisorAnalysisReviewQueueItemOut(BaseModel):
+    """Minimal CEO queue projection; identifiers are action handles only."""
+
+    proposal_id: str
+    assertion_kind: Literal["weight", "value"]
+    submitter_label: str = "Cố vấn"
+    submitted_at: datetime
+    evidence_document_count: int = Field(default=0, ge=0)
+    evidence_ready: bool = False
+    requires_attention: bool = False
+    # 0049 — lets the CEO queue UI show "Báo cáo đánh giá định tính" vs
+    # "Đề xuất trọng số AHP" without a second request per row.
+    proposal_type: str = Field(default="qualitative_analysis", description="qualitative_analysis|ahp_ranking_proposal")
+
+
+class AdvisorAnalysisReviewQueuePageOut(BaseModel):
+    items: list[AdvisorAnalysisReviewQueueItemOut]
+    limit: int = Field(ge=1, le=100)
+    offset: int = Field(ge=0)
+    total: int = Field(ge=0)
+
+
+class AdvisorAnalysisReviewEvidenceOut(BaseModel):
+    original_filename: str
+    mime_type: str
+    file_size_bytes: int = Field(ge=0)
+    extraction_status: str
+    lifecycle_status: str
+    ready: bool
+    file_url: str | None = None
+    citation_position_note: str
+
+
+class AdvisorAnalysisReviewJustificationOut(BaseModel):
+    feature_name: str
+    rationale: str
+    methodology: str
+    evidence_summary: str
+    expected_effect: str
+    confidence: str
+    limitations: str
+    derived_value: str | None = None
+    rubric_band_value: str | None = None
+
+
+class AhpPackageLevelSummaryOut(BaseModel):
+    level: str
+    lambda_max: str
+    ci: str
+    cr: str
+    threshold: str
+    consistent: bool
+
+
+class AhpPackageSummaryOut(BaseModel):
+    """0049 — read-only CEO-facing view of a `proposed_hierarchy_snapshot`.
+    `levels` is `None` for `mode='direct'` drafts: a directly-supplied weight
+    block carries no pairwise judgment matrix to derive CI/CR from — this is
+    expected, not missing data."""
+
+    mode: str = Field(..., description="direct|pairwise")
+    hierarchical_weights: dict
+    selected_criteria: list[str]
+    levels: list[AhpPackageLevelSummaryOut] | None = None
+    frozen_at: datetime | None = None
+    current_active_config_version: int | None = None
+    current_active_config_note: str | None = None
+
+
+class AdvisorAnalysisReviewDetailOut(BaseModel):
+    proposal_id: str
+    assertion_kind: Literal["weight", "value"]
+    submitter_label: str = "Cố vấn"
+    submitted_at: datetime
+    justifications: list[AdvisorAnalysisReviewJustificationOut]
+    evidence_documents: list[AdvisorAnalysisReviewEvidenceOut]
+    evidence_ready: bool
+    validation: str
+    # 0049 — additive: every pre-existing qualitative-review response keeps
+    # `proposal_type='qualitative_analysis'`/`ahp_package=None` unchanged.
+    proposal_type: str = Field(default="qualitative_analysis", description="qualitative_analysis|ahp_ranking_proposal")
+    ahp_package: AhpPackageSummaryOut | None = None

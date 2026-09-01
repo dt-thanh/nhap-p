@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from src.models.tables import areas, feature_snapshots, units
 from src.services.ranking_config import (
     ConfigError,
+    HierarchicalConfigError,
     create_draft,
     list_configs,
     publish,
@@ -33,7 +34,7 @@ from src.services.ranking_config import (
 )
 from src.services.survey_features import SurveyError, parse_items, upsert_survey_features
 from tests.conftest import db_skip_reason
-from tests.test_agent_e2e import AREA_ID, PROJECT_ID, UNIT_IDS, _insert_dataset
+from tests.ranking_fixture import AREA_ID, PROJECT_ID, UNIT_IDS, _insert_dataset
 
 _SKIP = db_skip_reason()
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(bool(_SKIP), reason=_SKIP or "")]
@@ -237,6 +238,69 @@ async def test_a_draft_does_not_affect_the_published_config(db):
     assert [c["status"] for c in configs] == ["draft"], "chưa publish thì chưa có gì đang phát hành"
 
 
+VALID_HIERARCHICAL_WEIGHTS = {
+    "market": {
+        "market_interest_rate": {"weight": 1.0, "direction": "negative", "missing_value_policy": "neutral"},
+    },
+    "project": {
+        "expert_location_score": {"weight": 1.0, "direction": "positive", "missing_value_policy": "neutral"},
+    },
+    "area": {
+        "area_velocity_norm": {"weight": 0.5, "direction": "positive", "missing_value_policy": "neutral"},
+        "area_conversion_norm": {"weight": 0.5, "direction": "positive", "missing_value_policy": "neutral"},
+    },
+    "grain_weights": {
+        "market": {"weight": 0.10, "missing_value_policy": "skip"},
+        "project": {"weight": 0.25, "missing_value_policy": "skip"},
+        "area": {"weight": 0.25, "missing_value_policy": "skip"},
+        "unit": {"weight": 0.40, "missing_value_policy": "skip"},
+    },
+}
+
+
+async def test_create_draft_persists_a_valid_hierarchical_weights_block(db):
+    """D41: `create_draft()` accepts the optional, separate `hierarchical_weights`
+    param and persists it verbatim — round-tripped both from its own return
+    value and from a fresh `list_configs()` read."""
+    draft = await create_draft(
+        weights=OPERATIONAL_V2,
+        min_weight_coverage=0.5,
+        note="hierarchical enablement",
+        created_by="dat",
+        hierarchical_weights=VALID_HIERARCHICAL_WEIGHTS,
+    )
+    assert draft["hierarchical_weights"] == VALID_HIERARCHICAL_WEIGHTS
+
+    reloaded = next(c for c in await list_configs() if c["version"] == draft["version"])
+    assert reloaded["hierarchical_weights"] == VALID_HIERARCHICAL_WEIGHTS
+    assert reloaded["weights"] == OPERATIONAL_V2, "legacy weights must be untouched by the new param"
+
+
+async def test_create_draft_without_hierarchical_weights_still_defaults_to_null(db):
+    """Omitting the new param must remain byte-identical to every config
+    created before this parameter existed (D41's own nullable/backward-compat
+    requirement)."""
+    draft = await create_draft(weights=OPERATIONAL_V2, min_weight_coverage=0.5, note="no hier", created_by="dat")
+    assert draft["hierarchical_weights"] is None
+
+
+async def test_create_draft_rejects_an_invalid_hierarchical_weights_and_writes_nothing(db):
+    bad = {k: dict(v) for k, v in VALID_HIERARCHICAL_WEIGHTS.items()}
+    bad["grain_weights"] = {k: dict(v) for k, v in bad["grain_weights"].items()}
+    bad["grain_weights"]["unit"]["weight"] = 0.90  # breaks the sum-to-1.0 rule
+
+    with pytest.raises(HierarchicalConfigError) as exc:
+        await create_draft(
+            weights=OPERATIONAL_V2,
+            min_weight_coverage=0.5,
+            note="should never land",
+            created_by="dat",
+            hierarchical_weights=bad,
+        )
+    assert exc.value.code == "HIERARCHICAL_GRAIN_WEIGHT_SUM"
+    assert await list_configs() == [], "an invalid hierarchical_weights must not create any draft row"
+
+
 async def test_publishing_archives_the_previous_one_and_keeps_its_timestamp(db):
     """0023 đổi ràng buộc từ đẳng thức sang kéo theo đúng để mốc phát hành gốc
     KHÔNG bị xoá khi lưu trữ. Trước đó, mỗi lần publish là một lần mất dữ liệu
@@ -322,6 +386,49 @@ async def test_rollback_copies_the_old_weights_into_a_new_version(db):
     assert restored["weights"] == OPERATIONAL_V2
     by_version = {c["version"]: c for c in await list_configs()}
     assert by_version[first["version"]]["status"] == "archived", "lịch sử không bị viết lại"
+
+
+async def test_rollback_preserves_hierarchical_weights(db):
+    """Fixed bug (mandatory-scope item 6/8): `rollback_to()` used to copy
+    ONLY `weights`, silently dropping `hierarchical_weights` — a rollback to
+    a version that HAD a configured hierarchical grain composition used to
+    publish hierarchical scoring as silently disabled. Now it must survive
+    the round trip verbatim."""
+    first = await create_draft(
+        weights=OPERATIONAL_V2,
+        min_weight_coverage=0.5,
+        note="gốc, có hierarchical_weights",
+        created_by="dat",
+        hierarchical_weights=VALID_HIERARCHICAL_WEIGHTS,
+    )
+    await publish(version=first["version"], published_by="dat")
+    second = await create_draft(weights=_with_survey("neutral"), min_weight_coverage=0.5, note="thử", created_by="dat")
+    await publish(version=second["version"], published_by="dat")
+
+    restored = await rollback_to(version=first["version"], created_by="dat")
+
+    assert restored["hierarchical_weights"] == VALID_HIERARCHICAL_WEIGHTS
+    reloaded = {c["version"]: c for c in await list_configs()}[restored["version"]]
+    assert reloaded["hierarchical_weights"] == VALID_HIERARCHICAL_WEIGHTS
+
+
+async def test_rollback_to_a_version_with_no_hierarchical_weights_still_publishes_null(db):
+    """A version that legitimately never had hierarchical scoring configured
+    must still roll back cleanly to `NULL` — this is not the bug being
+    fixed, just confirming the fix doesn't regress the no-hierarchy case."""
+    first = await create_draft(weights=OPERATIONAL_V2, min_weight_coverage=0.5, note="gốc, không hierarchical", created_by="dat")
+    await publish(version=first["version"], published_by="dat")
+    second = await create_draft(
+        weights=OPERATIONAL_V2,
+        min_weight_coverage=0.5,
+        note="có hierarchical",
+        created_by="dat",
+        hierarchical_weights=VALID_HIERARCHICAL_WEIGHTS,
+    )
+    await publish(version=second["version"], published_by="dat")
+
+    restored = await rollback_to(version=first["version"], created_by="dat")
+    assert restored["hierarchical_weights"] is None
 
 
 async def test_survey_features_do_not_collide_with_operational_ones(db):
