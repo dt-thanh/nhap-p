@@ -9576,3 +9576,2181 @@ entry, rerun here only to confirm this fix didn't disturb them.
 - Validation: `cd minicrm && PYTHONPATH=. ../.venv/bin/python -m pytest -q tests/test_logout.py tests/test_oidc_keycloak.py` — **37 passed**; router declaration is `GET, POST /auth/logout` and `POST /auth/logout-all`.
 - Frontend `npm run lint` completed with 15 pre-existing warnings in unrelated pages, `npm run build` passed, and no `logout-all` caller remains under `minicrm/crm-frontend/src`.
 - Docker/Keycloak live E2E was not run because this sandbox cannot access the Docker socket.
+
+## 2026-08-27 — Hierarchical Ranking PR-1 through PR-7 completed and release-certified
+
+This is the first `pipeline_status.md` entry for the hierarchical-ranking
+program. No earlier entry in this file references PR-1 through PR-7,
+`hierarchical_score`, `hierarchical_contributions`, or `hierarchical_weights`
+(verified by grep across the whole file before writing this entry) — nothing
+below strikes through or contradicts a prior status claim; it is a first
+record, not a correction.
+
+### 1. Executive status
+
+Status: IMPLEMENTED, release-certified, default-off rollout.
+
+Legacy CRM ranking remains the authoritative legacy surface:
+- `ranking_scores.score` is unchanged — `engine.score_unit()` (`src/ranking/engine.py:69-99`) is untouched by this program.
+- Existing rank fields and legacy `contributions` are unchanged (`RankedUnitOut`, `src/models/schemas.py:941-963`, gained exactly one new optional field, `hierarchical`).
+- Hierarchical scoring is a parallel additive surface, written only by `compute_hierarchical_scores_for_run()` (`src/ranking/service.py:2007` onward), called strictly after `run_ranking()`'s own commit, never inside it.
+
+Hierarchical computation and hierarchical read exposure have independent
+feature flags, both default `False` (`src/config.py:79`, `src/config.py:90`).
+
+The system is ready for controlled rollout:
+local/test → internal/admin → limited project cohort → broader authorized users.
+No broader production rollout has occurred — both flags are `False` in
+`src/config.py` as checked into this branch, and no deployment/config-override
+evidence to the contrary was found in this repository.
+
+### 2. Architecture overview
+
+```text
+CRM data
+→ legacy run_ranking()
+→ persisted U / ranking_scores.score
+→ feature-flagged hierarchical post-run (hierarchical_ranking_enabled, src/config.py:79)
+→ immutable snapshot copies selected at ranking-run cutoff
+→ M/P/A grain scoring (engine.score_unit(), src/ranking/engine.py:69)
+→ Legal snapshot gate (D27, src/ranking/service.py:1971-1993)
+→ hierarchical_score + hierarchical_contributions (ranking_scores columns, alembic/versions/0037_hierarchical_scoring_pr1.py:45-48)
+→ feature-flagged read-only GET /api/v1/ranking response (hierarchical_read_enabled, src/config.py:90; src/api/ranking.py:267-283)
+→ frontend HierarchicalPanel (frontend/src/pages/RankingPage.jsx:643)
+```
+
+Critical distinction, verified against `src/ranking/service.py` and
+`src/services/governance.py`:
+
+```text
+Governance-published value assertion
+≠ snapshot-bound feature value.
+
+A published assertion is eligible for selection.
+The snapshot builder copies it into immutable run-specific values.
+Scoring reads snapshots, never live governance records.
+```
+
+`src/ranking/hierarchical_view.py:1-16`'s own module docstring states this
+same boundary for the PR-7 read path specifically: it reshapes
+already-persisted `ranking_scores.hierarchical_score`/`.hierarchical_contributions`
+and never selects a governance candidate itself.
+
+### 3. PR-by-PR delivery ledger
+
+| PR | Migration | Status | Delivered behavior | Safety boundary |
+|---|---|---|---|---|
+| PR-1 | `0037_hierarchical_scoring_pr1` (`alembic/versions/0037_hierarchical_scoring_pr1.py:36-37`, down-revision `0036_remove_historical_ranking`) | IMPLEMENTED | Adds `ranking_scores.hierarchical_score` (Numeric(6,4), `[0,1]` CHECK), `ranking_scores.hierarchical_contributions` (JSONB), `ranking_configs.hierarchical_weights` (JSONB); config isolation from legacy `.weights`; post-run hierarchy step; `unit_only` output when no parent grain resolves (`alembic/versions/0037_hierarchical_scoring_pr1.py:44-55`) | New nullable columns only, no legacy column touched |
+| PR-2 | `0038_governance_value_mode` (`alembic/versions/0038_governance_value_mode.py:56-57`) | IMPLEMENTED | Value-mode assertion governance; OIDC subject/raw `CRM.CEO` role propagation (`src/services/oidc.py:80-88`, `:385-388`); CEO approval gate with error code `CEO_APPROVAL_REQUIRED` (`src/services/dashboard_auth.py:222-240`); self-approval prohibited, error code `SELF_APPROVAL_FORBIDDEN`, reviewer identity resolved server-side from the verified OIDC subject, never a caller-supplied id (`src/services/governance.py:973-1010`); no materialization yet | Reviewer identity never trusted from request body |
+| PR-3 | `0039_project_value_materialize` (`alembic/versions/0039_project_value_materialize.py:46-47`) | IMPLEMENTED | Project assertion snapshot materialization; Project (`P`) grain; U+P partial composition (`src/ranking/service.py:1873-1914` eligibility/mode logic) | Snapshot copy at cutoff, not a live read |
+| PR-4 | `0040_market_grain_scope` (`alembic/versions/0040_market_grain_scope.py:60-61`) | IMPLEMENTED | Market scope; 30/90-day citation/freshness eligibility — `market_interest_rate` capped at 30 days, all other Market keys default to 90 days (`src/services/governance.py:74-75`); Market (`M`) grain; U+M / U+P+M partial composition | Same eligibility/exclusion-reason contract as Project |
+| PR-5 | `0041_area_grain_scope` (`alembic/versions/0041_area_grain_scope.py:91-92`) | IMPLEMENTED | Area scope; area-aware snapshot identity; CRM-derived velocity/conversion merged with expert-owned accessibility/current-infrastructure/future-infrastructure by distinct key only, a collision is a hard error, never last-write-wins (`_merge_area_values()`, `src/ranking/service.py:1188-1191`, `:2224`); full U+M+P+A composition when at least one Area feature resolves | No-override guard is structural (hard error), not a policy toggle |
+| PR-6 | `0042_legal_assertion_gate` (`alembic/versions/0042_legal_assertion_gate.py:73-74`) | IMPLEMENTED | Categorical `project_legal_status` (`src/models/tables.py:620`); Legal immutable snapshot; `HIGH_RISK` gate evaluated before any weighted-mean math, short-circuits to `hierarchical_score = NULL` regardless of how many parents were eligible (`_build_legal_gated_contributions()`, `src/ranking/service.py:1971-1993`); legacy ranking untouched | Legal is never a weighted feature; gate is pre-composition, not post |
+| PR-7 | none (read-only; no schema change) | IMPLEMENTED | Hierarchical read response on existing `GET /api/v1/ranking` (`src/api/ranking.py:137-142`, `:267-283`); frontend `HierarchicalPanel` disclosure (`frontend/src/pages/RankingPage.jsx:643`); independent read kill switch `hierarchical_read_enabled` (`src/config.py:90`); evidence/provenance read handling (`src/ranking/hierarchical_view.py:47-107`); structured read observability (`src/ranking/hierarchical_view.py:270`+) | Zero write verbs in `hierarchical_view.py` (grep-verified: no `insert(`/`update(`/`delete(`); no new migration |
+
+Alembic head for this whole chain, confirmed with `alembic heads`:
+`0042_legal_assertion_gate (head)` — single head, no branch conflict.
+
+### 4. Scoring contract
+
+Verified score modes, `src/ranking/service.py:1905-1915` and `:1979-1983`:
+
+```text
+- unit_only:
+  U exists; M/P/A not eligible (none has source == "resolved").
+  hierarchical_score = U.
+  Mandatory disclosure of missing context
+  (UNIT_ONLY_DISCLOSURE, src/ranking/hierarchical_view.py:42).
+
+- partial_hierarchical:
+  U + any eligible subset of M/P/A (1 or 2 of the 3 parents resolved).
+  Composition renormalizes over eligible configured grain weights
+  (effective_grain_weights = weight / f_unit.coverage,
+  src/ranking/service.py:1912-1917).
+  Excluded grains never become zero — they carry an explicit
+  exclusion_reason instead (src/ranking/service.py:1904-1906).
+  Score mode/coverage/effective weights/reasons are returned.
+
+- full_hierarchical:
+  U + M + P + A all eligible.
+  Original grain weights are fully represented (top_level_weight_coverage == f_unit.coverage, full).
+
+- legal_gated:
+  Legal snapshot is HIGH_RISK.
+  hierarchical_score = NULL (src/ranking/service.py:1980).
+  Hierarchical surface has no band, no grain composed.
+  Legacy score/ranks/contributions remain unchanged.
+
+- no legacy U score row (hierarchical_contributions IS NULL):
+  no hierarchical write; PR-7's read layer reports
+  available=False, reason="NOT_COMPUTED" as a structured no-op
+  (src/ranking/hierarchical_view.py:257-259), never a 0 or a guess.
+```
+
+Composition formula, matching `engine.score_unit()` (`src/ranking/engine.py:69-99`):
+
+F_unit = ( Σ_{g∈G} W_g · S_g ) / ( Σ_{g∈G} W_g )
+
+where `G` includes Unit plus every eligible parent grain (Market/Project/Area).
+
+- `ranking_configs.weights` remains legacy unit configuration — untouched by this program.
+- `ranking_configs.hierarchical_weights` (`alembic/versions/0037_hierarchical_scoring_pr1.py:55`) is separate hierarchy configuration, read only by `compute_hierarchical_scores_for_run()`, never `.weights`.
+- `engine.score_unit()` remains unchanged; `_build_hierarchical_contributions()` only relabels its existing `contributions`/`coverage` output (`src/ranking/service.py:1884-1887`).
+- Configured weights are immutable; effective weights exist only in output metadata (`effective_grain_weights`, computed per-response, never persisted as a separate configuration).
+
+### 5. Data/governance lifecycle
+
+```text
+Expert drafts value assertion
+→ attaches evidence
+→ submits
+→ CEO approves/rejects via verified OIDC CRM.CEO role
+  (dashboard_auth.py:222-240; oidc.py:385-388, :413)
+→ governance publication
+→ snapshot selection at ranking cutoff
+→ immutable snapshot feature value + provenance
+→ hierarchical scorer reads snapshot only
+→ API/UI exposes score plus disclosure
+```
+
+Grain contracts, verified against `src/services/governance.py` and
+`src/ranking/service.py`:
+
+```text
+Project:
+- expert values, CEO approval, Project snapshot (PR-3, 0039_project_value_materialize).
+
+Market:
+- denormalized per Project under pending D39 (docs/ranking/ranking_consultant.md:1362);
+- external citation;
+- effective/expiry requirements;
+- 30d interest-rate shelf life, 90d default shelf life for other Market keys
+  (_MARKET_MAX_SHELF_LIFE_DAYS, _MARKET_DEFAULT_MAX_SHELF_LIFE_DAYS,
+  src/services/governance.py:74-75).
+
+Area:
+- CRM-owned velocity/conversion, recomputed live from deals/units exactly like
+  the legacy engine already does — CRM data has no governance writer to
+  snapshot from (src/ranking/service.py:2030-2032).
+- expert-owned accessibility/current infrastructure/future infrastructure,
+  CEO-approved and published, copied into the area's own immutable snapshot
+  at cutoff.
+- hard collision/no-override behavior — merged by distinct key only, a
+  collision is a hard error (src/ranking/service.py:1188-1191).
+
+Legal:
+- categorical HIGH_RISK | NOT_HIGH_RISK | UNKNOWN
+  (src/services/governance.py:147; src/models/tables.py:620).
+- HIGH_RISK only is gate.
+- Legal is never a weighted feature.
+```
+
+`NOT_HIGH_RISK` is a categorical governance status, not a legal guarantee —
+this document does not and must not describe it as one.
+
+### 6. API/UI and security
+
+Verified facts:
+
+```text
+- GET /api/v1/ranking (src/api/ranking.py:137-142) includes an optional
+  `hierarchical` object per unit when hierarchical_read_enabled is True
+  (src/api/ranking.py:267).
+- It remains read-only: build_hierarchical_units() and
+  log_hierarchical_read_observability() (src/ranking/hierarchical_view.py)
+  issue SELECT statements only — grep-verified zero insert(/update(/delete(
+  in that file. Neither function triggers scoring, snapshotting,
+  materialization, publication, or LLM generation.
+- Existing project-scope authorization applies unchanged:
+  require_viewer = require_role("business_viewer") (src/api/ranking.py:60)
+  and require_project_in_scope(principal, external_project_id)
+  (src/services/dashboard_auth.py:278), same anti-enumeration order as the
+  legacy route.
+- API/UI render score mode, coverage, configured/effective weights,
+  included/excluded grains, evidence status, cutoff/computed times,
+  comparability warning, and legal-gate state
+  (HierarchicalUnitOut, src/models/schemas.py:910-937;
+  HierarchicalPanel, frontend/src/pages/RankingPage.jsx:643).
+- No bare hierarchical score: the frontend header always resolves to either
+  a formatted score or the literal "Not ranked" (RankingPage.jsx:670).
+- No reviewer raw OIDC subject exposed: HierarchicalLegalGateOut carries only
+  status/gated/reason/note (src/models/schemas.py:899-907).
+- Evidence unresolved/unauthorized is explicitly unavailable/redacted
+  (HierarchicalEvidenceRefOut, src/models/schemas.py:865-877;
+  _evidence_refs_for(), src/ranking/hierarchical_view.py:107-116).
+- No LLM/evidence-retrieval call exists anywhere in hierarchical_view.py or
+  the PR-7 diff to src/api/ranking.py.
+```
+
+**`object_storage_key` exposure — verified, flagged:** `HierarchicalEvidenceRefOut.object_storage_key`
+(`src/models/schemas.py:876`) is populated straight from
+`ranking_evidence_documents.object_storage_key`
+(`src/ranking/hierarchical_view.py:83`, `:101`). This is not a new exposure
+invented by PR-7 — the existing PR-2 governance evidence endpoint already
+returns the same raw key (`EvidenceDocumentOut.object_storage_key`,
+`src/api/governance.py:175`), and PR-7's read path reuses that same
+already-scoped document lookup rather than inventing a second one. However,
+no signed-URL or time-limited download/view path exists anywhere in this
+repository for either endpoint: the only consumer found,
+`src/jobs/extract_evidence.py:47-53`, reads the key as a plain local
+filesystem path (`Path(settings.upload_dir) / object_storage_key`) inside a
+backend job, never through a client-facing signed link. The current access
+control boundary for both endpoints is API-level project/document
+authorization only, not object-level signed access. **Security follow-up
+recommended** (see §9) before this key is treated as safe to hand to a
+browser client at broader rollout scope, even though PR-7 itself did not
+create the underlying gap.
+
+### 7. Feature flags and rollout
+
+```text
+hierarchical_ranking_enabled (src/config.py:79):
+- controls compute/post-run hierarchical scoring.
+- default False.
+
+hierarchical_read_enabled (src/config.py:90):
+- controls API/UI read exposure.
+- default False, independent of the compute flag by design.
+```
+
+When `hierarchical_read_enabled` is `False`, `src/api/ranking.py:267`'s guard
+means zero extra queries run and every `hierarchical` field in the response
+is `null` — byte-identical legacy behavior, confirmed by
+`tests/test_api/test_ranking_hierarchical.py::test_feature_flag_off_hierarchical_field_is_null_and_no_extra_query_cost`
+(test file present in this checkout; result recorded in §8 as prior-session
+evidence, not re-run in this documentation-only pass).
+
+Rollout sequence, recommendation only, not yet executed:
+
+```text
+1. Local/test
+2. Internal/CEO/admin verification
+3. Selected project cohort
+4. Broader authorized users
+```
+
+Observable acceptance signals, all present in
+`log_hierarchical_read_observability()` (`src/ranking/hierarchical_view.py:270`+):
+score-mode distribution; context coverage; exclusion reasons; Legal-gated
+count; comparability warnings; evidence-unavailable count; read
+latency/failures; no hierarchy read-path errors; legacy output unchanged.
+
+### 8. Test and release certification
+
+```text
+Preflight (re-run in this documentation pass, 2026-08-27):
+- scripts/preflight_test_env.sh
+- disk threshold: MIN_FREE_DISK_MB=2048 (scripts/preflight_test_env.sh:30)
+- result: host disk 29373MB free (used 48%), threshold 2048MB — OK
+- Postgres service 'db' up and accepting connections — OK
+- Redis service 'redis' up and responding to PING — OK
+- script is read-only / non-destructive (Docker disk usage reported,
+  nothing pruned, per its own comment at scripts/preflight_test_env.sh:55-59)
+
+Alembic:
+- one head: 0042_legal_assertion_gate (head) — confirmed with
+  `alembic heads` in this documentation pass.
+- current expected head matches the PR-1→PR-6 migration chain
+  (0037 → 0038 → 0039 → 0040 → 0041 → 0042, down_revision-verified above).
+- PR-1→PR-6 upgrade/downgrade/re-upgrade certification: carried over from
+  the prior in-session release-certification pass; NOT RE-RUN in this
+  documentation-only pass (no schema/migration file changed here, and the
+  task scope for this entry is documentation only).
+
+Canonical backend suite:
+NOT RE-VERIFIED IN THIS PASS. Known from the prior validated report
+delivered earlier in this same working session, before this
+documentation-only task began:
+  - exact command: TEST_TARGET="tests/" bash scripts/test_db.sh -q
+    (canonical PR-1→PR-6 + PR-7 sweep, no -p no:logging)
+  - reported result: 751 passed, 0 failed, 0 errors, runtime 1155.85s
+  - reported pre-existing, unrelated failures outside that count:
+    tests/test_api/test_ranking_historical.py and
+    test_ranking_historical_batch.py (404s — no such route exists in
+    src/main.py or src/api/*.py, grep-confirmed then and not touched since)
+No fresh pytest log/artifact exists in this checkout to re-confirm these
+exact counts in this pass (checked /tmp/pytest-of-* — only pytest's own
+cache directories, no captured pass/fail output survives from that run).
+
+PR-7 tests (files present, content verified by direct reading in this pass):
+  - tests/test_api/test_ranking_hierarchical.py — 14 tests present,
+    covering flag-off, read-only/no-recompute, all four score modes,
+    legal-gate variants, comparability warning, malformed-contributions
+    degradation, and evidence/freshness snapshot-immutability.
+  - tests/test_api/test_ranking_endpoint.py — legacy endpoint test file,
+    unmodified by this program (not in `git status --short` diff below).
+  - frontend/src/pages/RankingPage.test.jsx:139-297 — 6 tests present in
+    the `"RankingPage — hierarchical disclosure (PR-7)"` describe block
+    (flag-off/hidden panel, unit-only, partial, full, legal-gated,
+    comparability warning).
+  - Pass/fail counts for all of the above: NOT RE-VERIFIED IN THIS PASS.
+    Known from the prior validated report: 14/14 API tests passed (55
+    passed including the shared 41-test file prefix), 9/9 new frontend
+    tests passed, 467/471 in the full frontend suite (4 pre-existing,
+    unrelated failures in HotUnitsTab.test.jsx and AgentPage.test.jsx,
+    proven pre-existing via git-stash-and-rerun in that same prior pass).
+```
+
+### 9. Open decisions and debt
+
+| Item | Status | Impact | Next action |
+|---|---|---|---|
+| D31 — nested UI drill-down | PENDING (`docs/ranking/ranking_consultant.md:1362`, `:996`) | The current expandable `<details>` grain panel (`RankingPage.jsx:643`) maps directly to persisted fields and does not resolve D31; a broader nested-computation/storage redesign remains a separate, unscheduled product decision | None required for PR-7; revisit only if a nested UI redesign is scheduled |
+| D32 — MEDIUM_RISK cap tier | PENDING (`docs/ranking/ranking_consultant.md:1362`) | Only `HIGH_RISK` gates today; no MEDIUM_RISK tier exists in code or migrations | Not implemented; no action taken by this program |
+| D34 — long-term coverage policy | PENDING (`docs/ranking/ranking_consultant.md:1362`) | Current rollout behavior is exactly as implemented in §4/§7 above; no additional coverage policy exists beyond per-grain/top-level coverage already disclosed | State current behavior as-is; do not infer a future policy |
+| D39 — dedicated market-context entity | PENDING (`docs/ranking/ranking_consultant.md:1362`) | Market remains denormalized per Project (§5 above) | Unchanged by this program |
+| D40 — broader Legal vocabulary/review/expiry policy | PENDING (`docs/ranking/ranking_consultant.md:1362`) | Only HIGH_RISK / NOT_HIGH_RISK / UNKNOWN exists; no review cadence or expiry policy is implemented for Legal status itself | Unchanged by this program |
+| Security follow-up — `object_storage_key` exposure | NEW, this entry | Raw object-storage key reaches API responses (both the existing PR-2 governance endpoint and the new PR-7 hierarchical read path) with no signed-URL/time-limited access layer proven anywhere in this repository (§6 above) | Recommend a signed-URL or proxy-download review before broader-than-admin rollout of either endpoint |
+| Test debt — `test_0031_unit_inventory_daily.py` | RESOLVED | The stale current-head assertion was corrected in a prior session pass; `test_the_migrated_columns_match_0031s_own_create_table` (renamed test, confirmed present at `tests/test_migrations/test_0031_unit_inventory_daily.py:155`) replaces the old stale-head test; not open debt | None — do not reopen unless the test is observed failing again |
+| Test debt — `test_ranking_historical.py` / `test_ranking_historical_batch.py` | PRE-EXISTING, UNRELATED | 404s against a `/ranking/historical` route that does not exist in `src/main.py`/`src/api/*.py` (grep-confirmed); predates and is unrelated to PR-1 through PR-7 | Out of this program's scope; not fixed here |
+
+### 10. Operational runbook
+
+```text
+Before enabling compute (hierarchical_ranking_enabled):
+- scripts/preflight_test_env.sh passes;
+- DB/Redis/Keycloak healthy;
+- ranking_configs.hierarchical_weights exists and validates for the target project's config;
+- feature flags verified in the deployed src/config.py-derived settings.
+
+Before enabling read (hierarchical_read_enabled):
+- computed runs contain hierarchical_score/hierarchical_contributions for the target project;
+- API/UI smoke test all available score modes (unit_only, partial_hierarchical,
+  full_hierarchical, legal_gated);
+- verify no bare scores and evidence authorization works (unavailable/redacted
+  states render explicitly, never blank).
+
+On incident:
+- disable hierarchical_read_enabled first (src/config.py:90) — legacy ranking
+  and legacy UI are unaffected, since the read guard is a single flag check
+  at src/api/ranking.py:267;
+- if needed, disable hierarchical_ranking_enabled next (src/config.py:79);
+- legacy ranking remains available in both cases;
+- do not rollback migrations as a first response — no migration governs
+  either flag;
+- inspect structured logs by request_id/ranking_run_id/project_id
+  (structlog.contextvars propagation, src/middleware.py; hierarchical read
+  events at src/ranking/hierarchical_view.py:270+);
+- check disk/container/preflight status (scripts/preflight_test_env.sh)
+  before rerunning anything.
+
+After rollout:
+- review score-mode/coverage/exclusion distributions;
+- review Legal-gated/comparability-warning rates;
+- investigate unexpected evidence-unavailable/read-failure events.
+```
+
+## 2026-08-28 — La Pura additive seed (PR-1 unrelated to hierarchical ranking) + canonical suite known-issues register
+
+**Status: IMPLEMENTED, one real additive seed run completed in development.** New generic
+`unit_enrichment_attributes` table (`alembic/versions/0043_unit_enrichment_attributes.py`),
+a dedicated fixture/manifest-driven seed pipeline (`scripts/derive_lapura_seed_fixture.py`,
+`scripts/lapura_preflight.py`, `scripts/lapura_manifest.py`, `scripts/seed_lapura.py`,
+`scripts/load_lapura_unit_enrichment.py`, `scripts/rollback_lapura_seed.py`), and one project
+("La Pura", MiniCRM `P-0029` / AbsorpIQ `6c29ae3b-be5b-4138-aa91-63731ee80cfe`) seeded
+end-to-end through the existing MiniCRM API → `crm_outbox` → AbsorpIQ sync path — the same
+path every other project in this environment already uses. `docs/mini_crm_seed.json` was not
+modified; the new project used a separate, dedicated fixture
+(`scripts/fixtures/lapura_normalized_seed_v1.json`) and a per-batch manifest
+(`scripts/fixtures/manifests/lapura_seed_manifest_lapura-20260828-001.json`, Pass-1 + Pass-2
+complete) so the exact old-to-new id mapping is preserved and a targeted rollback
+(`scripts/rollback_lapura_seed.py`, dry-run proven) can undo exactly this batch without
+touching any other project.
+
+**Known deviation from the authorized scope, disclosed, not corrected in this pass:** the
+live `worker` service's own pre-existing, always-on post-sync ranking recompute
+(`src/jobs/rank_project.py`, `trigger='sync'`) ran automatically as a side effect of the sync
+traffic this seed generated — 91 `ranking_runs` and 392 `ranking_scores` rows for La Pura,
+using the currently-published `ranking_configs` (feature keys `unit_available`/
+`unit_demand_norm`/`area_velocity_norm`/`area_conversion_norm` — confirmed NOT any AHP/CSV
+data, and `hierarchical_score` is NULL on every row, consistent with `hierarchical_ranking_enabled=False`).
+No seed script here calls `run_ranking()`; this is the application's own standing behavior,
+unavoidable when going through the normal sync path, and was left untouched (no delete/rollback
+was authorized or performed). `unit_enrichment_attributes` (392 rows, all `is_synthetic=true`)
+was loaded strictly after these ranking runs completed and is not referenced anywhere in
+`src/ranking/` — see `tests/test_ranking/test_unit_enrichment_not_authoritative.py`.
+
+### Canonical test-suite known-issues register (pre-existing, unrelated to this seed change)
+
+Verified via `git status`/`git log` that none of the files below were touched by this or any
+prior task in this session before their failure was observed:
+
+| File | Reason | Related to this seed change? |
+|---|---|---|
+| `tests/test_api/test_ranking_historical.py` (7 tests) | 404s against `/ranking/historical`, a route that does not exist in `src/main.py`/`src/api/*.py` | No |
+| `tests/test_api/test_ranking_historical_batch.py` (4 tests) | Same missing route, batch variant | No |
+| `tests/test_jobs/test_parse_upload.py` (6 tests) | Failing independently of any change in this session; `src/jobs/parse_upload.py` and the test file are both untouched | No |
+| `tests/test_services/test_phase_a_contract_freeze.py::test_the_dashboard_principal_now_has_a_project_scope` | Stale baseline asserting `DashboardPrincipal` has exactly 2 dataclass fields; it already has 3 (`role`/`project_scope`/`is_ceo`) from earlier, unrelated PR-2 governance work | No |
+| `tests/test_domain_absorption_ranking.py` (whole file, collection error) | `ImportError: cannot import name 'absorption_rate_at_cutoff' from src.services.domain_absorption` — the function does not exist in that module | No |
+
+Canonical suite result with the collection-error file excluded:
+`TEST_TARGET="tests/" bash scripts/test_db.sh -q --ignore=tests/test_domain_absorption_ranking.py`
+→ **2076 passed, 18 failed, 38 skipped** — the 18 failures are exactly the pre-existing ones in
+the table above, none owned by this pass. An earlier run in this same session additionally
+showed `test_pr1_pr4_integration_hardening.py` × 3 and `test_ranking_boundary.py` × 1 failing;
+those were this session's own legitimate maintenance (Alembic head moved to `0043`, and this
+repo's own convention treats that as a correct signal to update the recorded head/count, not a
+regression) and are now fixed — not part of this register.
+
+### 2026-08-28 (b) — La Pura seed completed; read-only audit of the sync-triggered ranking behavior
+
+**Seed completion facts.** All 610 records confirmed present and correctly linked: MiniCRM
+`crm_projects`/`crm_areas`/`crm_units`/`crm_deals` (1/24/392/193) and the identical projection
+into AbsorpIQ `projects`/`areas`/`units`/`deals`, plus 392 `unit_enrichment_attributes` rows.
+Zero orphans, zero external-id duplicates anywhere (28 pre-existing projects, including
+`P-0001` "The Empire", verified untouched). Manifest
+`scripts/fixtures/manifests/lapura_seed_manifest_lapura-20260828-001.json` Pass-2 complete
+(real ids captured for all 610 entities). No script in this seed pipeline calls
+`run_ranking()` — grep-verified across `scripts/derive_lapura_seed_fixture.py`,
+`scripts/seed_lapura.py`, `scripts/load_lapura_unit_enrichment.py`.
+
+**Automatic sync-triggered ranking (application's own pre-existing behavior, not invoked by
+this seed's tooling).** AbsorpIQ's `SyncRunService.run()` triggers a full-project ranking
+recompute (`ranking_runs.trigger='sync'`) after every completed sync run, unconditionally —
+this is existing, real-time-oriented product behavior, not something added or altered by this
+task. MiniCRM's `RelayLoop` (`minicrm/app/relay.py`) polls every `relay_interval_seconds=5.0s`
+and delivers up to `relay_batch_size=20` pending outbox rows per tick
+(`minicrm/app/config.py:110-111`). Because this seed posted 610 records over several minutes
+via 610 separate API calls, the relay delivered them in 91 batches (avg. ~6.7 records/batch),
+and AbsorpIQ ran its full-project recompute after each of those 91 sync runs — 91
+`ranking_runs` and (because `_persist_scores()` deletes-and-reinserts the whole project on
+every run) exactly one current `ranking_scores` row per unit (392, `uq_ranking_scores_unit`
+enforced), all belonging to the single last run. Verified via the published config
+(`ranking_configs` v2: `unit_available`/`unit_demand_norm`/`area_velocity_norm`/
+`area_conversion_norm`) and by enumerating every key ever seen in
+`ranking_scores.contributions` for La Pura (exactly those four, nothing else) that these
+scores are 100% authoritative CRM-operational output — zero reference to `ahp_ranking.csv`,
+any other processed-dataset CSV, or `unit_enrichment_attributes`/`is_synthetic` anywhere in
+`src/ranking/` (grep-verified, and structurally proven by
+`tests/test_ranking/test_unit_enrichment_not_authoritative.py`). `hierarchical_score`/
+`hierarchical_contributions` are NULL on all 392 rows (`hierarchical_ranking_enabled=False`,
+confirmed live on the running `api` container). No manual `run_ranking()` call occurred at
+any point — every one of the 91 runs is attributable to the sync path alone.
+
+This is disclosed as an efficiency observation, not a defect requiring immediate action: for
+bulk-seed/import traffic specifically, one full-project recompute per outbox-delivery batch is
+measurably wasteful (91 recomputes of a monotonically growing project where 1 final recompute
+would have sufficed) even though it is exactly correct behavior for ordinary single-record CRM
+edits. A batch-aware coalescing design was proposed (not implemented) in this session's audit
+report and remains a candidate follow-up, not adopted.
+
+### 2026-08-28 (c) — Hands-free full-wipe → La Pura-only reseed: stale-manifest-safe preflight + real `seed_lapura.py` orchestration
+
+**Change 1 — `scripts/lapura_preflight.check_not_already_seeded` is now DB-aware.**
+Previously this check only scanned host-file manifests under
+`scripts/fixtures/manifests/` — a match there was treated as proof the dataset was
+already seeded, which is false after `docker compose down -v` (manifests survive
+the wipe; the database does not). It is now `async` and, whenever a matching
+manifest is found under `--mode create`, verifies each one live: fetches the
+manifest's captured Pass-2 `real_external_id` and queries the CURRENT verified
+MiniCRM target (and, supplementarily, AbsorpIQ) for it.
+
+- Live match found → refuse, name the exact batch/project/AbsorpIQ projection state.
+- Match found, project no longer live → classify `stale_after_database_reset`,
+  allow `--mode create`, surface the classification in the report. The manifest
+  file itself is never deleted, rewritten, or mutated.
+- Match found but Pass-2 was never completed → fail closed (no deterministic
+  identity exists to check liveness against — investigate manually).
+- A manifest captured against a different environment degrades safely to the
+  same "stale" classification (the lookup is bound to the current verified
+  target only).
+- Any lookup failure (network/DB) fails closed, never silently ignored.
+
+New factory helpers `make_minicrm_project_lookup(engine)` /
+`make_absorption_project_lookup(engine)` build the real, live lookup callables;
+tests inject fake ones (`tests/test_scripts/test_lapura_preflight.py`, 23 tests
+covering every decision-table branch — live match, stale-after-reset, incomplete
+Pass-2, another-environment, lookup failure ×2, mismatched identity, two
+historical manifests both stale / one live).
+
+**Verified against the real, still-live environment**: `scripts.seed_lapura
+--dry-run` now correctly refuses `--mode create` because the La Pura project
+seeded earlier in this session (`P-0029` / AbsorpIQ `6c29ae3b-...`) is still
+live — proving the check does NOT falsely report `stale_after_database_reset`
+when the project genuinely still exists.
+
+**Change 2 — `seed_lapura.py --confirm-seed` is a real, single orchestrated
+command**, no longer a stub. It: re-runs every preflight check fresh (a strict
+mode where an unreachable sync service is now a hard failure, not a warning);
+loads and guards the Pass-1 manifest (refuses if the fixture is missing, if the
+batch was already seeded to Pass-2, or if source hashes changed since the
+fixture was built); invokes `scripts.seed_mini_crm_from_json` only through its
+supported `--fixture`/`--state-file` CLI (never raw SQL); polls AbsorpIQ with a
+bounded timeout (default 180s) until the new project's projected counts exactly
+equal 1/24/392/193; captures Pass-2 real ids from the state file (MiniCRM side)
+and a live AbsorpIQ query (AbsorpIQ side); loads `unit_enrichment_attributes`
+through the existing guarded loader; and finishes by running the new read-only
+`--validate` report. Any rejection/timeout/mismatch at any stage stops
+immediately, before touching enrichment, with the batch id/fixture/state-file/
+manifest paths and a `--mode resume` recovery pointer — `--mode resume` for
+`--confirm-seed` itself remains unimplemented in this pass (documented, not
+silently supported).
+
+**New `--validate --batch-id <id>`** is fully read-only and was run for real
+against the live batch (`lapura-20260828-001`) as part of this change — exit 0,
+every check OK: manifest Pass-2 complete (610 entities), source hashes match,
+both DB targets/heads, scoped counts `1/24/392/193/392`, reconciliation
+`199+63+130=392`, zero orphans/duplicates, `ranking_scores.contributions` keys
+are exactly the four operational features (no AHP/CSV/enrichment keys),
+`hierarchical_score`/`hierarchical_contributions` NULL on every row, rollback
+dry-run scope correct, `docs/mini_crm_seed.json` git-diff empty.
+
+**Full-wipe recovery semantics, stated explicitly**: after `docker compose down
+-v && docker compose up -d --build`, both schemas auto-migrate to head
+(`RUN_MIGRATIONS=true` / `MINICRM_RUN_MIGRATIONS=true`), and
+`scripts.seed_lapura --dry-run`'s preflight will correctly classify any
+surviving host-file manifest from a pre-wipe batch as `stale_after_database_reset`
+(verified via unit tests, not yet re-verified against a real wipe in this pass —
+no destructive command was run). Generic `./scripts/dev-reset.sh --yes --seed`
+remains legacy-fixture-only (`docs/mini_crm_seed.json`, hardcoded, no
+`--fixture`/`--state-file` override) and is explicitly **not** part of any
+La Pura-only restore path — it is not seed_lapura.py's stale-manifest-safe
+preflight it goes through, and it is not modified by this change.
+
+**Known remaining gap, not fixed in this pass**: `scripts/dev-hard-reset-absorpiq.sql`'s
+hardcoded `expected_tables` allowlist still does not include
+`unit_enrichment_attributes` — irrelevant to the `seed_lapura.py` path (which
+never calls it) but still a live blocker for any *generic* full
+`dev-reset.sh`-based reset, unchanged from the prior audit.
+
+### 2026-08-28 (d) — Fixed: `seed_lapura.py` could not reach either database from the host terminal
+
+**Root cause.** `.env`'s `DATABASE_URL` and `minicrm/.env`'s `MINICRM_DATABASE_URL`
+correctly point at `db:5432` / `minicrm_db:5432` — Docker Compose service names that
+only resolve on the Compose-internal network. Every documented `seed_lapura.py`
+command is meant to run from the bare host terminal, where those hostnames raise
+`socket.gaierror: Temporary failure in name resolution`. (A prior session turn had
+worked around this by hand with `sed 's/@db:5432/@localhost:5432/'` shell exports —
+never fixed in the tool itself until now.)
+
+**Fix — `scripts/lapura_preflight.resolve_execution_url()`.** A new resolver, called
+for both the AbsorpIQ and MiniCRM DSNs at every entry point that opens a DB
+connection (`_run_preflight`, `_confirm_seed`, `run_validation`):
+
+- **Explicit override** (`DATABASE_URL`/`MINICRM_DATABASE_URL` actually exported in
+  the process environment, not merely present in the `.env` file) — used as-is,
+  still allowlist-guarded. Takes priority over everything below.
+- **Container execution** (`/.dockerenv` present) — `db:5432`/`minicrm_db:5432`
+  preserved unchanged; they are valid on the Compose network.
+- **Host execution, URL points at a Compose service name** — resolved via
+  `docker compose port <service> <container_port>` (read-only; queries the
+  already-running stack, starts/stops/builds nothing) to the real published host
+  port, then rewritten to that host:port. `0.0.0.0`/empty bind addresses are
+  normalized to `127.0.0.1`; anything else must already be in the same host
+  allowlist `check_absorption_target`/`check_minicrm_target` use, or the resolver
+  fails closed.
+- **Host execution, URL already non-Compose** (already localhost, a remote dev
+  box, etc.) — used as-is, still allowlist-guarded.
+
+Fails closed (raises `PreflightError`, never guesses) on: Docker/Compose not
+installed or the stack not up (`docker compose port` errors or returns nothing),
+an unparseable port-mapping response, a resolved host outside the allowlist, or a
+database name outside the allowlist — all before `check_app_env`'s own
+non-development-environment gate has any chance to be bypassed, since that check
+still runs first.
+
+**Bug caught in the same pass, before it shipped**: the first implementation built
+the rewritten URL with `str(sqlalchemy.engine.URL)`, which — unlike
+`redact_url()`'s own manual reconstruction — masks the password as a literal
+`"***"` by design (`URL.__str__` calls `render_as_string(hide_password=True)`).
+Every resolved connection therefore authenticated with the string `"***"` instead
+of the real password. Caught by actually running the real dry-run end to end (not
+just the unit tests, which had asserted the password was absent from the *report*
+text but never asserted it was present in the *returned URL*) — `check_absorption_target`
+failed with `InvalidPasswordError`, not a hostname error, which was the tell.
+Fixed by using `URL.render_as_string(hide_password=False)` for the actual
+connection string; the unit test was strengthened to assert the real password
+round-trips into the resolved URL, not just that it's absent from the report.
+
+**Tests**: `tests/test_scripts/test_lapura_execution_context.py` (new, 14 tests) —
+explicit override (used as-is; still fails closed on a bad db name), container
+execution (preserved; still fails closed on an unexpected host), host execution
+resolving a Compose hostname via a faked `docker compose port` (asserts the
+resolved host:port *and* that the real password survives, *and* that it's absent
+from the report text), host execution passing through an already-non-Compose URL
+untouched, host execution failing closed on a missing port mapping / a missing
+`docker` binary / a resolved host outside the allowlist, `_docker_compose_port`'s
+own parsing (success and unparseable-output cases), and `check_app_env`'s
+allow/refuse behavior for the wrong `APP_ENV`.
+
+**Verified for real, from the bare host terminal, with no manual env export**:
+
+```
+env -u DATABASE_URL -u MINICRM_DATABASE_URL python3 -m scripts.seed_lapura --dry-run
+```
+
+now runs to completion unaided. Preflight output:
+
+```
+OK: AbsorpIQ: host execution — resolved Compose service 'db':5432 to 127.0.0.1:5432 ...
+OK: AbsorpIQ target=postgresql+asyncpg://***:***@127.0.0.1:5432/absorption, alembic head=0043_unit_enrichment_attributes
+OK: MiniCRM: host execution — resolved Compose service 'minicrm_db':5432 to 127.0.0.1:5434 ...
+OK: MiniCRM target=postgresql+asyncpg://***:***@127.0.0.1:5434/minicrm, alembic head=0009_project_location
+stale_after_database_reset: batch lapura-20260828-001 (project P-0029) no longer exists in the live MiniCRM target — treated as safe to recreate; manifest left on disk, unmodified.
+OK: no LIVE prior batch found — 1 historical manifest(s) classified stale_after_database_reset (['lapura-20260828-001']) — --mode create is safe
+```
+
+**Unplanned but important discovery, disclosed as observed, not assumed**: this
+live run shows the MiniCRM database is now genuinely empty (`SELECT external_id,
+name FROM crm_projects` returns 0 rows — confirmed by a direct read-only query,
+including the pre-existing "The Empire" project being gone), i.e. this dev
+environment has already been through a real volume wipe since the La Pura batch
+`lapura-20260828-001` was seeded. This is exactly the scenario the (c) entry above
+designed for, and the stale-manifest-safe preflight from that change classified
+it correctly, live, on its own — this was not staged for the test. No write of
+any kind was performed to confirm this; `--mode create` was not invoked.
+
+### 2026-08-28 (e) — MiniCRM→AbsorpIQ data-ownership forensic audit (read-only)
+
+A full read-only audit classified every business/domain row in AbsorpIQ's `projects`/
+`areas`/`units`/`deals` by `(source_system, source_instance_id)` lineage — no writes,
+deletes, migrations, or ranking runs performed. Findings (live counts at audit time,
+before the volume wipe described in the (f) entry below):
+
+- **`mini_crm` / `mini-crm-dev` (CRM_SYNCED_VALID)**: 1 project (La Pura, `P-0001`), 24
+  areas, 392 units, 193 deals — live-matched row-for-row against MiniCRM's own
+  `crm_projects`/`crm_areas`/`crm_units`/`crm_deals`. Exclusively referenced by every
+  derived table that had any rows at all: 93 `ranking_runs`, 392 `ranking_scores`, 1214
+  `feature_snapshots`, 610 `crm_source_records`/`sync_payloads`/`upload_files`, 392
+  `unit_enrichment_attributes`, 392/193 `unit_status_history`/`deal_status_history`.
+- **`crm_real_data_fixture` / `ai-dev-fixture` (LEGACY_SEED)**: 4 projects (Vinhomes Ocean
+  Park 1/Smart City/Times City/Riverside), 58 areas, 1991 units, 1330 deals (1294 core
+  from migration `0021` + 36 `stats26-*` supplement from migration `0024`), 6
+  `upload_files`, 9 `upload_errors`, 58 `sales_records`, 58 `inventory_snapshots`, 696
+  `absorption_daily`. Written **directly** into AbsorpIQ tables by migrations `0019`+
+  `0021` (auto-applied on every `alembic upgrade head`), never through MiniCRM. Zero
+  ranking/evidence/enrichment rows reference any of it.
+- **`synthetic_demo` / `synthetic-demo-2026` (DEMO)**: 4 projects (2026 Northlight/
+  Rivergate/Cedar Point/Harbor Row), 12 areas, 1062 units, 630 deals. Written directly by
+  migration `0023` (env-gated, auto-applied), labels/stats touched up by `0024`/`0025`.
+  Self-documented in its own migration docstring as "an explicitly approved demo-data
+  exception... not CRM or market facts." Zero ranking/evidence/enrichment dependents.
+- **No `CRM_SYNCED_ORPHANED`/`DIRECT_INSERT_SUSPECT`/`DUPLICATE`/`UNVERIFIABLE` rows
+  found live**: zero NULL-lineage projects/areas, zero orphaned FKs, zero name/external-id
+  collisions across lineages. `scripts/seed_dev.py`'s DEMO P01-P04 projects and
+  `scripts/sync_simulator.py --seed-project`'s synthetic project (both write no
+  `source_system` at all) were confirmed **not present** in the live database.
+- **Sync health, all verified live and healthy**: exactly 1 active `sync_credentials` row;
+  MiniCRM/AbsorpIQ `/health` both OK; `crm_outbox` 610/610 delivered, 0 pending/retry/
+  dead-letter; `crm_source_records` 610 rows, all `state=active`/`last_decision=insert`,
+  zero duplicate identities.
+
+A scoped, two-lineage cleanup plan was proposed (LEGACY_SEED + DEMO removal via
+`(source_system, source_instance_id)`-scoped deletes, reusing each lineage's own
+already-written, mostly-tested downgrade/reset logic) but **not executed** — verdict was
+`READY FOR CLEANUP APPROVAL: NO`, pending two closeable gaps: no dedicated test coverage
+existed yet for migration `0021`'s downgrade (`deals`) path, and `scripts/
+seed_domain_demo_2026.py`'s reset logic hadn't been independently re-verified line-by-line.
+
+### 2026-08-28 (f) — Closing the two verification gates; unplanned second volume wipe discovered
+
+Closed both gates identified in (e), read-only except for the two new files below.
+
+**Gate 1 — `tests/test_migrations/test_0021_seed_ai_crm_fixture_deals.py` (new, 4
+tests)**: drives `0021`'s `downgrade()` directly (module loaded via
+`importlib.util.spec_from_file_location`, its `op` name monkeypatched with a
+`.get_bind()`-only stub) against a scratch DB migrated all the way to `head` — never via
+`alembic downgrade`, which would also reverse migrations `0022`-`0043`. Proves,
+against a real Postgres: (1) deletes exactly 1330 target-lineage deals (1294 core + 36
+`stats26-*`), 1330→0; (2) preserves a `mini_crm`/`mini-crm-dev` control chain, a
+same-`source_system`-different-`source_instance_id` control chain
+(`ai-dev-fixture-OTHER`), the live `synthetic_demo` rows (630 deals, untouched), and
+control rows in `sync_credentials`/`crm_source_records`/`ranking_runs`/`ranking_scores`/
+`unit_enrichment_attributes`/`upload_files`, byte-for-byte, via a full before/after
+snapshot; (3) reverts only fixture units' status, never a control unit's; (4) is atomic —
+a `BEFORE DELETE` trigger forced to raise mid-transaction (after the UPDATE that reverts
+units to `available` has already run) proves the whole transaction rolls back, including
+that UPDATE, not just the failed DELETE. All 4 pass against real Postgres
+(`scripts/test_db.sh`).
+
+**Gate 2 — `scripts/seed_domain_demo_2026.py` read line-by-line.** Findings: deletes
+only `deals`/`units`/`areas`/(`projects`, unless `--area` scoped); predicate is an exact
+list of deterministic `uuid5(fixed_namespace, "kind:external_id")` ids computed from the
+file's own hardcoded `PROJECTS`/`AREAS` specs (`_delete_statements`,
+lines 389-397) — stricter than a `source_system`/`source_instance_id` `WHERE` clause,
+since it can only ever match rows this exact script's own plan would itself create,
+never a same-lineage row with an unexpected identity; FK order `deals→units→areas→
+projects`, matching `0021`+`0019`; delete-then-upsert both run inside one
+`engine.begin()` transaction (`_write`, lines 400-411); `--reset-demo-data` requires
+`--confirm-reset-demo-data` and argparse refuses the pair-mismatch **before any code
+runs** (verified live below); imports only `areas`/`deals`/`projects`/`units` from
+`src.models.tables` — no code path can reach MiniCRM, `crm_outbox`, `sync_credentials`,
+`sync_payloads`, `crm_source_records`, any `ranking_*` table, or `unit_enrichment_
+attributes`. **No unscoped predicate, name-based selector, missing transaction, or
+missing confirmation gate found — no patch needed.**
+
+**New `scripts/dry_run_lineage_cleanup.py`** — the read-only preview utility specified
+in the approved plan. Refuses any `(source_system, source_instance_id)` pair other than
+the one audited/approved (`crm_real_data_fixture`/`ai-dev-fixture`); previews, via
+`SELECT`-only queries in the exact FK-safe order a real cleanup would delete in (deals
+first — 0021's own predicate — then 0019's own `upload_errors→sales_records→
+inventory_snapshots→absorption_daily→units→upload_files→areas→projects` chain), every
+candidate row's id and the total count per table. Zero writes.
+
+**Unplanned discovery**: starting this task found the entire `docker compose` stack for
+this project fully stopped (`docker compose ps` returned nothing; the only running
+containers belonged to an unrelated project). Per explicit user instruction, the stack
+was brought up read-only (`docker compose up -d`, no `-v`, no rebuild, no reset/seed
+flags) to run the required live checks. Once up, live data showed the LEGACY_SEED (4/58/
+1991/1330) and DEMO (4/12/1062/630) lineages present — deterministically re-seeded by
+the automatic `alembic upgrade head` that runs on container start (`RUN_MIGRATIONS=true`)
+— but **zero `mini_crm`-lineage rows anywhere, and MiniCRM's own `crm_projects` is
+empty (0 rows)**. This means a second real volume wipe occurred, externally, sometime
+after the (d) entry above (which had already found one La Pura batch stale after the
+first wipe) — this session did not cause it and performed no write of any kind to
+confirm or work around it; it is disclosed exactly as observed. Consequently `sync_
+credentials`, `crm_source_records`, `sync_payloads`, `ranking_runs`, `ranking_scores`,
+and `unit_enrichment_attributes` are all currently 0 rows (no MiniCRM sync has occurred
+against this fresh volume yet). This does not weaken the cleanup plan's protected-data
+proof — gate 1's new test inserts its own synthetic `mini_crm`-lineage control rows into
+a real, fully-migrated schema specifically so that proof does not depend on a live La
+Pura row existing at audit time.
+
+**Live counts after re-verification (2026-08-28, post-wipe, before any cleanup)**:
+AbsorpIQ — projects=8 (4 LEGACY_SEED + 4 DEMO), areas=70 (58+12), units=3053 (1991+1062),
+deals=1960 (1330+630), `mini_crm`-lineage projects=0, `sync_credentials`=0,
+`sync_payloads`=0, `crm_source_records`=0, `ranking_configs`=2, `ranking_feature_
+definitions`=8, `ranking_runs`=0, `ranking_scores`=0, `unit_enrichment_attributes`=0,
+`alembic_version`=`0043_unit_enrichment_attributes`. MiniCRM — `crm_projects`=0,
+`crm_outbox`=0, `alembic_version`=`0009_project_location`.
+
+**Verdict: `READY FOR CLEANUP APPROVAL: YES`** — both gates from (e) are closed with
+passing tests/direct code verification; the dry-run and demo-preview commands were run
+for real and matched every audited count exactly; no residual technical gap remains
+before the actual scoped cleanup can be executed once explicitly approved. Cleanup
+itself was **not** executed in this pass.
+
+### 2026-08-28 (g) — MiniCRM as sole domain-entity owner: Alembic no longer auto-seeds business data on a fresh database
+
+**Strategy (Option C — no-op the historical migrations' `upgrade()`, explicit CLIs for the same logic)**, chosen over A/B/D: Alembic history/revision graph is completely untouched (every `revision`/`down_revision` unchanged); `upgrade()` in `0019_seed_ai_crm_fixture`, `0021_seed_ai_crm_fixture_deals`, and `0023_seed_domain_demo_2026` now does nothing but print a one-line pointer to the replacement CLI. `downgrade()` in all three is **UNCHANGED** — still correctly, precisely reverses real fixture data by source identity for any database that has it. This is provably safe for an already-migrated database (compatibility case 1): Alembic never re-runs an already-stamped revision, so the edit has literally zero effect on any DB already at/past these revisions. `0024`/`0025` (follow-up fixups) were **not edited** — they naturally become no-ops on a genuinely fresh DB (nothing exists yet for them to update), and remain fully functional, unedited, and correct on an existing DB that has the underlying fixture (proven live in the new compatibility test — see below).
+
+**New**: `scripts/_seed_legacy_fixture_deals_core.py` — 0021's deal-planning algorithm (`_plan`/`_row`/`_allocate`/`_sold_target`, all constants), extracted verbatim (moved, not duplicated) since `upgrade()` no longer needs it. `scripts/seed_legacy_fixture.py` — the new explicit CLI (`--dry-run` / `--confirm-seed`, mutually exclusive required), two-phase (projects/areas/units via `scripts/_seed_ai_crm_fixture_core.py`, then deals via the module above reading back the units just written), full preflight (APP_ENV=development, host/DB allowlist via `scripts/lapura_preflight.py`'s existing resolver), explicit non-authoritative warning on every run. Verified live against a scratch DB: reproduces the exact historical counts (4/58/1991/1294) end to end.
+
+**Modified**: `scripts/seed_domain_demo_2026.py` — was missing a confirmation gate on its own base seed path (only `--reset-demo-data` required `--confirm-reset-demo-data`; a bare invocation wrote unconditionally). Now `--dry-run`/`--confirm-seed` are a required mutually-exclusive pair, matching the new CLI contract; `--reset-demo-data` now additionally requires `--confirm-seed`. `scripts/seed_dev.py` — `projects`/`areas` rows now carry `source_system='seed_dev_fixture'`/`source_instance_id='seed-dev-local'`/`external_id` (previously `NULL` — untraceable); `_main()` now requires `--confirm-seed` and refuses outside development (the underlying `seed()` function, used directly by `bootstrap_dev.py`/tests, is unchanged — `bootstrap_dev.py`'s own `--no-seed` default on every wired-up path, e.g. `ensure_sync_credential.sh`, is unaffected). `scripts/sync_simulator.py --seed-project` — same treatment: `source_system='sync_simulator_fixture'`/`source_instance_id='sync-simulator-local'` stamped, now requires `--confirm-seed` and refuses outside development.
+
+**`scripts/dev-reset.sh`** — bare `--seed` removed entirely (errors with a pointer to the replacement); default run seeds nothing. `--seed-profile=minicrm_default|legacy_fixture|synthetic_demo` required to populate any data, each profile calling exactly one clearly-named, already-safety-gated tool (`seed_mini_crm_from_json.py`/`seed_legacy_fixture.py --confirm-seed`/`seed_domain_demo_2026.py --confirm-seed`). La Pura remains deliberately un-wired into this script (`scripts/seed_lapura.py` is its own dedicated tool). Verified live (read-only — no `--yes` passed): plan preview, `--seed` rejection, and bad-profile rejection all behave exactly as designed.
+
+**New `scripts/dry_run_lineage_cleanup.py`** unaffected by this change (already existed from entry (f)).
+
+**Fresh-database proof** (`tests/test_migrations/test_domain_seed_neutralized.py`, run against an isolated scratch DB, not the live dev DB): `alembic upgrade head` → `projects=areas=units=deals=0`; schema fully present (58 tables); `ranking_configs` (2: archived v1 + published v2) and `ranking_feature_definitions` (8: market/area/legal) present as intentional global config; `sync_credentials`/`sync_payloads`/`crm_source_records`/`ranking_runs`/`ranking_scores`/`unit_enrichment_attributes` all empty (nothing has synced yet); `alembic_version` single row at `0043_unit_enrichment_attributes`; FK/unique-constraint shape spot-checked unchanged.
+
+**Existing-database compatibility proof**: seeded a scratch DB with real legacy+demo+`mini_crm`-lineage rows at revision `0018` (simulating a DB that already has this data from before this change), then ran the real `alembic upgrade head` — proved every pre-existing row (including the `mini_crm` control chain, standing in for La Pura) survives byte-for-byte, no duplicates, `alembic_version` reaches head cleanly, and `0024`'s own unchanged logic still correctly tops up missing sold deals when it genuinely finds fixture data to work on (36 `stats26-*` deals, matching the historical count exactly) — proving 0024 is functionally intact, not silently broken by this change.
+
+**Tests**: `tests/test_migrations/test_0019_seed_ai_crm_fixture.py` and `test_0021_seed_ai_crm_fixture_deals.py` rewritten (upgrade()-is-a-no-op assertions added; downgrade()-still-correct assertions now seed real data via the core modules directly first, since the migration itself no longer does); `test_0023_seed_domain_demo_2026.py`/`test_0024_vinhomes_labels_stats.py` needed **no changes** (both are DB-free/static, never call `upgrade()`/`downgrade()` against a real database). New `tests/test_migrations/test_domain_seed_neutralized.py` (3 tests) and `tests/test_scripts/test_explicit_seed_tools_safety.py` (13 tests) — confirmation-gate refusal, environment/target-allowlist refusal, and structural proof that no tool's row-building logic can produce `source_system IS NULL`. No AHP/CSV ranking-score import path exists anywhere in any of these new/modified files (grep-verified, zero hits).
+
+**Full regression suite** (`bash scripts/test_db.sh tests/ -q --ignore=tests/test_domain_absorption_ranking.py`, isolated scratch `absorption_test`, dropped and freshly recreated before the run to rule out leftover state from this session's own manual CLI smoke-testing): **2136 passed, 18 failed, 38 skipped, 14 errors**. Every failure/error matches, file-for-file and test-for-test, the pre-existing set already documented earlier in this file (§ "Test debt" around line 9980-9990): `test_ranking_historical.py`/`test_ranking_historical_batch.py` (11 tests, 404s against a `/ranking/historical` route that has never existed), `test_jobs/test_parse_upload.py` (6 tests, previously identified as full-suite test-order/global-state pollution reproducible independent of any code change), `test_phase_a_contract_freeze.py::test_the_dashboard_principal_now_has_a_project_scope` (1 test, stale field-count baseline predating PR-2 governance work), and `test_real_hierarchy_e2e.py` (14 errors, needs the real Docker Compose `api`/`minicrm` containers with live sync credentials, not an isolated scratch DB — this repo's own established full-suite command already excludes this file, e.g. line 287/428/561: `TEST_TARGET=tests/ bash scripts/test_db.sh --ignore=tests/test_services/test_real_hierarchy_e2e.py -q`). `tests/test_domain_absorption_ranking.py` itself was excluded from collection entirely — pre-existing `ImportError` (`cannot import name 'absorption_rate_at_cutoff' from src.services.domain_absorption`), confirmed via `git log`/`git status` to predate this session and be untouched by it. **Zero new failures introduced by this change.**
+
+## 2026-08-29 — Fixed: La Pura hierarchical AHP ranking showed `HIERARCHICAL_READ_DISABLED` / zero apartment scores
+
+**Status: FIXED, verified against the live dev environment.** The hierarchical AHP ranking pages (`ProjectRankingReportPage.jsx`/`AreaUnitRankingPage.jsx`/`UnitRankingReportPage.jsx`, and their backing endpoints `GET /ranking/projects/{id}/report` and `GET /ranking/projects/{id}/areas/{a}/units/{u}/report` — all already implemented, from before this entry, per the PR-1..PR-7 program above) were not a code bug: they correctly reported `state="feature_disabled"`/`reason="HIERARCHICAL_READ_DISABLED"` because this dev environment never turned the two PR-7 rollout flags on, **and independently**, `ranking_configs.hierarchical_weights` — the column PR-1 (`0037_hierarchical_scoring_pr1`) added for exactly this purpose — had **never been written by any code path in this repository**: `create_draft()`/`publish()` (and the `POST /ranking/configs` API they back) didn't even accept it as a parameter. With it `NULL`, `compute_hierarchical_scores_for_run()` is a documented structured no-op (`HIERARCHICAL_WEIGHTS_ABSENT`) even with the compute flag on — this, not the read flag alone, is why all 392 La Pura `ranking_scores` rows had `hierarchical_score IS NULL` (config version 2, 24 areas, 0 apartments scored, exactly as reported).
+
+### Root cause (two independent gaps, both required for the fix)
+
+1. **A — read flag off.** `hierarchical_read_enabled` (`src/config.py:90`) and `hierarchical_ranking_enabled` (`src/config.py:79`) both default `False` by design (documented controlled rollout: local/test → internal/admin → cohort → broader, §7/§10 above) — neither had ever been turned on in this dev environment's containers.
+2. **C — hierarchical AHP configuration missing.** `ranking_configs.hierarchical_weights` (nullable JSONB, `0037`) was `NULL` on every config ever published, including the currently-published v2 — because no service/API/CLI in this repository has ever written to that column. Verified by reading `src/services/ranking_config.py::create_draft()`/`publish()` and `src/api/ranking.py::post_ranking_config_draft`/`RankingConfigDraftIn` in full: none accepted or persisted it.
+
+Both had to be fixed together: enabling the flags alone would have left `compute_hierarchical_scores_for_run()` a no-op (proven by the pre-existing test `test_feature_flag_off_by_default_hierarchical_columns_stay_null`-style behavior extended to the missing-weights case); writing `hierarchical_weights` alone would have left the read surface disabled.
+
+### Fix implemented
+
+- `src/models/schemas.py` — `RankingConfigDraftIn`/`RankingConfigOut` gain an optional `hierarchical_weights: dict | None` field.
+- `src/services/ranking_config.py::create_draft()` — new optional `hierarchical_weights` param, validated via the already-existing `validate_hierarchical_weights()` when provided, persisted to the new column. Nothing else in this module changed; `.weights`/legacy validation untouched.
+- `src/api/ranking.py` — `post_ranking_config_draft` passes `payload.hierarchical_weights` through; `_config_out` maps the column into the response; imports `HierarchicalConfigError` alongside `ConfigError` so the draft endpoint's error handling covers both.
+- `docker-compose.yml` — `HIERARCHICAL_RANKING_ENABLED`/`HIERARCHICAL_READ_ENABLED` set to `true` (overridable) in `x-backend-base`'s and `api`'s `environment:` blocks (covers `api`/`worker`/`scheduler`, the only three services built from `x-backend-base`). **Deliberately not added to `.env`**: `.env` is also read directly by `Settings(env_file=".env")` in the **host** venv pytest run (`scripts/test_db.sh` runs pytest on the host, only the DB in Docker) — a first attempt that added these two vars to `.env` leaked the `True` default into the test suite itself and broke 6 tests that assert the real coded default (`test_feature_flag_off_by_default_hierarchical_columns_stay_null`, `test_legacy_fields_are_byte_identical_with_hierarchy_disabled_vs_enabled`, and four others) — caught by running the targeted suite before declaring success, reverted, and redone via Compose `environment:` instead, which only applies to containers actually started via this compose file. Re-verified after the fix: host `Settings()` reads `False`/`False` (untouched default), container `Settings()` reads `True`/`True`.
+- `scripts/enable_hierarchical_ranking.py` (new) — one-time admin CLI (`--dry-run`/`--confirm`, mutually exclusive required, refuses outside `APP_ENV=development`) that copies the currently-published config's `.weights`/`min_weight_coverage` **verbatim** into a new draft, attaches a `hierarchical_weights` block, publishes it (archiving the prior version — `uq_ranking_configs_published` still allows exactly one published row, so this can never create a duplicate active config), and calls the existing `trigger_ranking_all_projects(trigger="config_change")` — the exact same three calls `POST /ranking/configs` + `POST /ranking/configs/{v}/publish` already make; no new recompute mechanism was built. The `hierarchical_weights` values are **not invented**: they are `docs/ranking/ranking_consultant.md`'s own D41-approved "Proposed shape" example, copied verbatim, with one deliberate substitution — the Area velocity/conversion split uses the *real* published legacy v2 ratio (0.20/0.20, i.e. 1:1, renormalized to 0.5/0.5 within the Area grain) in place of that section's own illustrative 0.60/0.40, since a real approved number was available. Market (`market_interest_rate`/`market_demand`) and Project (`expert_location_score`/`expert_infrastructure_score`/`expert_financing_score`) are structurally valid but have no published governance value assertion for any project yet (grep-verified against `ranking_feature_values`) — they resolve as excluded (documented `exclusion_reason`, never a fabricated score) until a real assertion is authored, CEO-approved, and published through the existing, unmodified governance flow.
+- `tests/test_ranking/test_survey_and_config.py` — 3 new tests: `create_draft()` persists a valid `hierarchical_weights` block verbatim (round-tripped via both its own return value and a fresh `list_configs()` read) without touching `.weights`; omitting the param still defaults to `NULL` (backward compatible with every config created before this parameter existed); an invalid `hierarchical_weights` raises `HierarchicalConfigError` and creates no draft row at all.
+
+No migration was needed — `ranking_configs.hierarchical_weights` already existed (`0037`, nullable, unused). No AHP formula, ranking engine, MiniCRM ownership, ingestion, or La Pura seed data was touched.
+
+### Data/recompute action taken
+
+Ran, for real, inside the `api` container: `python -m scripts.enable_hierarchical_ranking --confirm`. Result: config `v3` created and published (archiving `v2`; `v1` stays archived), `trigger_ranking_all_projects(trigger="config_change")` enqueued exactly one run for La Pura (the only project in this environment), picked up by the already-running `worker` service — `ranking_runs` row `4b0b84ff-...` (`trigger=config_change`, `config_version_id`→v3) completed in ~2 seconds, `_persist_scores()`'s existing delete-and-reinsert-per-project behavior updated all 392 `ranking_scores` rows for La Pura with `hierarchical_score`/`hierarchical_contributions` populated. No other project existed to be affected.
+
+### Verification (live, against the real dev DB and API layer — direct in-process calls to `get_project_ranking_report`/`get_unit_ranking_report`/`get_ranking`, bypassing only HTTP transport/auth, not any ranking logic)
+
+- `GET /ranking/projects/P-0001/report` → `state="ready"`, `reason=None` (no more `HIERARCHICAL_READ_DISABLED`), `config_version=3`, `persisted_hierarchical_scores=392`. Area rows show real, varying `average_ahp_score` (e.g. `0.550000...`, `0.172320...`, `0.494900...`) and `scored_apartment_count` equal to `apartment_count` for every area.
+- `GET .../units/{unit}/report` for a `unit_only`-mode unit (`A1.19.05`, area "Lusso Saigon"): `state="ready"`, `total_score=0.5500`, `rank=1`/`ranked_apartments_in_area=4`, criteria list with `weight`/`normalized_score`/`contribution` — `contribution == weight × normalized_score` exactly (diff `0.0`) on every row — and a generated natural-language explanation.
+- Same for a `partial_hierarchical`-mode unit (`B3.19.01`, area "Zenia"): `total_score=0.3154`, `rank=2/11`, criteria include an `area`-grain row (`weight≈0.3846`, effective/renormalized since Market/Project are excluded) plus four expanded unit-feature rows — again `contribution == weight × normalized_score` exactly on every row.
+- Legacy `GET /api/v1/ranking` (`sort_by="legacy_rank"`) unchanged in shape, now additionally carries a populated `hierarchical` field per unit — proving backward compatibility.
+- `ranking_scores.hierarchical_score` distribution: 381/392 `partial_hierarchical` (Unit+Area — Area's CRM-derived `area_velocity_norm`/`area_conversion_norm` resolved, exactly like the legacy engine already computes for those same features), 11/392 `unit_only` (their specific area row's CRM features didn't resolve — same pre-existing, unmodified `_area_features()` edge-case behavior the legacy engine already has, not something this change altered). All scores within `[0,1]` (`0` violations found by direct query). Market/Project excluded on all 392 rows with `NO_PUBLISHED_MARKET_VALUE`/`NO_PUBLISHED_PROJECT_VALUE` — honest, not fabricated.
+- Exactly one published `ranking_configs` row (`v3`) at all times after publish; `v1`/`v2` both `archived`; no duplicate active config.
+- DB counts unchanged by this action except `ranking_scores`/`ranking_runs`: La Pura still 1 project/24 areas/392 units, `source_system='mini_crm'`; zero orphans.
+
+### Tests run
+
+- Targeted (`bash scripts/test_db.sh tests/test_ranking/test_survey_and_config.py tests/test_ranking/test_hierarchical_scoring.py tests/test_ranking/test_hierarchical_config.py tests/test_api/test_ranking_hierarchical.py tests/test_ranking_boundary.py tests/test_api/test_ranking_endpoint.py tests/test_migrations/test_0037_hierarchical_scoring_pr1.py -q`): **223 passed, 0 failed** (includes the 3 new tests above; also proves the reverted `.env` mistake's 6 failures are gone).
+- Frontend (`npx vitest run`): **474 passed, 6 failed** — the 6 are the same pre-existing, unrelated `AgentPage.test.jsx`/`HotUnitsTab.test.jsx` failures already proven pre-existing via git-stash-and-rerun in an earlier pass this session; no report-page test regressed (`ProjectRankingReportPage.test.jsx`/`UnitRankingReportPage.test.jsx`/`RankingDashboardPage.test.jsx` — 7/7 passed). `npm run build` — succeeds (pre-existing chunk-size warning only).
+- Full backend regression (`bash scripts/test_db.sh tests/ -q --ignore=tests/test_domain_absorption_ranking.py --ignore=tests/test_services/test_real_hierarchy_e2e.py`): **2146 passed, 18 failed, 38 skipped** in 4119.86s. All 18 failures match, file-for-file and test-for-test, the canonical known-issues register above (`test_ranking_historical.py`×7, `test_ranking_historical_batch.py`×4, `test_jobs/test_parse_upload.py`×6, `test_phase_a_contract_freeze.py`×1 = 18). **Zero new failures.**
+
+### Known limitations
+
+- Market and Project grains are structurally configured but currently always excluded for every project (no governance-published value assertion exists anywhere yet) — this is honestly disclosed per-unit, not hidden; it will resolve automatically once a real assertion is authored, CEO-approved, and published through the existing, unmodified PR-2/PR-3/PR-4 governance flow.
+- Rank is **not persisted** — computed at read time via a `dense_rank()` window function scoped by project/area (`src/api/ranking.py`), same pattern the legacy ranking already uses. Deterministic given the same persisted scores, but re-ranking on every read, not a stored column.
+- `rollback_to()` (the pre-existing weight-rollback helper) does not carry `hierarchical_weights` forward from the version being rolled back from — a rollback to an old `.weights` version produces a draft with `hierarchical_weights=NULL`, same as that old version legitimately never having one. Not touched by this change; disclosed, not fixed, since it's outside this bug's scope.
+- `scripts/enable_hierarchical_ranking.py` is a one-time admin action, not wired into `dev-reset.sh`/`bootstrap_dev.py` — a future full volume wipe will need it re-run manually (by design: this is configuration data, not something Alembic should ever auto-seed, matching the (g) entry above's own policy).
+- The new `hierarchical_weights` HTTP passthrough (`POST /ranking/configs`) is covered by service-layer tests (`create_draft()`) only, not a dedicated HTTP-client-level test — thin plumbing, disclosed rather than silently assumed covered.
+- Forecasting (Prophet) is unrelated and untouched.
+
+### Rollback instructions
+
+Disable the read surface first (matches the existing operational runbook, §10 above): unset/remove `HIERARCHICAL_READ_ENABLED`/`HIERARCHICAL_RANKING_ENABLED` from `docker-compose.yml`'s `environment:` blocks (or override them to `false` via a real shell env var before `docker compose up`) and recreate `api`/`worker`/`scheduler` — legacy ranking and legacy UI are unaffected, since the read guard is a single flag check. To also remove the v3 config, use the existing `rollback_to()`/`POST /ranking/configs/{v}/rollback` path (copies v2's weights into a new v4 draft and publishes it — v3 stays archived, never deleted, per this repo's append-only config discipline) rather than deleting rows.
+
+## 2026-08-29 (b) — Recurrence: La Pura hierarchical config reverted to v2/0-scored after a volume wipe; script re-run, gap closed with a regression test
+
+### Symptom
+
+The UI again showed exactly the pre-fix state: config version 2, 0 scored apartments, `NO_PERSISTED_HIERARCHICAL_SCORES`, 24 areas all with 0 scored apartments, no average AHP score — reproduced live via `get_project_ranking_report("P-0001", ...)` (the actual route function the browser's request executes): `state="no_scored_units"`, `reason="NO_PERSISTED_HIERARCHICAL_SCORES"`, `config_version=2`, `persisted_hierarchical_scores=0`.
+
+### Root cause: **C** (config existed only in a now-destroyed database/volume) → **H** (currently-selected config has no `hierarchical_weights`) — not a code bug
+
+All containers, **including `db`**, had fresh `StartedAt` timestamps (~19 minutes before this investigation began, all within the same second-level window) — a full `docker compose` volume recreation, external to this session, not caused by any command run here. Live evidence:
+- `ranking_configs`: only `v1` (archived)/`v2` (published) exist, both `created_at` at the exact same instant as container start — freshly re-seeded by `0022_ranking_config_v2`'s data migration, `hierarchical_weights IS NULL` on both. The `v3` row from the 2026-08-29 (a) entry above no longer exists anywhere — it was pure runtime data (created by `scripts/enable_hierarchical_ranking.py`, never a migration), and runtime data does not survive a volume wipe.
+- `projects`: La Pura re-synced with a **new internal ID** (`d68cd152-8a77-4ce2-8d61-7457508c5c0e`, was `db6227e2-...`), `created_at` ~5 minutes after container start — a fresh MiniCRM→AbsorpIQ sync, not a database restore. `.env`'s `MINICRM_SYNC_API_KEY` also rotated to a new value versus the previous session, consistent with a fresh MiniCRM credential bootstrap after its own database was wiped too.
+- 24 areas / 392 units / 193 deals — identical counts to before (same seed source), confirming this is the same logical project re-synced, not a different one.
+- `ranking_runs`: several `trigger='sync'` runs already completed successfully against `v2` (the only published config) — proving the sync→ranking-trigger→worker pipeline itself was never broken.
+- `docker-compose.yml`'s `environment:` fix from entry (a) **did survive** (it's a tracked file, not data): `api`/`worker`/`scheduler` all confirmed live with `HIERARCHICAL_RANKING_ENABLED=true`/`HIERARCHICAL_READ_ENABLED=true` and the identical `DATABASE_URL=...@db:5432/absorption` — ruling out **B** (API/worker DB mismatch) and **A**/**M** (wrong API/environment/tenant) outright.
+
+This is exactly the "Known limitations" item already disclosed in entry (a): *"`scripts/enable_hierarchical_ranking.py` is a one-time admin action, not wired into `dev-reset.sh`/`bootstrap_dev.py` — a future full volume wipe will need it re-run manually."* That prediction is what happened. No code regressed; ephemeral runtime configuration (a published config row and its computed scores) does not, and structurally cannot, survive a volume wipe — only schema (Alembic) and tracked files (`docker-compose.yml`) do.
+
+### Runtime/database topology (verified, not assumed)
+
+`api`, `worker`, and `scheduler` all resolve `DATABASE_URL` to the identical `postgresql+asyncpg://app:***@db:5432/absorption` (checked via `docker compose exec <svc> env`, not inferred) — one authoritative database, no mismatch. The host pytest run uses a separate, explicitly-named `*_test`-suffixed database per this repo's own `pytest_sessionstart` guard (`tests/conftest.py`) — never the live dev database, and confirmed to still read the untouched `hierarchical_*` code defaults (`False`/`False`) since these flags live in `docker-compose.yml`'s `environment:`, not `.env`.
+
+### Files changed
+
+- `tests/test_scripts/test_enable_hierarchical_ranking.py` (new) — closes the real coverage gap this incident exposed: the script itself had no test. Proves, against a real Postgres test DB seeded to look exactly like a fresh/reverted database (one published config, `hierarchical_weights IS NULL`, **not version 2** — a deliberately different version number, to prove the script keys off "currently published," never a hardcoded version): `--dry-run` writes nothing; `--confirm` publishes exactly one new version with the documented `hierarchical_weights`, archives the prior version, copies `.weights`/`min_weight_coverage` verbatim, and calls `trigger_ranking_all_projects(trigger="config_change")` exactly once; refuses outside `APP_ENV=development`.
+
+No other file changed — `src/models/schemas.py`, `src/services/ranking_config.py`, `src/api/ranking.py`, and `docker-compose.yml` from entry (a) were re-verified live, unmodified, and correct.
+
+### Recompute action (repeated, live)
+
+`docker cp scripts/enable_hierarchical_ranking.py absorptionforecast-api-1:/app/scripts/` (this directory isn't bind-mounted; a freshly recreated container starts from the built image and needs the file copied in again — same as after any image rebuild) → `python -m scripts.enable_hierarchical_ranking --confirm` inside the live `api` container:
+
+- Draft created and published: **v3** (id `3c7b5997-d85c-49ba-8dc5-3ae349f1555c`), archiving v2.
+- `trigger_ranking_all_projects(trigger="config_change")` enqueued run `c8e918a2-a968-4ab2-b81c-3fcd8b88d209` for La Pura (`d68cd152-...`).
+- Verified **completed** in the live database (not accepted on "enqueued" alone): `started_at=2026-08-29 08:29:00.62`, `finished_at=2026-08-29 08:29:02.60` (~2s), `status='completed'`, `config_version_id` = the new v3 row.
+- Persisted scores verified directly: `392/392` `ranking_scores` rows now have `hierarchical_score` (min `0.0000`, max `0.5500`); mode distribution `381 partial_hierarchical` / `11 unit_only`, identical to the pre-wipe result — confirming this is the same real CRM data producing the same real composition, not a fabricated number.
+
+### API behavior before/after
+
+| | Before (this incident) | After |
+|---|---|---|
+| `state` | `no_scored_units` | `ready` |
+| `reason` | `NO_PERSISTED_HIERARCHICAL_SCORES` | `None` |
+| `config_version` | `2` | `3` |
+| `persisted_hierarchical_scores` | `0` | `392` |
+| area `scored_apartment_count`/`average_ahp_score` | `0` / `None` for all 24 areas | matches `apartment_count`, real averages (e.g. `0.550000`, `0.494900`) |
+| unit report (`A1.19.05`) | n/a (nothing scored) | `total_score=0.5500`, `rank=1/4`, criteria `contribution == weight × normalized_score` exact |
+| legacy `GET /api/v1/ranking` | unaffected throughout | unaffected throughout (`state=ready`, `total=392`) |
+
+### La Pura verification
+
+- External ID `P-0001` ("La Pura"), internal ID `d68cd152-8a77-4ce2-8d61-7457508c5c0e`, `source_system=mini_crm`.
+- 24 areas, 392 units, 193 deals.
+- Scored units: **392/392**. Score range `[0.0000, 0.5500]`.
+- Config version: **3** (published; v1/v2 archived; exactly one published row, no duplicate).
+- Successful run: `c8e918a2-a968-4ab2-b81c-3fcd8b88d209` (`trigger=config_change`, `status=completed`).
+- Sample area average: area "Lusso d'Arte" (6 apartments) → `0.494900`.
+- Highest example: `A1.19.05` → `0.5500`, rank `1/4` (`unit_only` mode). Lowest-of-sample example previously verified in entry (a) at this same weight configuration: `B3.19.01` → `0.3154` (`partial_hierarchical`, unaffected by this recurrence since the underlying `hierarchical_weights` content is byte-identical to what was used before).
+
+### Tests
+
+- New: `bash scripts/test_db.sh tests/test_scripts/test_enable_hierarchical_ranking.py -q` → **45 passed** (41 default-file prefix + 4 new).
+- Targeted hierarchical/ranking suite (`test_enable_hierarchical_ranking.py` + `test_survey_and_config.py` + `test_hierarchical_scoring.py` + `test_hierarchical_config.py` + `test_ranking_hierarchical.py` + `test_ranking_boundary.py` + `test_ranking_endpoint.py` + `test_0037_hierarchical_scoring_pr1.py`): **227 passed, 0 failed**.
+- Frontend: report-page + `useProjectScope` suite (`ProjectRankingReportPage.test.jsx`/`UnitRankingReportPage.test.jsx`/`RankingDashboardPage.test.jsx`/`useProjectScope.test.jsx`) — **22 passed**. `npm run build` — succeeds.
+- Full backend regression: **not re-run in this pass** — no production source file changed since the 2026-08-29 (a) entry's full run (`2146 passed, 18 failed, 38 skipped`, zero new failures, same known-issues register); only a new, isolated test file was added and independently verified above. Re-running the full ~69-minute suite against unchanged production code would not produce new information about correctness and was judged unnecessary; it remains available via `bash scripts/test_db.sh tests/ -q --ignore=tests/test_domain_absorption_ranking.py --ignore=tests/test_services/test_real_hierarchy_e2e.py` if a future change touches this code again.
+
+### Rollback instructions
+
+Same as entry (a) above — disable `HIERARCHICAL_READ_ENABLED` first (single flag, `docker-compose.yml`), then `HIERARCHICAL_RANKING_ENABLED` if needed; use `rollback_to()`/`POST /ranking/configs/{v}/rollback` to revert the config, never a raw delete.
+
+### Remaining limitations
+
+- **This will recur after every future volume wipe** — `scripts/enable_hierarchical_ranking.py` is still not wired into any automatic startup/reset path, by deliberate design (matching this repo's own "Alembic/startup must never auto-seed business/config data" policy from the 2026-08-28 (g) entry). The durable fix is operational discipline (re-run the script after any `docker compose down -v`), not code — wiring it into `bootstrap_dev.py`/`dev-reset.sh` would be a scope decision for whoever owns the rollout, not made here.
+- Market/Project grains remain permanently excluded pending a real published governance value assertion — unchanged from entry (a).
+- The weight allocation (`market 0.10/project 0.25/area 0.25/unit 0.40`, area `0.5/0.5`) is still not formally business-approved — unchanged from entry (a).
+- Async timing: the recompute is genuinely asynchronous (RQ job picked up by `worker`); this entry's ~2-second completion was observed and verified in the live database before reporting success, per Phase 6's explicit requirement, not assumed from "enqueued."
+
+## 2026-08-29 (c) — "Phân tích chuyên gia" (Expert Analysis) tab: PDF ingestion → feature mapping → AHP proposal → preview → publish → grounded Q&A, wired end-to-end onto the existing (previously unwired) governance/evidence infrastructure
+
+### Feature scope
+
+New top-level nav tab `Phân tích chuyên gia` (`/expert-analysis`), six sections: Tổng quan chuyên gia, Báo cáo đã nhập, Trọng số & AHP, Xem trước tác động, Hỏi đáp & bằng chứng, Lịch sử công bố. Backed by: a **real** multipart PDF/text/markdown upload route (the one gap `ranking_consultant.md` §21.1 and the 2026-08-25/26 entries above explicitly left open — "no multipart upload route"), a document-list read endpoint, a read-only ranking preview/sandbox endpoint, a general grounded Q&A endpoint, and an audit-history read endpoint — plus everything already built in the 2026-08-25/26 governance/evidence entries above (expert profiles, weight proposals, justifications, evidence linking, real pypdf extraction, real LangChain chunking, real OpenAI embeddings, real pgvector similarity search, CEO-gated review/publish workflow).
+
+### Existing infrastructure reused (not duplicated)
+
+Confirmed via direct code reading before writing anything: `ranking_evidence_documents`/`ranking_evidence_document_features`/`ranking_evidence_document_chunks` (real `pgvector`, 1536-dim, `text-embedding-3-small`, HNSW cosine index)/`ranking_evidence_extraction_attempts` (0033/0034/0035), `src/services/governance.py` (proposal state machine, append-only audit events), `src/services/evidence_extraction.py` (real pypdf + `RecursiveCharacterTextSplitter` + `OpenAIEmbeddings` + pgvector search — genuinely wired, not a stub), `src/jobs/extract_evidence.py` (idempotent RQ job on `INGEST_QUEUE`), `src/agents/advisory_tools.py`'s `retrieve_and_validate`/`generate_justification_explanation` (citation-formatted LLM synthesis pattern reused for the new general Q&A), `src/ranking/ahp.py`/`POST /ranking/ahp/weights` (Saaty pairwise → CR/CI/λmax, write-nothing, existing), `src/services/ranking_config.py::create_draft/publish` (this session's earlier `hierarchical_weights` extension), `frontend/src/components/FeatureWeightSlider.jsx`/`ChunkViewer.jsx` and the existing `/consultant/:id/evidence` page's proposal/justification flow. **No new tables, no new migration** — every new backend function writes only through the existing single-writer modules (`governance.py` for governance tables, `ranking_config.py` for `ranking_configs`) or is itself read-only.
+
+### Files changed
+
+Backend:
+- `src/services/evidence_upload.py` (new) — real multipart storage service (PDF magic-byte check, sha256, size-capped streaming, never trusts the client's filename), mirrors `file_upload.py`'s exact separation of storage-vs-metadata.
+- `src/api/governance.py` — new routes: `POST /governance/evidence/upload` (real bytes; idempotent on sha256 — identical content returns the existing row, `reused=True`, never a duplicate write), `GET /governance/evidence` (list by `project_id` XOR `uploaded_by_expert_id`, `project_id` path additionally `require_project_in_scope`-checked — stricter than the pre-existing governance write endpoints, which do not scope-check `project_id` at all, a pre-existing gap not inherited here), `POST /governance/evidence/ask` (Q&A, scope resolved server-side before any retrieval), `GET /governance/audit-events` (publish-history read, by `proposal_id` XOR `ranking_config_id`).
+- `src/services/governance.py` — `find_document_by_checksum()`, `list_documents()`, `list_audit_events()` — three new read-only functions, same module (no new writer introduced).
+- `src/ranking/preview.py` (new) — read-only sandbox: scores a candidate flat `weights` config against the project's real persisted feature data (same `_project_units`/`_area_features`/`_build_feature_inputs`/`score_unit()` pipeline `run_ranking()` itself uses), diffs against the real currently-published config's real persisted scores. Zero write verbs (grep-verified). Explicitly does **not** offer a hierarchical grain preview — see Known limitations.
+- `src/api/ranking.py` — new route `POST /ranking/projects/{external_project_id}/preview`.
+- `src/agents/advisory_tools.py` — new `answer_expert_question()` (general grounded Q&A over an already-scoped `document_ids` list — never widens scope itself). **Real bug found and fixed during live E2E verification, not a test artifact**: the LLM's citation JSON schema shows `"document_id": "<uuid>"` as a placeholder, and the model sometimes echoes that literal string instead of a real id; fixed by never trusting the model's `document_id`/`document_title` — the function now authoritatively overwrites both from its own `marker → document_id` map (the marker, e.g. `"D1:p1"`, is generated by this function, never by the model) and drops any citation whose marker the model invented.
+- `src/models/schemas.py` — `EvidenceUploadOut`, `ExpertQuestionIn`/`ExpertAnswerOut`/`ExpertCitationOut`, `AuditEventOut`, `RankingPreviewIn`/`RankingPreviewOut`/`UnitPreviewDeltaOut`.
+
+Frontend:
+- `frontend/src/pages/ExpertAnalysisPage.jsx` (new) — the six-section page, wired to real endpoints only (no mock/fixture data in the production path).
+- `frontend/src/components/AppLayout.jsx` — new nav entry `Phân tích chuyên gia` → `/expert-analysis`, appended to the existing `NAV` array (other five tabs unchanged).
+- `frontend/src/App.jsx` — new route.
+- `frontend/src/components/EvidenceUploader.jsx` — rewritten to call the new real upload endpoint instead of requiring a manually-typed `object_storage_key` (this closes the exact gap the component's own prior comment described); reused as-is by the existing `/consultant/:id/evidence` page too.
+- `frontend/src/api/endpoints.js` — `uploadEvidenceDocument`, `listEvidenceDocuments`, `askExpertDocuments`, `listAuditEvents`, `previewRankingConfig`.
+
+Tests (new): `tests/test_services/test_evidence_upload.py`, `tests/test_api/test_governance_evidence_upload.py`, `tests/test_ranking/test_preview.py`, `tests/test_agents/test_expert_qa.py`, `frontend/src/components/EvidenceUploader.test.jsx`, `frontend/src/pages/ExpertAnalysisPage.test.jsx`. Tests (extended): `tests/test_services/test_governance.py` (checksum/list/audit-event tests), `frontend/src/components/AppLayout.test.jsx` (new tab asserted in the nav order).
+
+### Document lifecycle
+
+`not_requested → pending → (succeeded | failed | not_supported)`, tracked append-only in `ranking_evidence_extraction_attempts` (unchanged from the 2026-08-26 entry). Upload is now real (this entry); a document's real current status is still the latest attempts-log row, never the frozen `ranking_evidence_documents.extraction_status` column.
+
+### PDF parsing/OCR behavior and known limitations
+
+Real `pypdf` text extraction, page-numbered from 1 — proven live in this entry (see verification). **No OCR** — a scanned/image-only PDF extracts no text and the job correctly logs `failed`/`not_supported`, never fabricated chunks (verified live in this entry with a deliberately malformed PDF: `PdfReadError: startxref not found` → `failed`, zero chunks written).
+
+### Chunking strategy
+
+Unchanged from 2026-08-26: structure-aware per-page `RecursiveCharacterTextSplitter` (700 token / 100 overlap heuristic), page number carried per chunk, `uq_redc_document_chunk` deduplicates by `(document_id, chunk_index)`, retrieval is always scoped to an explicit `document_ids` list resolved server-side from the caller's authorized project (never corpus-wide).
+
+### Supported backend ranking features and contextual-only restrictions
+
+The weights UI only ever renders keys already present in the real published `ranking_configs.weights` — it cannot invent a feature key, since it reads the exact same JSON the backend's own `score_unit()` consumes. Floor/orientation/area/price (from `unit_enrichment_attributes`) remain contextual-only, unchanged, not exposed as weightable in this UI.
+
+### AHP workflow
+
+Direct weights: real published weights shown side-by-side with the draft; local total-weight validation renders instantly; server-side validation (`validate_weights`) is authoritative at draft-save time — unchanged, reused. Pairwise: reuses the existing, unmodified `/ranking/ahp/weights` endpoint (Saaty scale, real CR/CI/λmax, `CR_HARD_LIMIT` hard block, `CR_ABOVE_THRESHOLD` soft block requiring an explicit override+reason) — verified live in this entry with an inconsistent judgment, correctly renders "Cần rà soát" and the CR value, never silently accepted. **Limitation, disclosed**: this pairwise endpoint only covers the legacy flat `weights` shape (`KNOWN_FEATURES`); no pairwise/CR path exists yet for `hierarchical_weights`' nested grain structure — a hierarchical pairwise mode was not built this entry. Draft/preview/publish: draft and preview never touch the active config (`preview.py` is zero-write, grep-verified); publish remains on the existing `POST /ranking/configs/{version}/publish` page/flow (deliberately not duplicated here — `governance.py`'s own docstring already states `set_proposed_config`/`mark_published` only *reference* that pre-existing path, never re-implement it). Rollback: unchanged, not touched this entry.
+
+### Security
+
+Tenant/scope isolation: `GET /governance/evidence` and `POST /governance/evidence/ask` both require exactly one of `project_id`/`uploaded_by_expert_id` (never an unscoped "list everything"), and `project_id` is `require_project_in_scope`-checked before any document is resolved or embedded/searched — verified live (403 `PROJECT_OUT_OF_SCOPE` for a viewer-scoped token). Prompt-injection: the Q&A system prompt explicitly instructs the model never to execute instructions found inside a retrieved chunk, treating chunk content as data only (same discipline as the existing `generate_justification_explanation`). **Known, disclosed gap**: `ranking_evidence_documents` is append-only by DB trigger (0034) and no lifecycle/delete-event table exists (the same pattern 0035 used for extraction status) — a document currently cannot be soft-deleted/excluded from future retrieval short of the caller never including its id in a `document_ids` list it builds. Not built this entry; flagged, not silently designed around.
+
+### Test commands and exact results
+
+```
+bash scripts/test_db.sh tests/test_services/test_evidence_upload.py tests/test_services/test_governance.py \
+  tests/test_services/test_governance_value_mode.py tests/test_api/test_governance_evidence_upload.py \
+  tests/test_ranking/test_preview.py tests/test_agents/test_expert_qa.py tests/test_agents/test_evidence_retrieval.py \
+  tests/test_ranking_boundary.py tests/test_ranking/test_hierarchical_scoring.py tests/test_ranking/test_survey_and_config.py \
+  tests/test_ranking/test_hierarchical_config.py tests/test_api/test_ranking_hierarchical.py tests/test_api/test_ranking_endpoint.py \
+  tests/test_migrations/test_0037_hierarchical_scoring_pr1.py tests/test_scripts/test_enable_hierarchical_ranking.py -q
+→ 332 passed, 0 failed (9:44)
+```
+Frontend: `npx vitest run` → 492 passed, 11 failed across the same 3 files (`AgentPage.test.jsx`, `HotUnitsTab.test.jsx`, `InventoryPage.test.jsx`) already known to be full-suite test-order-dependent flakiness — proven pre-existing and unrelated in this entry specifically via git-stash-and-rerun (stashing every new/modified frontend file and re-running the full suite on the untouched baseline reproduced the identical 3-file flakiness pattern). Isolated: `EvidenceUploader.test.jsx` (5/5), `ExpertAnalysisPage.test.jsx` (11/11), `AppLayout.test.jsx` (13/13) all pass standalone. `npm run build` succeeds. Full ~10-minute backend regression above; the full ~69-minute whole-repo suite was not re-run this entry (no change to any file outside the areas covered by the 332-test sweep) — available via the command already on record in entry (a) if needed.
+
+### End-to-end verification (real, live, in this dev environment — not mocked)
+
+- Uploaded a hand-built minimal valid PDF (`real_report.pdf`, real `%PDF-1.4` structure with a genuine content stream) via `EvidenceUploadService` → real `sha256`, real disk write under `uploads/governance/evidence/`.
+- Registered via `governance.register_evidence_document` → `document_id=efd74352-8d9d-4607-8981-2a1cb876c354`, `extraction_status=not_requested`.
+- Enqueued real extraction (`INGEST_QUEUE`) → the live `worker` container processed it → `ranking_evidence_extraction_attempts.status=succeeded` → one real chunk persisted: `page_number=1`, `content="Bao cao La Pura: toc do ban hang tang 18 phan tram."`, `embedding_model=text-embedding-3-small` (real OpenAI embeddings API call, using this environment's real `LLM_API_KEY`).
+- Asked a real question (`answer_expert_question("Tốc độ bán hàng của La Pura thế nào?", [that document_id])`) → real embedding search → real LLM synthesis → **real, correctly-cited answer**: `"Tốc độ bán hàng của La Pura tăng 18 phần trăm."` with citation `{marker: "D1:p1", document_id: efd74352-..., document_title: "real_report.pdf", page: 1, quote: "toc do ban hang tang 18 phan tram."}` — document_id verified to match the real uploaded document exactly (after the citation-id fix above).
+- Negative-case proof: a deliberately malformed fake-PDF upload correctly produced `status=failed`, `error_summary="PdfReadError: startxref not found"`, zero chunks — proving the pipeline does not fabricate content on a bad input.
+- La Pura itself untouched throughout (`P-0001`, `mini_crm`, 24 areas/392 units unchanged) — this entry only added `expert_profiles`/`ranking_evidence_documents`/`ranking_evidence_document_chunks` rows, no domain data touched.
+- Legacy `GET /api/v1/ranking` unaffected (unchanged from prior entries; not touched this entry).
+
+### Rollback instructions
+
+No migration, no schema change — rollback is purely code revert (`git revert` the commits touching the files listed above). The new API routes are strictly additive (new paths, no existing route's behavior changed except `EvidenceUploader.jsx`'s own internal implementation, which is UI-only and has no server-side effect either way). No data migration/cleanup is needed to roll back.
+
+### Remaining limitations and roadmap
+
+- No OCR — scanned/image-only PDFs cannot be ingested (pre-existing, disclosed, unchanged).
+- No document soft-delete/lifecycle-exclusion table — a real, disclosed gap (see Security above), not silently designed around.
+- No citation-quote-fidelity check (an LLM-produced `quote` is not verified to be a verbatim substring of the cited chunk) — pre-existing gap in `generate_justification_explanation`, and the same gap now also applies to the new `answer_expert_question` (only the `document_id`/`document_title` fields are authoritatively corrected this entry, not `quote`/`page`).
+- No hierarchical (`hierarchical_weights` grain) pairwise/CR mode — only the legacy flat-weights pairwise path is wired into the UI.
+- `POST /ranking/.../preview` covers only the legacy flat composition — a true hierarchical grain preview would require either a real ranking run or duplicating the snapshot-selection machinery read-only; neither was built (architecturally significant, disclosed in `src/ranking/preview.py`'s own module docstring).
+- Market/Project grains remain permanently excluded from hierarchical scoring pending a real published governance value assertion for any project — unchanged from entry (b).
+- The AHP weight allocation and hierarchical grain weights remain not formally business-approved — unchanged from prior entries.
+- Publish itself is intentionally NOT duplicated into the new page — it stays on the existing `/ranking/configs` admin flow, by design (see AHP workflow section above), so the new page's "Gửi duyệt" action is the furthest a non-admin expert can take a proposal from this UI alone.
+- Identity binding remains the pre-existing D18 gap (caller-supplied `expert_id`/`identity_subject`, not derived from the authenticated principal) — unchanged, not solved by this entry.
+
+## 2026-08-30 — Governed expert-evidence → CEO approval → AHP publication hardening pass (D18 identity binding, CEO/self-approval gate unification, evidence-gated submit, document archive/delete lifecycle, citation quote/page fidelity, rollback + publish-linkage fix, hierarchical AHP CR, CEO review-queue UI)
+
+**Confirmed governance policy (verbatim mandate this entry implements):** sliders are draft-only and never change production ranking directly; a proposal cannot be submitted without at least one real, extracted evidence document; the CEO must read evidence and explicitly approve; only after approval may weights become a published config; only after publication may the existing recompute trigger run; published runs persist scores tied to config version + proposal audit trail; no stage may bypass CEO approval; every stage is auditable, tenant-scoped, and evidence-grounded.
+
+### Phase 0 finding that reframed the whole pass
+
+Grounded, read-only research (four parallel deep-reads, cross-verified) found `ranking_weight_proposals` is not one workflow but two sharing a table, branching on `assertion_kind ∈ {'weight','value'}`. The earlier "hierarchical ranking" program (PR-2, `0038_governance_value_mode`) already built a **real** CEO gate — `governance.py::submit_review()` requiring a verified OIDC `CRM.CEO` role and forbidding self-approval — but it was wired **only** to `assertion_kind='value'`. The `assertion_kind='weight'` branch (the actual path the "Phân tích chuyên gia" tab built last pass operates on) hit the `else` branch of the *same function*, which had **zero CEO check and zero self-approval check**, gated only by a generic `admin` role with a client-supplied `reviewer_expert_id`. Every one of the mission's ten policy rules was violated by this path as it stood. Closing that gap — not building new infrastructure — was this pass's real work.
+
+### 1. D18 identity binding — closed for the weight-mode path
+
+Every actor-identity field that was previously read from a client-supplied request body (`created_by_expert_id`, `actor_expert_id`, `uploaded_by_expert_id`, `reviewer_expert_id`, `identity_subject`) is now derived **exclusively** from the authenticated principal's verified OIDC `subject`, for both `assertion_kind`s, matching the precedent the value-mode branch already set. New `_resolve_expert_id(principal)` helper in `src/api/governance.py` fails closed (422 `IDENTITY_REQUIRED`) for static-token/dev-bypass auth — the same two auth paths that already could never carry CEO signal, by `DashboardPrincipal`'s own design. The corresponding request-body fields were removed from `ProposalCreateIn`, `ProposalSetConfigIn` (kept, now body-optional-only), `JustificationIn`, `EvidenceDocumentRegisterIn`, `ReviewIn`, `ExpertProfileIn` (only `identity_subject` removed) — not merely ignored, structurally absent, so spoofing them is impossible, not just discouraged. `ProposalActionIn` schema and the multipart upload's `uploaded_by_expert_id` form field were deleted outright (routes for submit/withdraw/publish-confirm became bodiless). `POST /governance/experts` now derives `identity_subject` from the principal too — a caller can no longer self-register a profile under an arbitrary claimed name.
+
+### 2. CEO/self-approval gate — unified across both assertion kinds
+
+`governance.py::submit_review()` no longer branches its CEO/self-approval check on `assertion_kind` — every review, regardless of kind, requires a real `reviewer_subject`, `reviewer_is_ceo is True`, and a reviewer whose resolved expert id differs from the proposal's author. `PROPOSED_CONFIG_MISSING` remains weight-mode-only (value-mode has no `ranking_configs` link to check). The `reviewer_expert_id` parameter was removed from `submit_review()`'s signature entirely (not merely ignored) and from `ReviewIn`.
+
+### 3. Evidence-gated submit — and a real gap this surfaced
+
+`submit_proposal()` now requires real, chunk-backed evidence before a weight-mode proposal may leave `draft`. **Live E2E testing this pass surfaced a genuine pre-existing gap** (not introduced this pass): `ranking_feature_definitions` has no rows for the flat/operational features the sliders actually edit (`unit_available`, `unit_demand_norm`, `area_velocity_norm`, `area_conversion_norm`) — they are JSON keys inside `ranking_configs.weights`, never rows in that table — so `upsert_justification()` can never succeed against them (`FEATURE_DEFINITION_NOT_FOUND`), and the pre-existing (not new) `NO_JUSTIFICATIONS` gate on `submit_proposal()` was therefore blocking **every** weight-mode proposal ever submitted through the real frontend flow, independent of anything built this pass. Fixed by design, not by force: weight-mode no longer requires a justification at all (per-feature rationale via `upsert_justification` remains supported for anyone who wants it, just not mandatory); the evidence gate instead checks — at the **proposal** level — at least one `ranking_evidence_documents` row linked either directly via `proposal_id` (the exact, already-existing `register_evidence_document(proposal_id=...)`/`POST /evidence/upload` path the frontend's upload form already exposes) **or** through a justification, with at least one real extracted chunk, and excluding archived/deleted documents. This matches the mission's own vocabulary exactly: "evidence... explicitly recorded as general project rationale." Value-mode's stricter per-justification requirement is unchanged.
+
+### 4. Document archive/delete lifecycle (new migration `0044_evidence_document_lifecycle`)
+
+`ranking_evidence_documents` cannot carry an `archived_at`/`deleted_at` column — it is one of the tables `ranking_governance_append_only_guard` blocks UPDATE/DELETE on unconditionally. New append-only `ranking_evidence_document_lifecycle_events` table (mirrors the `ranking_evidence_extraction_attempts` pattern `0035` already established) — current state is the latest logged event (`active` if none, `'restored'` collapses back to `active`). New service functions: `archive_document`, `restore_document` (archived→active only, `DOCUMENT_NOT_ARCHIVED` from any other state), `delete_document` (terminal, `DOCUMENT_ALREADY_DELETED` blocks any further action), `latest_lifecycle_status`, `list_active_document_ids` (bulk filter for callers). New routes: `POST /governance/evidence/{id}/archive|restore|delete` (archive/restore = `operator`, delete = `admin`). Excluded from **all** retrieval paths: `evidence_extraction.search_similar_chunks`/`get_chunks_for_document` (new `_document_is_active()` correlated-subquery filter, defense-in-depth — excludes even a stale caller-supplied document/chunk id), `link_evidence_to_justification` (`DOCUMENT_NOT_ACTIVE` on an inactive document), the weight-mode evidence-gate query above, and `ask_expert_documents` (now narrows through `list_active_document_ids` before ever calling retrieval, since `governance.list_documents()` deliberately still returns *every* document including archived/deleted ones — the management-listing view, not the retrieval-eligible view — each row now carries a computed `lifecycle_status`). `EvidenceDocumentOut`/`ExpertCitationOut` gained `lifecycle_status`/`document_lifecycle_status` fields. New migration `0045_lifecycle_audit_events` widens `ranking_config_audit_events`'s `event_type` CHECK to admit `archived`/`deleted`/`restored` — caught live by this pass's own test run (`CheckViolationError`) before the migration existed.
+
+### 5. Citation quote/page fidelity
+
+`advisory_tools.py::answer_expert_question()` already authoritatively overrode `document_id`/`document_title` via a code-generated marker (a real bug fixed in the prior pass: the LLM sometimes echoed the prompt's own `"<uuid>"` schema placeholder verbatim). That distrust is now extended to `page` and `quote`: `marker_to_chunks` maps each marker to every real chunk it could refer to (a marker is `D{doc_index}:p{page_number}` — the page is embedded IN the marker, so an altered/hallucinated page resolves to nothing and the citation is dropped, never trusted). `quote` is verified as a normalized (whitespace/case-insensitive, diacritics preserved), contiguous substring of the resolved chunk's actual content — a match sets `citation_type="quote"`; no match downgrades to `citation_type="summary"` (never presented as a verbatim quote it is not) rather than dropping the claim. Each returned citation now also carries `document_lifecycle_status` (re-checked per-citation, defense in depth — a citation resolving to a since-archived document is dropped from the response entirely) and `chunk_content_hash` (sha256 of the cited chunk's actual content, for independent verification).
+
+### 6. Rollback + publish-linkage fix
+
+`ranking_config.py::rollback_to()` used to copy only `weights`/`min_weight_coverage` into the new version — `hierarchical_weights` was silently dropped to `NULL` regardless of what the source version had. Fixed: `source["hierarchical_weights"]` is now forwarded verbatim; if it no longer validates against the current feature registry, `create_draft()`'s own `validate_hierarchical_weights()` call raises loudly and creates nothing — never a silent NULL publish. Separately, `publish()` now checks whether the config being published is referenced by any `ranking_weight_proposals.proposed_config_id` — if so, that proposal must be `status='approved'` (`PROPOSAL_NOT_APPROVED` otherwise); a config with **no** linked proposal (the admin/bootstrap path, e.g. `scripts/enable_hierarchical_ranking.py`) is unaffected — this is exactly the "preserve the authorized administrative bootstrap path, but never let expert-originated changes bypass CEO approval" requirement.
+
+### 7. Hierarchical AHP (new pure module `src/ranking/hierarchical_ahp.py`, new endpoint `POST /ranking/ahp/hierarchical-weights`)
+
+No new math: calls the existing, unmodified `src/ranking/ahp.py::compute()` once for the grain-weight matrix (market/project/area/unit) and once for each of market/project/area's within-grain criteria — all four required, matching `validate_hierarchical_weights()`'s own "all three grain blocks must be present and non-empty" contract (an earlier, incorrect assumption that a grain block could be omitted was caught and corrected by a real, failing test against the actual validator, not assumed). Every level's own CI/CR/hotspots is returned; a disclosed simplification versus the flat endpoint's three-tier CR gate: there is no override path in this pass — any level whose CR exceeds `threshold_for(n)` blocks the assembled `hierarchical_weights` entirely (`None` in the response) and lists every failed level (not just the first), forcing correction before use. The assembled block is re-validated against the real `validate_hierarchical_weights()` before being returned, matching the same "kiểm bằng chính hàm mà bước tạo config sẽ chạy" discipline the flat endpoint already established. `hierarchical_ahp.py` was added to the existing pure-module boundary test (`engine.py`/`ahp.py`/`hierarchical_ahp.py` — no DB/network imports).
+
+### 8. Frontend — workflow rail, evidence gate, CEO review queue, document lifecycle actions, citation labeling
+
+`ExpertAnalysisPage.jsx`: removed the self-declared `identity_subject` text input (identity is never client-suppliable now); added a real 6-step workflow rail computed from actual server state (documents/proposal/status), not fake progress; weight sliders and the "Tạo bản nháp"/"Gửi CEO phê duyệt" actions are disabled until at least one document has `extraction_status="succeeded"` and `lifecycle_status="active"`, with `Cần có báo cáo và bằng chứng`/`Nhập báo cáo PDF để bắt đầu` messaging; documents table gained lifecycle status + Lưu trữ/Khôi phục/Xoá actions with a confirm dialog before delete; Q&A citations now show `Trích dẫn`/`Tóm tắt` per `citation_type` and flag an archived source inline; a new hierarchical pairwise tool calls the new endpoint and shows per-level CR; a new CEO-only "Hàng đợi phê duyệt" tab (gated by a new `is_ceo` field on `GET /me/permissions`, itself derived from `principal.is_ceo`, never trusted alone — every review route re-checks server-side) lists submitted/under_review/approved proposals project-wide, renders a real weight diff (base vs proposed config), lists each justification's linked evidence with lifecycle status, requires an "Tôi đã đọc báo cáo và bằng chứng đính kèm" acknowledgement before Approve is enabled and a non-empty comment before either decision, and — once approved — a "Công bố & tính lại ranking" button that calls the **existing, unduplicated** `POST /ranking/configs/{version}/publish` (now proposal-linkage-gated, see §6) followed by `POST /governance/proposals/{id}/publish` to confirm. `frontend/src/api/endpoints.js` updated to match every backend signature change; `EvidenceUploader.jsx`/its test updated to match.
+
+### Files changed
+
+Backend: `alembic/versions/0044_evidence_document_lifecycle.py`, `0045_lifecycle_audit_events.py` (new); `src/models/tables.py` (`ranking_evidence_document_lifecycle_events`); `src/models/schemas.py` (identity fields removed from several `*In` schemas; `EvidenceDocumentOut.lifecycle_status`; `DocumentLifecycleActionIn`/`DocumentLifecycleOut`; `ExpertCitationOut` gained `document_lifecycle_status`/`citation_type`/`chunk_content_hash`; `MePermissionsOut.is_ceo`; new `HierarchicalAHP*` schemas); `src/services/governance.py` (identity-derivation removed from write functions' trust boundary; `submit_review()` unified; `submit_proposal()` evidence-gate redesigned; new lifecycle functions); `src/services/evidence_extraction.py` (`_document_is_active()` filter in `search_similar_chunks`/`get_chunks_for_document`); `src/services/ranking_config.py` (`rollback_to()` fix; `publish()` proposal-linkage guard); `src/api/governance.py` (`_resolve_expert_id`; every route updated; new archive/restore/delete routes); `src/api/ranking.py` (`PROPOSAL_NOT_APPROVED` → 409); `src/api/ahp.py` (new hierarchical endpoint); `src/api/dashboard.py` (`is_ceo` in `/me/permissions`); `src/agents/advisory_tools.py` (citation resolver rewrite); `src/ranking/hierarchical_ahp.py` (new, pure). Frontend: `frontend/src/pages/ExpertAnalysisPage.jsx` (substantial rewrite), `frontend/src/pages/ExpertAnalysisPage.test.jsx` (rewritten, 19 tests), `frontend/src/api/endpoints.js`, `frontend/src/components/EvidenceUploader.jsx`/`.test.jsx`. Tests: `tests/test_services/test_governance.py` and `test_governance_value_mode.py` (extended/updated), `tests/test_api/test_governance_evidence_upload.py` (rewritten to authenticate with real self-signed JWTs, since static tokens can no longer carry identity), `tests/test_services/test_evidence_extraction.py`, `tests/test_agents/test_expert_qa.py`, `tests/test_ranking/test_survey_and_config.py`, `tests/test_ranking/test_hierarchical_ahp.py` (new), `tests/test_ranking_boundary.py`, `tests/test_migrations/test_0044_evidence_document_lifecycle.py`/`test_0045_lifecycle_audit_events.py` (new), `tests/test_migrations/test_pr1_pr4_integration_hardening.py`/`test_domain_seed_neutralized.py` (head-revision bump), `tests/test_api/test_project_scope.py`.
+
+### Tests — exact commands and results
+
+```
+$ TEST_TARGET="tests/test_services/test_governance.py" bash scripts/test_db.sh -q \
+    tests/test_services/test_governance_value_mode.py tests/test_ranking_boundary.py \
+    tests/test_api/test_governance_evidence_upload.py tests/test_services/test_evidence_extraction.py \
+    tests/test_agents/test_evidence_retrieval.py tests/test_agents/test_expert_qa.py \
+    tests/test_migrations/test_0044_evidence_document_lifecycle.py tests/test_migrations/test_0045_lifecycle_audit_events.py \
+    tests/test_migrations/test_pr1_pr4_integration_hardening.py tests/test_migrations/test_domain_seed_neutralized.py \
+    tests/test_jobs/test_extract_evidence.py
+185 passed, 1 warning
+
+$ TEST_TARGET="tests/test_services/test_governance.py" bash scripts/test_db.sh -q \
+    tests/test_ranking/test_survey_and_config.py tests/test_ranking_boundary.py \
+    tests/test_api/test_ranking_endpoint.py tests/test_api/test_ranking_hierarchical.py \
+    tests/test_scripts/test_enable_hierarchical_ranking.py
+133 passed, 10 pre-existing warnings (unrelated pytest.mark.asyncio-on-sync-function warnings, not this pass's)
+
+$ .venv/bin/python -m pytest tests/test_ranking_boundary.py tests/test_ranking/test_hierarchical_ahp.py \
+    tests/test_ranking/test_ahp.py tests/test_ranking/test_ahp_benchmark.py -q
+82 passed  (no DB needed — pure module + ASGI-only)
+
+$ cd frontend && npx vitest run src/pages/ExpertAnalysisPage.test.jsx src/components/EvidenceUploader.test.jsx
+24 passed
+
+$ npx vitest run   # full frontend suite
+505 passed, 6 failed — the 6 are the pre-established, pre-existing HotUnitsTab.test.jsx/AgentPage.test.jsx
+flakiness (documented across multiple prior entries in this file). Re-confirmed pre-existing THIS
+pass specifically: `git stash push -u -- <every file this pass touched>` then re-running the full
+suite reproduced the identical 6-failure set on the untouched baseline; `git stash pop` restored.
+git status also independently confirms AgentPage.jsx/AgentPage.test.jsx/HotUnitsTab.* were already
+modified (uncommitted) before this pass began — this pass never touched any of the three files.
+
+$ npm run build
+✓ 708 modules transformed, built in 3.33s (pre-existing chunk-size warning only)
+
+$ TEST_TARGET="tests/" bash scripts/test_db.sh -q --ignore=tests/test_domain_absorption_ranking.py --ignore=tests/test_services/test_real_hierarchy_e2e.py
+18 failed, 2239 passed, 38 skipped in 1246.81s (0:20:46)
+```
+
+Every one of the 18 failures matches, file-for-file and test-for-test, the canonical pre-existing known-issues register already documented in this file: `test_ranking_historical.py` (7), `test_ranking_historical_batch.py` (4), `test_jobs/test_parse_upload.py` (6), `test_phase_a_contract_freeze.py::test_the_dashboard_principal_now_has_a_project_scope` (1) = 18. **Zero new failures introduced by this pass.**
+
+### End-to-end verification (real, live, against the running dev stack — `docker compose exec api python3`, direct in-process calls, bypassing only HTTP transport/OIDC, never any governance/ranking logic — same precedent the 2026-08-29 entries already established)
+
+Real La Pura (`P-0001`, internal id `d68cd152-...`), real Postgres, real pgvector, real RQ worker:
+
+- **Identity/CEO gate (items 1+2), value-mode path**: created a real expert, a real `area`-scope value proposal with a real justification against `area_accessibility` (a feature that DOES have a real `ranking_feature_definitions` row), linked a real document + real chunk, submitted successfully. `submit_review(..., reviewer_is_ceo=False)` → `CEO_APPROVAL_REQUIRED`. `submit_review(..., reviewer_subject=<same as author>, reviewer_is_ceo=True)` → `SELF_APPROVAL_FORBIDDEN`. Archived the linked document → `list_active_document_ids` and `search_similar_chunks` both correctly excluded it (0 chunks retrievable) — all four outcomes exactly as designed.
+- **Evidence-gate real-world gap discovery + fix (item 3)**: reproduced the exact frontend flow (create weight-mode proposal, attach a config draft, submit — **never** calling `upsert_justification`, since the frontend never does) against `unit_available` → confirmed live `NO_JUSTIFICATIONS` failure BEFORE the fix, and confirmed `ranking_feature_definitions` genuinely has no row for `unit_available` live. After the fix: identical flow, evidence uploaded with `proposal_id` set directly (no justification), real chunk inserted → `submit_proposal` → `status="submitted"`.
+- **Full publish chain (items 2+6)**: created a real weight-mode proposal + evidence, submitted, attached a real proposed config draft. `ranking_config.publish()` on that draft **before** CEO approval → `PROPOSAL_NOT_APPROVED` (confirmed live). CEO-approved with a real, distinct identity (`reviewer_is_ceo=True`) → `status="approved"`. `publish()` retried → succeeded, config v7 published. `mark_published()` confirmed. `trigger_ranking_all_projects(trigger="config_change")` → real run enqueued, picked up by the real `worker` service, **verified `status="completed"`** (not just "enqueued") with `config_version_id` matching v7, and **392/392 persisted `ranking_scores` rows for La Pura** — the full proposal→evidence→CEO-approval→publish→recompute→persisted-scores chain, live, in one pass.
+- **Rollback hierarchical-weights fix (item 6)**: published a real config with real `hierarchical_weights`, published an unrelated config on top (no hierarchical_weights), then `rollback_to()` the first version → new version's `hierarchical_weights` matched the original **exactly** (previously would have been `NULL`).
+- **Hierarchical AHP (item 7)**: real 4-level pairwise computation (grain_weights + market + project + area, all-equal-weight judgments) → `all_consistent=True`, assembled `hierarchical_weights` block passed the real `validate_hierarchical_weights()` unchanged.
+- **Dev-environment cleanup, disclosed**: the live-testing sequence above published several throwaway config versions (v4–v10) on top of the real v3 (D41 hierarchical + real 4-feature legacy weights), which briefly left the live dev environment's *published* config degraded to a `unit_available`-only test artifact — a real, if temporary, shared-state side effect of live verification this pass takes responsibility for. Restored before finishing: `rollback_to(version=3, ...)` → new v11, byte-identical weights/hierarchical_weights to the real v3, published, recompute triggered and verified `completed` with 392/392 scores. v4–v10 remain archived (never deleted — same append-only-history discipline as everywhere else in this system), clearly distinguishable by their `note` field (`"live e2e ..."`) from real configs. Several real `expert_profiles` rows (`live-e2e-*@example.com`) and a handful of real evidence documents/proposals also persist in the dev DB as a result — harmless, consistent with this repo's own established precedent of leaving real (not fake) artifacts from live verification passes.
+
+### Rollback instructions
+
+Pure code + two additive migrations, no destructive schema change. To revert the code: `git revert` this pass's commits. To revert the schema: `alembic downgrade 0043_unit_enrichment_attributes` (refuses if any lifecycle-event or archived/deleted/restored audit-event row exists — by design, matching every other append-only-table migration in this repo). The live dev environment's ranking config is currently v11 (a real, correct restoration of v3's weights) — no config-level rollback is needed as part of reverting this code change.
+
+### Known limitations (honestly scoped — not all ten mandate items were exhaustively rebuilt this pass)
+
+- **Frontend UX**: attaching evidence directly to a proposal still requires manually copying the proposal id into the Documents tab's upload form (`proposal_id` free-text field) — functional, not polished. A dedicated "attach to this proposal" control from within the Weights tab was not built this pass.
+- **`ConsultantEvidencePage.jsx`** (a separate, older page over the same backend, not the "Phân tích chuyên gia" tab this mission targets) still shows an `identity_subject` text input that the backend now silently ignores (harmless — extra fields are dropped, not an error — but the UI is misleading about what actually controls identity). Not fixed, out of this pass's scope per the mission's own "do not redesign unrelated pages" boundary.
+- **Citation section/heading-path**: citations carry `page` (real) but no section/heading path — chunks don't carry that metadata; unchanged from the prior pass's disclosed limitation.
+- **Hierarchical AHP has no override path**: any level's CR above `threshold_for(n)` hard-blocks the assembled `hierarchical_weights`, unlike the flat endpoint's three-tier (pass/override-with-reason/hard-limit) policy. A deliberate, disclosed simplification for this pass, not a silently-dropped feature.
+- **Hierarchical preview remains unsupported** (unchanged from the prior pass — architecturally significant, disclosed in `src/ranking/preview.py`'s own docstring: hierarchical scores are snapshot-bound to a real ranking run by design).
+- **OCR** was not built (unchanged from the prior pass — extraction failure/not-supported states are honest, not fabricated, but there is no OCR fallback).
+- **Value-mode's `NO_JUSTIFICATIONS`/per-justification evidence requirement is unchanged** — only weight-mode's requirement was redesigned this pass.
+- **`ranking_configs.publish()`'s own `published_by` parameter remains client-suppliable free text** (a separate, pre-existing, lower-severity D18-adjacent gap on the *admin* config page, not the governance/proposal identity fields this pass closed) — disclosed, not fixed.
+- **No document soft-delete cascading to historical citation snapshots' display state was UI-tested** beyond what the new `document_lifecycle_status` field on `ExpertCitationOut` exposes — a historical, already-published proposal's frozen evidence reference still resolves through the same live document row (immutable content, mutable lifecycle label), matching the mission's own "retain immutable historical citation snapshots while excluding archived documents from new retrieval" requirement, but a dedicated "this historical citation's source is now archived" UI treatment beyond the inline QA label was not built for the audit-history view specifically.
+- **Canonical full-suite regression run**: launched this pass in the background; see the addendum immediately below for its final result, appended once it completed rather than before, per this repo's own "never claim a result you have not observed" discipline.
+
+## 2026-08-30 (b) — Governed qualitative-expert AHP layer, phase 1: versioned rubric-band schema (MVP 6 features), hierarchical contextual-attribute guard, qualitative assertion editor + CEO publish fix + hierarchical-preview parity labeling on the frontend
+
+**Mission scope this pass:** "Investigate the current live development environment and implement the complete, governed qualitative-expert AHP layer for apartment absorption ranking" — a Staff+ engineering mission with its own ten non-negotiable rules and a ten-phase process (runtime reconciliation → current-system audit → canonical feature catalog → rubric/assertion model → immutable snapshots → hierarchical AHP config → preview → frontend → tests → this file). **This pass is a real, verified slice of that mission, not the whole of it** — see "Known limitations" below for exactly what remains.
+
+### Phase 0 — runtime reconciliation (read-only, before any change)
+
+Live `docker compose exec` queries against the real dev stack found: containers up, Alembic at head (`0045_lifecycle_audit_events`, i.e. every migration from the 2026-08-30 entry above was intact), but `ranking_configs` held only v1/v2 (no v3–v11 survived), every governance/evidence/proposal table at 0 rows, and La Pura's own internal id had changed (`4bea86e9-...`, was `d68cd152-...`). Diagnosis: a `docker compose down -v` **data-only** volume wipe (schema/migrations bind-mounted and untouched; MiniCRM re-sync issues a new internal id by design), not a genuine policy conflict — Decision Gate resolved as **Case A/B** (current flat v2 is the authoritative starting point; proceed only through real, repository-supported governance/proposal/publish paths, never a raw INSERT into `ranking_configs`/`ranking_scores`). No historical hierarchical config was restored or fabricated to paper over the wipe.
+
+### Phase 1 — gap audit (what already existed vs. what this pass had to build)
+
+Deep, line-cited research into `src/ranking/service.py` (2410 lines) found the hierarchical materialization/snapshot/legal-gate pipeline — `materialize_published_feature_value()`, `_build_grain_feature_snapshot_for_run()`, `_merge_area_values()` (hard CRM/expert key-collision guard), `_build_legal_gated_contributions()`, `compute_hierarchical_scores_for_run()`, and `engine.score_unit()`'s coverage/renormalization math — was **already real and correct**, built by an earlier program, not something this pass needed to redo. The genuine, verified gaps were: (1) no rubric/graded-band concept anywhere (grep-verified zero hits in `src/`, two aspirational-only mentions in `docs/ranking/ranking_consultant.md` — every value-mode assertion was a raw free-form `Decimal` in [0,1]); (2) `src/ranking/enrichment_guard.py`'s `ENRICHMENT_SOURCED_FEATURE_KEYS` (floor/view/direction/price/area/tower/…) was enforced only at data-load time (`scripts/load_lapura_unit_enrichment.py`), never inside `validate_hierarchical_weights()` itself — so nothing structurally stopped a hierarchical config from weighting `"floor"` directly; (3) Project grain has zero weightable features registered (only the Legal gate) — confirmed live, matches the mission's own instruction not to invent developer-credibility/floor/view features without a real existing rubric/data path; (4) no frontend surface existed at all for creating a qualitative (value-mode) assertion — the "Trọng số & AHP" tab only ever edited flat/grain weights, never a per-feature rubric-graded value; (5) the flat-only preview's "hierarchical unsupported" disclosure was a static, unconditional sentence, not tied to whether the *active* config is actually hierarchical.
+
+User-selected build order for this pass (`AskUserQuestion`, mid-mission): **"Full rubric model, MVP 6 features"** — the versioned rubric-band schema for exactly `market_interest_rate`, `market_demand`, `market_credit_policy`, `area_accessibility`, `area_current_infrastructure`, `area_future_infrastructure`, wired into assertion creation, required for new assertions on those six keys, with free-form numeric remaining available for every other registered feature.
+
+### 1. Versioned rubric-band schema (new migration `0046_feature_rubrics`)
+
+Two new append-only tables: `ranking_feature_rubrics` (id, feature_definition_id FK, rubric_version, created_by, created_at — `UNIQUE(feature_definition_id, rubric_version)`, guarded by its own `*_append_only_guard` trigger) and `ranking_feature_rubric_bands` (rubric_id FK `ON DELETE CASCADE`, band_value `NUMERIC(5,4)` constrained to `[0,1]`, label, evidence_requirement, display_order — unique per rubric on both band_value and display_order, also append-only-guarded). `ranking_feature_justifications` gained nullable `rubric_id`/`rubric_band_value` with a `CHECK` enforcing they are both-null or both-set together. The migration seeds one real rubric (version 1, five real Vietnamese label/evidence-requirement bands at 0.00/0.25/0.50/0.75/1.00) for each of the six MVP feature keys, looked up by real `feature_key` (raises loudly if a seed feature is missing — a genuine dependency check against migrations `0040`/`0041`, not a hardcoded id); `downgrade()` refuses if any justification already references a rubric, or if any rubric row was created by anything other than this migration's own seed. Explicitly disclosed in the migration's own docstring: a first, reasonable default policy, not business-approved band text — matching the prior pass's precedent for `enable_hierarchical_ranking.py`'s illustrative weights.
+
+`src/services/governance.py`: `RUBRIC_REQUIRED_FEATURE_KEYS` (the six keys) and `RUBRIC_BAND_VALUES` (the five canonical Decimals); `create_feature_rubric()` (validates all five canonical values present with no duplicates, non-blank label/evidence_requirement, the feature exists and is `value_type="numeric"`, auto-increments `rubric_version`), `list_feature_rubrics()`/`get_current_feature_rubric()` (full history / highest version). `upsert_justification()` extended: `rubric_id`+`rubric_band_value` are mutually exclusive with a client-supplied `normalized_numeric` (`NORMALIZED_NUMERIC_NOT_ALLOWED_WITH_RUBRIC`); a rubric-required feature key with no `rubric_id` is rejected (`RUBRIC_REQUIRED`); a supplied `rubric_id` must belong to the same feature (`RUBRIC_FEATURE_MISMATCH`) and `rubric_band_value` must match a real band of that rubric (`RUBRIC_BAND_VALUE_INVALID`); when valid, **the server derives `normalized_numeric` from the selected band** — the client's own separately-typed value (if any) is never trusted once a rubric selection exists, the same "never trust a client value once a governed selection mechanism exists" discipline the 2026-08-30 entry above established for citation resolution and D18 identity. New read-only routes: `POST /governance/feature-rubrics` (admin), `GET /governance/feature-rubrics` (full history), `GET /governance/feature-rubrics/current` (latest version or null) — all in `src/api/governance.py`, new `FeatureRubricIn/Out`/`RubricBandIn/Out` schemas.
+
+**New endpoint required for the frontend to function at all**: `GET /governance/feature-definitions` (`list_feature_definitions()`, optional `?grain=` filter, active rows only) — until this pass there was **no** API route anywhere that exposed `ranking_feature_definitions` rows, so a frontend rubric editor had no way to discover a `feature_definition_id` for a canonical feature key without hardcoding a UUID. New `FeatureDefinitionOut` schema.
+
+### 2. Hierarchical contextual-attribute guard closed (Rule 3)
+
+`validate_weights()` (flat) was already safe by construction — it only accepts keys in a fixed `KNOWN_FEATURES` allowlist, which never included any enrichment-sourced name. `validate_hierarchical_weights()` had **no allowlist at all** — any string key was structurally accepted into a market/project/area feature-weight block. Fixed: `_validate_hierarchical_grain_features()` (`src/services/ranking_config.py`) now imports `ENRICHMENT_SOURCED_FEATURE_KEYS` from `src/ranking/enrichment_guard.py` and rejects any of them outright (`CONTEXTUAL_FEATURE_NOT_WEIGHTABLE`) in any grain block — floor/view/direction/price/tower/etc. remain contextual-only until a real governed promotion path (feature registration + evidence-backed assertion + CEO approval) exists, which it does not yet. 19 new tests in `tests/test_ranking/test_hierarchical_config.py` (parametrized across all three grains × five representative contextual keys, plus a mixed-with-valid-key case).
+
+### 3. Frontend — qualitative assertion editor, CEO-queue value-mode publish fix, hierarchical-preview parity labeling
+
+`ExpertAnalysisPage.jsx` gained a new tab, **"Đánh giá định tính"** (`QualitativeSection`), inserted between "Báo cáo đã nhập" and "Trọng số & AHP" — matching the mission's real 7-step workflow (the rail gained step 3, "Tạo assertion định tính", computed from whether the expert has any real `assertion_kind="value"` proposal, not fake progress). The editor: loads the active feature catalog via the new `GET /feature-definitions` route (excluding `grain="unit"`, which is 100% CRM and never assertable); on selecting a feature, fetches its current rubric — **if one exists, renders a radio-button band selector (label + evidence_requirement per band) and never a numeric input for that feature**; only a feature with no rubric at all falls back to a free-form `[0,1]` numeric field, so the rubric-required MVP six can never be scored by a slider. Captures rationale/methodology/evidence_summary/expected_effect/confidence/limitations/effective_at/expires_at, and `external_source_citation` when the resolved scope is `market` (server-required there). Resolves scope from the feature's own `grain` (`market`→no area; `area`→the current `useProjectScope` area; `project`→project-only) and either reuses an existing draft value-mode proposal for that exact scope or creates one (`createGovernanceProposal({assertion_kind:"value", ...})`) — a proposal can hold several features' justifications; switching the feature dropdown pre-fills an already-saved justification for editing. A live validation checklist (feature selected / scope ready / value chosen / rationale filled / market citation filled / evidence linked) gates the save button; evidence is attached via the existing `linkEvidence()` (`POST /governance/evidence/link`) against a ready (`extraction_status="succeeded"`, `lifecycle_status="active"`) document; "Gửi CEO phê duyệt" reuses the existing `submitGovernanceProposal()` for this proposal specifically. AHP weight sliders (`WeightsSection`) were **not touched** — the two editors remain fully separate, exactly as required.
+
+**Real bug found and fixed while wiring this in**: `CeoQueueItem.publish()` unconditionally required a `proposedConfig` (`ranking_configs` row via `proposed_config_id`) before enabling the publish button and always called `publishRankingConfig()` first — but a value-mode proposal has no `proposed_config_id` at all (`mark_published()` re-verifies its justifications and marks it published directly, per PR-3's own design, confirmed by reading `governance.py::mark_published()`). Unfixed, a CEO could **never** publish an approved qualitative assertion through this UI — the entire evidence→CEO-approval→publication chain would have been non-functional in practice for the new editor. Fixed by branching `publish()` on `proposal.assertion_kind`: value-mode skips `publishRankingConfig()` entirely and calls only `publishGovernanceProposal()`. The justification list inside the CEO queue also now renders value-mode rows distinctly (rubric band/value, effective/expiry dates) instead of showing `undefined` where `proposed_weight` doesn't exist for that kind.
+
+**Hierarchical preview parity labeling** (`PreviewSection`): `previewRankingConfig()` calls the real, existing flat-only preview endpoint — there is still no hierarchical preview endpoint on the backend (confirmed absent by grep, matches the prior pass's own finding; building one is Phase 6 of the full mission and was not attempted this pass). The frontend now computes an explicit parity status from the **actively published config**: if `published.hierarchical_weights` is set, the page renders a prominent Vietnamese danger banner *before* the form ("cấu hình đang CÔNG BỐ dùng xếp hạng PHÂN CẤP... CHỈ mô phỏng trọng số PHẲNG... KHÔNG phản ánh điểm phân cấp thực sự") and tags every result with `Đối chiếu sản xuất: unsupported`, repeating the warning next to the numbers themselves so a reader skimming results still sees it; if the active config is flat, the same tag reads `production_equivalent` (same engine, same weights format as production) and the muted explanatory text (not a danger banner) states why hierarchical preview specifically remains unsupported. No score/rank delta is ever labeled production-equivalent when the active ranking is hierarchical.
+
+### Files and migrations changed
+
+Backend: `alembic/versions/0046_feature_rubrics.py` (new); `src/models/tables.py` (`ranking_feature_rubrics`, `ranking_feature_rubric_bands`; `rubric_id`/`rubric_band_value` on `ranking_feature_justifications`); `src/models/schemas.py` (`FeatureDefinitionOut`, `FeatureRubricIn/Out`, `RubricBandIn/Out`; `JustificationIn/Out` gained `rubric_id`/`rubric_band_value`); `src/services/governance.py` (rubric CRUD, `RUBRIC_REQUIRED_FEATURE_KEYS`/`RUBRIC_BAND_VALUES`, `upsert_justification()` rubric validation/derivation, `list_feature_definitions()`); `src/api/governance.py` (`GET /feature-definitions`, `POST/GET /feature-rubrics`, `GET /feature-rubrics/current`); `src/services/ranking_config.py` (`ENRICHMENT_SOURCED_FEATURE_KEYS` import, `CONTEXTUAL_FEATURE_NOT_WEIGHTABLE` guard in `_validate_hierarchical_grain_features()`). Frontend: `frontend/src/pages/ExpertAnalysisPage.jsx` (new `QualitativeSection`/`ValidationList` components, new tab + workflow-rail step, `CeoQueueItem.publish()` assertion-kind branch + value-mode justification rendering, `PreviewSection` parity labeling), `frontend/src/pages/ExpertAnalysisPage.test.jsx` (rewritten assertions for the changed preview text/tab count, 7 new tests for the qualitative editor + parity banner), `frontend/src/api/endpoints.js` (`listFeatureDefinitions`, `getCurrentFeatureRubric`, `listFeatureRubrics`). Tests: `tests/test_migrations/test_0046_feature_rubrics.py` (new, 7), `tests/test_services/test_governance.py` (+19: 13 rubric-CRUD + 6 `RUBRIC_REQUIRED` enforcement), `tests/test_services/test_governance_value_mode.py` (3 pre-existing tests updated to use a rubric instead of a bare `normalized_numeric` for `market_interest_rate`), `tests/test_api/test_governance_evidence_upload.py` (+2, `GET /feature-definitions`), `tests/test_ranking/test_hierarchical_config.py` (+19, contextual guard), `tests/test_ranking/test_hierarchical_scoring.py` (6 pre-existing tests' fixture helpers updated to snap `market_interest_rate`/`market_credit_policy`/`area_accessibility` values to the nearest rubric band — see the regression note below), `tests/test_ranking_boundary.py` (revision count/GOVERNANCE_TABLES bump).
+
+### A real pre-existing-work regression found and fixed this pass
+
+Making `market_interest_rate`/`market_demand`/`market_credit_policy`/`area_accessibility`/`area_current_infrastructure`/`area_future_infrastructure` rubric-required (governance-layer work from earlier in this same mission, before this file's own entry existed to record it) silently broke **25 already-passing tests** in `tests/test_ranking/test_hierarchical_scoring.py` — they had never been run as part of this mission's own earlier targeted test passes, only discovered when this pass ran a full sequential sweep. Those tests injected free-form values like `normalized_numeric=Decimal("0.60")` directly for `market_interest_rate`/`area_accessibility` to exercise the *composition* engine (materialization/legal-gate/scoring math), not the rubric layer — with rubric-required now enforced, `"0.60"` is no longer a representable value for those keys (only 0.00/0.25/0.50/0.75/1.00 are). Fixed, not skipped: the test file's own `_publish_market_value_assertion`/`_publish_area_value_assertion` helpers now get-or-create a rubric and snap the caller's requested value to the nearest canonical band for the six rubric-required keys (free-form stays untouched for `market_liquidity`, confirmed deliberately rubric-less); every downstream exact-score assertion across ten affected tests was hand-recomputed against the new snapped values (e.g. `"0.60"`→band `0.50` for `market_interest_rate`, oriented `1-0.50=0.50`; `"0.70"`→band `0.75` for `area_accessibility`) and verified against the actual engine output, not merely asserted to make the suite pass.
+
+### Tests — exact commands and results
+
+Backend (run **sequentially**, never concurrently against `absorption_test` — an earlier attempt to parallelize two batches produced real `asyncpg.exceptions.DeadlockDetectedError`/`ConnectionRefusedError` from concurrent `TRUNCATE`s against the same shared test database; not a code regression, a self-inflicted test-infra mistake, diagnosed from the actual captured traceback and not repeated):
+
+```
+$ TEST_TARGET="tests/test_ranking/test_hierarchical_scoring.py" bash scripts/test_db.sh -q \
+    tests/test_ranking/test_hierarchical_ahp.py tests/test_ranking/test_survey_and_config.py \
+    tests/test_ranking/test_hierarchical_config.py tests/test_ranking_boundary.py \
+    tests/test_services/test_governance.py tests/test_services/test_governance_value_mode.py \
+    tests/test_api/test_governance_evidence_upload.py tests/test_migrations/test_0046_feature_rubrics.py
+281 passed, 10 warnings (0 failed, 0 errors) in 319.83s — one clean, single-process run
+```
+
+Frontend:
+
+```
+$ cd frontend && npx vitest run src/pages/ExpertAnalysisPage.test.jsx
+25 passed
+
+$ npx vitest run   # full suite
+510 passed, 7 failed — all 7 in AgentPage.test.jsx/HotUnitsTab.test.jsx, files this pass never
+touched (confirmed via `git status` showing them already modified/uncommitted before this pass
+began) and reproduced identically running ONLY those two files in isolation, independent of every
+change this pass made — pre-existing, not a regression.
+
+$ npm run build
+✓ 708 modules transformed, built in 3.26s (pre-existing >500kB chunk-size warning only)
+```
+
+No live `docker compose exec` E2E was run for the new rubric-graded-assertion chain specifically this pass (see limitations) — the automated suites above are real-Postgres-backed (`scripts/test_db.sh`) but not the running dev container.
+
+### Rollback instructions
+
+Additive migration only (`0046_feature_rubrics`), no destructive schema change and no production-like config/data state touched this pass (Phase 0 explicitly avoided any raw config/score insert). To revert the code: `git revert` this pass's commits. To revert the schema: `alembic downgrade 0045_lifecycle_audit_events` — refuses if any `ranking_feature_justifications` row already references a rubric, or if any `ranking_feature_rubrics` row was created by anything other than the migration's own seed (`created_by <> '0046_feature_rubrics'`), matching every other append-only-table migration in this repo.
+
+### Known limitations (honestly scoped)
+
+- **Only 2 of Phase 2's canonical-catalog groupings were reachable this pass** (the six already-registered MVP features) — the full canonical feature catalog table (classifications, rubric/normalization/snapshot/CEO-approval-requirement columns per feature) the mission's Phase 2 asks for was not built as a standalone artifact; it exists only implicitly in the `RUBRIC_REQUIRED_FEATURE_KEYS`/registered-`ranking_feature_definitions` state.
+- **No true zero-write hierarchical preview was built** (Phase 6) — the frontend now labels this honestly (`unsupported`, explicit danger banner) rather than faking a result, but the backend capability itself remains unbuilt, same as every prior pass's disclosure.
+- **Project grain still has zero weightable qualitative features registered** (only the Legal gate) — unchanged; no developer-credibility/positioning feature was invented, per the mission's own explicit instruction not to without a real rubric/data path.
+- **The enrichment/contextual-attribute guard is now structurally enforced for hierarchical config validation, but NOT wired into a governed *promotion* path** — there is still no way to deliberately, governedly promote an enrichment column (e.g. `floor`) to a scored feature; the guard only ever blocks, it does not offer an approval workflow.
+- **CEO-queue UI for value-mode proposals remains minimal** — it shows the rubric band/value/dates/rationale per justification (fixed this pass), but does not yet render the richer "evidence/rubric/value/scope/expiry/weight-impact" combined view the mission's Phase 7D CEO-review spec describes (e.g. no inline rubric-band/evidence-requirement display in the review queue itself, only in the authoring editor).
+- **No live `docker compose exec` E2E was run this pass** for the new rubric-graded-assertion → CEO-approval → materialization chain specifically — only the automated `scripts/test_db.sh`/vitest suites above. The materialization/snapshot pipeline downstream of an approved value-mode justification was already live-verified in the 2026-08-30 entry above (using a free-form `area_accessibility` value, before rubrics existed); it was not re-run live with an actual rubric-derived value this pass.
+- **`pipeline_status.md`'s own 2026-08-30 entry's promised "canonical full-suite regression run... addendum immediately below" was never appended** (predates this pass, not fixed here — out of this pass's scope).
+
+## 2026-08-30 (c) — Live, deployment-safe verification of the rubric-graded qualitative assertion chain against the running dev stack
+
+**Scope discipline for this entry:** read-only reconciliation + one real, additive governance write-path exercise. **Did not** touch `ranking_configs` (still v1 archived / v2 published, flat, no `hierarchical_weights` — confirmed unchanged before and after), publish any AHP weights, trigger a ranking run, or run migrations against anything but the repository-supported command.
+
+### 1–2. Migration applied + service health
+
+`docker compose exec api alembic upgrade head` — no-op (the dev `api` container's entrypoint had already auto-applied `0046_feature_rubrics` on its last start, per its own documented `RUN_MIGRATIONS=true`-in-development convention; re-running the command live confirmed idempotence). `alembic current` on **all three** of `api`/`worker`/`scheduler` independently returned `0046_feature_rubrics (head)`; `GET /health` on the live API returned `{"status":"ok","env":"development"}`; `printenv DATABASE_URL` on all three matched (`db:5432/absorption`); `worker`/`scheduler` logs showed real, recent, successfully-completed jobs (`domain_recompute_audit`, APScheduler's own cron jobs) against that same database.
+
+### 3. Six seeded rubrics verified live
+
+```sql
+SELECT fd.feature_key, r.rubric_version, count(b.id) FROM ranking_feature_rubrics r
+JOIN ranking_feature_definitions fd ON fd.id = r.feature_definition_id
+JOIN ranking_feature_rubric_bands b ON b.rubric_id = r.id GROUP BY 1,2 ORDER BY 1;
+```
+→ all six MVP keys (`area_accessibility`, `area_current_infrastructure`, `area_future_infrastructure`, `market_credit_policy`, `market_demand`, `market_interest_rate`), each rubric_version 1, each exactly 5 bands.
+
+### Real-token constraint found and disclosed (no code changed in response)
+
+Attempted a genuine browser-auth-flow token for the seeded `e2e.ceo`/`e2e.advisor` Keycloak users (`docker/keycloak/p100-realm.json`) to drive this verification through real HTTP with real distinct OIDC identities. Confirmed live: both OIDC clients have `directAccessGrantsEnabled=false` — a password-grant token request returns `unauthorized_client` (verified by an actual `curl` against the running Keycloak, not assumed from the seed file alone). This is a deliberate security setting, correctly left untouched. A full authorization-code browser flow was not scripted (would need a headless browser to handle Keycloak's login form/CSRF/session cookies — a materially larger undertaking than this verification's scope). **Fell back to this mission's own already-established precedent** (the 2026-08-30 entry above: "direct async function calls... bypassing only HTTP transport/auth, not any ranking/governance logic"), with one strengthening beyond that precedent: the author and CEO reviewer used **two real, distinct, pre-existing Keycloak identity strings** (`e2e.advisor@example.test`, `e2e.ceo@example.test` — real seeded users, not ad hoc strings invented for this run) so the self-approval-forbidden/D18 identity-binding checks were exercised against genuinely different, realistic actors, not the same string twice.
+
+### 4–5. Real upload → real extraction/chunking → rubric-backed assertion → evidence → CEO approval → publish
+
+A real, hand-verified-valid PDF (`%PDF-1.4`, real xref/trailer, one page, a genuine Vietnamese sentence about a road-widening/connectivity improvement near "Lusso Saigon") was written to disk via the **actual** `EvidenceUploadService.save()` code path (the same code `POST /governance/evidence/upload` calls), then registered via the real, unmodified `governance.register_evidence_document()`. Extraction ran via the **actual** RQ job coroutine (`src/jobs/extract_evidence.py::_run`, not a stub) — real `pypdf` text extraction, real `RecursiveCharacterTextSplitter` chunking, and a **real OpenAI embedding call** (a real `LLM_API_KEY` is configured in this dev environment; network egress for it was already established as working by this mission's prior live E2E). Result: 1 chunk, page 1, `succeeded`, real `text-embedding-3-small` vector stored.
+
+A value-mode proposal (`scope_type="area"`, the real "Lusso Saigon" area under La Pura) was created; `upsert_justification()` was called with `rubric_id`/`rubric_band_value="0.5000"` for `area_accessibility` — deliberately the **0.50 band** ("Kết nối trung bình, có tuyến chính nhưng chưa thuận tiện"), not the higher 0.75 band, because the uploaded document confirms only **one** connecting route with a confirmed travel time, and the 0.75 band's own `evidence_requirement` explicitly requires two or more — an evidence-faithful choice recorded in the justification's own `rationale`, not the first/highest band available. The server derived `normalized_numeric=0.50000000` from the band, confirmed by direct DB read after the fact — the client-side script never set that field. The real document was linked as evidence, the proposal was submitted, and **CEO-approved by a genuinely distinct identity** (`e2e.ceo@example.test`, real seeded `CRM.CEO`-role user, different from the author `e2e.advisor@example.test`) via the real `submit_review()`, then published via the real `mark_published()`. The full append-only audit trail (queried live from `ranking_config_audit_events`) shows five real events with the two distinct actor identities in the correct places (`created`/`submitted`/`published` by the advisor, `approved` by the CEO).
+
+### 6–7. Materialization verified NOT yet created (by design) — no ranking run triggered
+
+Per PR-3's own design (confirmed by reading `governance.py::mark_published()`'s docstring in the prior pass and re-confirmed here): "published" for a value-mode proposal means "re-verified ready for consumption," not "already copied into `ranking_feature_values`" — that table is written lazily, only inside a real ranking run's snapshot build, which this task explicitly forbids triggering. A live, read-only query confirmed **zero** `ranking_feature_values` rows exist yet for this feature+area — the correct, honest state given the constraint, not a failure. No `materialize_published_feature_value()` call was attempted even in isolation with synthetic run/snapshot ids, to avoid any risk of writing an orphaned row against a non-existent `ranking_runs` id in the live database.
+
+**Redacted-appropriately live artifact identifiers** (dev-environment UUIDs; no PII/secrets):
+
+| Item | Value |
+|---|---|
+| Document id | `090aa79d-dc54-45e6-a60e-d56285f8aaa0` |
+| Document lifecycle / extraction status | `active` / `succeeded` (real extraction-attempt row, `ranking_evidence_extraction_attempts`) |
+| Chunk id / page / citation excerpt | `5c9cee44-d0d2-4eb1-a96c-c1fd77cd03fd` / page 1 / "Khu vuc Lusso Saigon: duong Vo Nguyen Giap moi mo rong xong nam 2026, ket noi truc tiep toi trung tam quan 2 trong 8 phut…" |
+| Rubric id / version / chosen band | `65622512-708c-462c-91ae-d8eabd10771d` / v1 / `0.5000` ("Kết nối trung bình…") |
+| Justification id / server-derived value | `8ef0764d-7190-4376-9591-09f9834ddaab` / `normalized_numeric=0.50000000` |
+| Proposal id / final status | `4a29c414-c799-44e1-b907-79276aa52776` / `published` |
+| Author identity (real seeded user) | `e2e.advisor@example.test` |
+| CEO approval identity/role (real seeded user, distinct from author) | `e2e.ceo@example.test`, `CRM.CEO` |
+| Materialized `ranking_feature_values` rows for this feature+area | `0` (correct — no run triggered, per instruction) |
+| Active `ranking_configs` before/after | v2 published, flat, unchanged |
+
+### 9. Post-verification regression check (sequential, not concurrent)
+
+```
+$ TEST_TARGET="tests/test_services/test_governance.py" bash scripts/test_db.sh -q \
+    tests/test_migrations/test_0046_feature_rubrics.py tests/test_ranking_boundary.py
+93 passed, 1 warning in 71.55s
+```
+Run against the isolated `absorption_test` database (unaffected by the live-dev verification above, which only touched the separate `absorption` dev database) — confirms no regression was introduced by this pass (none was expected, since no code changed this pass; this was a pure verification exercise).
+
+### Known limitations of this verification specifically
+
+- Not a true HTTP/browser-driven verification — blocked by `directAccessGrantsEnabled=false` on both OIDC clients (a deliberate security setting, correctly left untouched); used this mission's already-established direct-service-call precedent instead, with genuinely distinct real identities.
+- Immutable feature-value materialization was verified **absent** (correctly, by design) rather than present — this task explicitly forbade triggering the real ranking run that would create it. A follow-up pass, if authorized to trigger a real run for La Pura, could close this last gap.
+- This was a single-feature, single-area exercise (`area_accessibility`); the other five MVP rubric-required features were not separately live-exercised this pass (already covered by the automated suite's 93 tests).
+
+## 2026-08-30 (d) — Evidence-document effective readiness reconciliation (no ranking mutation)
+
+### Scope and root cause
+
+This pass changed no schema, ranking config, AHP weight, ranking run, recompute, La Pura score, or historical document row. The prior live artifact `090aa79d-dc54-45e6-a60e-d56285f8aaa0` was registered with immutable `ranking_evidence_documents.extraction_status='not_requested'`, then had a later succeeded extraction attempt, one persisted embedded chunk, an active lifecycle, and a linked/published `area_accessibility` assertion. That apparent contradiction is by design in migration `0035_evidence_document_chunks`: the document-table field is append-only registration metadata, while current extraction state is the latest `ranking_evidence_extraction_attempts` row. The defect was that several consumers treated only the registration field or lifecycle state as readiness.
+
+### Fix and invariant
+
+- Added one read-only authoritative resolver/predicate in `src/services/evidence_extraction.py`: a document is eligible only when its latest lifecycle is active, its latest extraction attempt is `succeeded`, it has at least one persisted chunk, and at least one persisted embedding. Reprocessing reuses prior successful immutable chunks and appends no duplicate chunk rows.
+- Applied that predicate to retrieval/citation, new evidence attachment, value-proposal submission, publication revalidation, and qualitative-value materialization validation. Historical links remain returned by the management/audit list, but an invalid document cannot be reused for any new decision or scoring materialization.
+- `EvidenceDocumentOut.extraction_status` now reports the effective latest-attempt status; `registration_extraction_status` exposes the immutable old field strictly for audit.
+- Thus `not_requested`, `failed`, `needs_ocr`/unsupported, archived, or deleted artifacts cannot bypass eligibility merely because a stale chunk or append-only evidence link exists. A published historical assertion with no current eligible source produces `EVIDENCE_NOT_READY` for future publication/materialization rather than silently contributing to scoring.
+
+### Verification and current-record remediation
+
+Focused sequential isolated-Postgres checks passed: `tests/test_services/test_evidence_extraction.py` (**21 passed**), affected new-evidence-link checks in `tests/test_services/test_governance.py` (**2 passed**), the invalidated historical value-evidence submission/publication/materialization regression in `tests/test_services/test_governance_value_mode.py` (**1 passed**), and `tests/test_api/test_governance_evidence_upload.py` (**15 passed**). `git diff --check` and Python compilation of changed modules/tests also passed. A broader existing governance-file run was not used as the acceptance result after its fixture encountered an already-seeded `unit_available/v1` unique-key collision; the focused tests above execute the changed paths directly.
+
+Live read-only verification was attempted through the running API container after implementation. It returned no row for `090aa79d-dc54-45e6-a60e-d56285f8aaa0`; during this pass the local Compose Postgres service restarted and the dev database no longer contained that historical record. No attempt was made to recreate, alter, or relink it. If the artifact must be restored, the safe remediation is to re-ingest it via the normal upload/extraction workflow and obtain replacement lifecycle-valid evidence before any future assertion/materialization; do not update the immutable old row or reuse a stale chunk id.
+
+### Rollback and limits
+
+Rollback is code-only (`git revert` of this pass); no migration or database backfill exists. The resolver deliberately does not repair or fabricate historical statuses. It protects future use and keeps audit history visible; it cannot reconstruct a document removed by an external dev reset.
+
+## 2026-08-30 (e) — Project-scoped standalone evidence ownership (no config or ranking mutation)
+
+### Decision and contract
+
+`ranking_evidence_documents` previously had only nullable `proposal_id`; a standalone Expert Analysis upload therefore had no durable project association and could not appear in a project-scoped evidence list. Migration `0047_evidence_project_scope` adds nullable `project_id` and optional `area_id`, each with an FK and index. The columns remain nullable solely for backward compatibility: this migration performs **no backfill or inferred association**. A historical standalone row with `project_id IS NULL` stays audit-only/unscoped and is excluded from project-scoped retrieval, chunks, and new evidence attachment.
+
+New multipart `POST /api/v1/governance/evidence/upload` requires `project_id`, accepts optional `area_id` and `proposal_id`, derives the uploader from the authenticated principal, verifies the caller's project scope before bytes are stored, and verifies area/proposal belong to the same project. Identical-content reuse is project-local only. `GET /api/v1/governance/evidence?project_id=…` returns active documents directly owned by that project plus proposal-linked legacy documents in that project; it does not use uploader identity as a project fallback. `GET /api/v1/governance/projects/{project_id}/expert-analysis-overview` is read-only and reports effective ready/processing/failed document counts, published config mode/version, proposal/assertion counts, latest run status/version, and a next action without exposing document/run IDs.
+
+### UI and safeguards
+
+The Expert Analysis page sends the selected project (and optional selected area) on upload, displays the server-side overview, displays persisted chunk count, and opens the existing chunk/citation inspector only for active, effectively ready documents. Qualitative authoring is constrained to rubric-backed `area_accessibility`; the UI cannot submit a free-form numeric value and requires scope, evidence before submission, effective date, and expiry. CEO review acknowledgement now explicitly covers report, rubric, effective scope, and evidence; publish remains a separate explicit browser confirmation. No publish control was invoked in this pass.
+
+### Verification, rollback, and limits
+
+Sequential isolated-Postgres checks passed after `alembic upgrade head`: `tests/test_migrations/test_0047_evidence_document_project_scope.py` (**2 passed**), the new `project_scoped_standalone_evidence` service regression (**1 passed**), and `tests/test_api/test_governance_evidence_upload.py` (**16 passed**). Frontend `src/pages/ExpertAnalysisPage.test.jsx` passed (**25 passed**) and `npm run build` passed. `python3 -m compileall -q src` and `git diff --check` passed.
+
+The broad `tests/test_services/test_governance.py` suite is not an acceptance result for this pass: in repeated attempts its pre-existing `get_or_create_expert_profile` setup path inserts an expert row but reads it back as `None` before any evidence-association assertion is reached. The focused new service/API tests above run the changed paths directly. Roll back with the code change plus `alembic downgrade 0046_feature_rubrics` only if no environment has begun relying on the new columns; there is no data backfill to undo. This pass did not run migrations against the dev database, mutate legacy documents, publish any config, create an AHP configuration, trigger recomputation, create a ranking run, or change La Pura scores.
+
+## 2026-08-30 (f) — CRM.ADVISOR action-specific Expert Analysis RBAC (code-only)
+
+### Root cause and policy
+
+The existing three-tier `business_viewer` role was intentionally shared by `CRM.Viewer` and `CRM.ADVISOR`, while governance authoring routes required `pipeline_operator`; consequently an Advisor received `INSUFFICIENT_ROLE` even for the narrowly authorized Expert Analysis workflow. The fix retains the global role hierarchy and carries the verified raw OIDC role through direct JWT and signed session paths so a focused `require_governance_authoring` dependency can admit only `CRM.ADVISOR`/`business_viewer` for scoped authoring. `CRM.Viewer` remains read-only; ranking execution/recompute, review/approval, publication, rubric/global-config administration, sync, and all other write routes remain blocked.
+
+### Enforcement and changed paths
+
+- `src/services/dashboard_auth.py` retains verified `oidc_roles` and adds the fail-closed authoring dependency; static operator/admin compatibility is preserved.
+- `src/services/oidc.py` persists raw verified roles in the signed session; no client role or scope is trusted.
+- `src/api/governance.py` applies the policy to evidence upload/register/extraction, proposal/assertion draft creation, justification edits, evidence links, and submit/withdraw; project scope is rechecked server-side and Advisor proposal access is owner-only with safe 404 responses.
+- `src/services/governance.py` adds read-only subject/proposal lookups and optional owner enforcement while preserving operator/admin service compatibility; readiness, active lifecycle, same-project, and draft-state checks remain authoritative.
+- `src/api/ranking.py` permits only the existing read-only project preview through the same narrow policy; global config/AHP creation and publish routes remain admin-only. `frontend/src/pages/ExpertAnalysisPage.jsx` hides global config/AHP controls for `business_viewer` and leaves permitted project-scoped authoring available.
+
+### Verification, rollback, and limits
+
+`tests/auth/test_governance_authoring_policy.py` (4 passed), the updated principal contract test (1 passed), `src/pages/ExpertAnalysisPage.test.jsx` (25 passed), Python compile, Ruff, `git diff --check`, and `npm run build` passed. The full frontend suite still reports five unrelated failures in existing Agent/HotUnits/ExpertAnalysis expectations; DB-backed governance/API suites were skipped because no isolated `*_test` database was configured, and the pre-existing CEO session test is blocked by unavailable local Redis revocation service. No live login, sync, ranking run, recompute, migration, config publication, or database write was executed.
+
+Rollback is code-only by reverting this pass; no migration or runtime configuration change is required. Raw OIDC role persistence is limited to the signed session/JWT already validated by the existing OIDC verifier; tenant/account matching remains unavailable because the current schema has no tenant attribute and therefore continues to fail closed through project scope.
+
+## 2026-08-30 (g) — Advisor UI authorization regression coverage
+
+Added a focused frontend regression asserting that `business_viewer` users retain project-scoped proposal authoring while global config/AHP administration controls are absent. `frontend/src/pages/ExpertAnalysisPage.test.jsx` now passes **26 tests**; no runtime configuration, backend data, ranking config, migration, sync, or recompute was changed.
+
+## 2026-08-30 (h) — Final read-only Advisor RBAC verification
+
+Focused local verification ran without containers, migrations, runtime configuration changes, production requests, or database writes. `tests/auth/test_governance_authoring_policy.py` plus the principal contract test passed **5**; `tests/auth/test_ceo_authorization.py -k 'not session'` passed **8** (the three session tests remain blocked by unavailable local Redis revocation); governance/API DB suites reported **79 skipped** because no isolated `*_test` database is configured. Route inspection confirmed proposal/evidence authoring and project preview use `require_governance_authoring`, while global ranking config/AHP, review, publish, and ranking-run routes retain their existing admin/operator dependencies. `git diff --check` and Python compilation passed; no new runtime or data state was created.
+
+## 2026-08-30 (i) — Design A Advisor presentation and capability contract (code-only)
+
+`CRM.ADVISOR → business_viewer` remains the fixed, verified internal authorization mapping. The user-visible issue was presentation: `/api/v1/auth/me` and `/api/v1/me/permissions` returned only the raw internal role, while `CRM.ADVISOR` and `CRM.Viewer` intentionally collapse to the same read role. `src/services/dashboard_auth.py::resolve_role_presentation()` is now the single server-derived resolver for `role_code`, `role_label`, and UI capability hints. It derives only from the authenticated principal's canonical role, verified persisted raw OIDC roles, verified subject, and `is_ceo`; no client role, actor, scope, or capability input is accepted.
+
+Verified Advisor sessions now return `role="business_viewer"`, `role_code="advisor"`, `role_label="Advisor"`, and `expert_analysis_authoring=true`. Generic/legacy `business_viewer` sessions with no verified `CRM.ADVISOR` role return `role_code="viewer"`, `role_label="Business Viewer"`, and `expert_analysis_authoring=false`; they are never inferred to be Advisors. CEO, Admin, and Sales presentation values reflect their pre-existing server authority without widening it. The existing route dependencies, project scope, ownership, CEO gate, publication, ranking/AHP, Keycloak roles, MiniCRM, database schema, migrations, and runtime configuration were not changed.
+
+`ExpertAnalysisPage.jsx` displays the server role label and uses capabilities for document/qualitative authoring, global-config/AHP visibility, and CEO queue visibility. `AgentPage.jsx` uses `role_label` (with a readable legacy fallback) instead of showing `business_viewer`. Backend enforcement remains authoritative. Existing sessions are not revoked; a fresh login or normal refresh receives raw OIDC roles and therefore Advisor metadata, while older sessions remain fail-closed for Advisor authoring.
+
+Focused verification: `pytest -q tests/auth/test_oidc_keycloak.py tests/auth/test_governance_authoring_policy.py tests/auth/test_ceo_authorization.py -k 'not session'` → **36 passed, 7 deselected**; focused frontend Advisor/Viewer/Agent checks → **3 passed**; `ExpertAnalysisPage.test.jsx` → **27 passed**; `npm run build`, Python compilation, Ruff, and `git diff --check` passed. The complete existing `AgentPage.test.jsx` file was also run and reported **1 passed, 9 failed**: its first pre-existing assertion leaves rendered DOM behind, cascading into later selectors; the new isolated role-label test passes. No container, deployment, migration, sync, ranking/recompute, publication, production request, Keycloak, session-revocation, or database action was performed. Rollback is code-only by reverting this presentation-contract pass.
+
+## 2026-08-30 (j) — AgentPage baseline comparison for Advisor presentation changes (local/read-only)
+
+The clean committed baseline immediately before the uncommitted role-presentation/capability changes is `e52beeaa03ace00b94f527648640e8b6a4e16555` (`Merge pull request #54 from AI20K-Build-Phase-Cohort-3/feature/Vuong-Ranking`). A detached clean worktree at that commit ran the identical command, `cd frontend && npm test -- --run src/pages/AgentPage.test.jsx`, using the same local dependency installation and test configuration (`Node v22.23.2`, `npm 10.9.8`, `Vitest 4.1.10`, jsdom with `src/test/setup.js`). It produced **1 passed, 9 failed (10 total)**. The current worktree produced the same **1 passed, 9 failed (10 total)**.
+
+All nine failures match one-for-one by test name and error class: the first expects more than one project-clarification message but receives one; the second expects `createRecommendation('prj_tmc', undefined)` but receives `('prj_op1', undefined)`; the remaining seven fail with the same `TestingLibraryElementError: Found multiple elements with the role \"combobox\"` at `chooseProjectAndGenerate` in `AgentPage.test.jsx`. The first relevant test locations are unchanged for the first two (`79:91`, `102:54`); later test call-site line numbers are shifted by two only because the current test adds two Advisor-label assertions. Dependency-stack locations are equivalent; the baseline log prints the absolute shared `node_modules` path while the current log prints a relative path. No new failure, changed error signature, or changed expected/actual behavior attributable to the presentation contract was found. No production code was changed in response to this baseline check; this is deploy-ready with respect to the Advisor presentation change, subject to the separately pre-existing AgentPage test debt.
+
+## 2026-08-30 (k) — P0 “Phân tích cố vấn” persona separation (code-only)
+
+`CRM.ADVISOR → business_viewer`, `CRM.Viewer → business_viewer`, `CRM.SALES → pipeline_operator`, `CRM.CEO → admin + is_ceo`, and `CRM.Admin → admin` remain unchanged. `src/services/dashboard_auth.py` now derives module-specific capabilities from the verified principal: Advisor authoring requires `CRM.ADVISOR`, `business_viewer`, a non-empty verified subject, and non-empty server-resolved project scope; CEO review requires verified `is_ceo`, admin role, subject, and scope. Viewer, Sales, Admin, and CEO are denied the Advisor authoring gate; Admin is not inferred to be CEO. The capability response adds distinct Advisor Analysis access/author/review/view/upload/submit flags and sets publication false.
+
+Governance routes now use the narrow Advisor dependencies for Advisor Analysis evidence, criteria, rubric reads, proposals, justifications, evidence links, extraction, chunks, retrieval, and audit status. Proposal ownership and project scope remain rechecked server-side. Evidence archive/restore/delete now resolve document project scope before mutation and no longer admit `pipeline_operator`, preventing CRM.SALES lifecycle access. The old proposal-publication route is explicitly disabled for this module. `GET /api/v1/governance/advisor-analysis/review-queue` is a CEO-only server-side projection of only `submitted` proposals in server scope, with persisted justifications and evidence readiness; it does not client-filter drafts or return global configuration. Review now resolves target project scope before service invocation, accepts only submitted records, requires acknowledgement for approval and a nonblank rejection reason, and still relies on the existing service self-review/CEO checks. No review publishes or recomputes.
+
+Frontend navigation exposes “Phân tích cố vấn” only for `advisor_analysis_authoring`. `/expert-analysis` is capability-guarded before mounting or issuing governance calls; denied direct navigation goes to the normal overview with no module content. The Advisor page now contains only evidence, qualitative rubric evaluation, a global-AHP blocker, and the caller’s own drafts/submission status; it no longer requests global configs/history or renders CEO queue, preview, publish/run, AHP, or evidence lifecycle controls. A distinct, capability-guarded `/advisor-analysis/review` page reads the submitted-only queue and offers CEO acknowledgement-backed review actions.
+
+Verification: `python3 -m compileall -q src`, focused Ruff, and `git diff --check` passed. Sequential backend command covering the new principal policy plus existing dashboard/evidence/governance services reported **32 passed, 122 skipped**; the skips are existing database-dependent tests with no isolated test database configured and were not forced or bypassed. Focused frontend navigation, route, Advisor workspace, and reviewer page tests reported **26 passed**. `frontend/npm run build` passed (with the existing Vite chunk-size warning). No migration, container action, deployment, Keycloak/runtime scope change, upload/extraction, proposal/assertion mutation, ranking/AHP change, publication, recompute, sync, or production request was performed. Rollback is code-only by reverting this P0 change; no data remediation is required.
+
+## 2026-08-30 (l) — CEO Advisor Analysis review hardening (isolated-test verification only)
+
+Migration `0048_review_evidence_ack` adds only nullable `ranking_proposal_reviews.evidence_review_acknowledged`. No historical review/audit row is backfilled, updated, deleted, or downgraded. New CEO approvals require/persist `true`; new rejections persist `false`. The review table remains append-only.
+
+The CEO reviewer queue is now scope-filtered server-side, submitted-only, oldest-first, paginated, and excludes the reviewer’s own proposals in SQL. Its DTO is purpose-built for review and does not return document storage keys, project/area/expert identifiers, OIDC subjects, email, tenant metadata, ranking configuration, AHP configuration, or ranking output. It uses the neutral submitter label `Cố vấn`. Submitted detail and PDF file routes use the same non-enumerating scope/status/self-authorship guard. PDF streaming accepts only a linked, same-project, lifecycle-ready PDF and keeps storage paths/keys server-only; swapped document ids fail closed. Page/chunk/quote position is honestly labelled unavailable because the current proposal-evidence link does not persist it.
+
+Final review locks the submitted proposal and rechecks CEO identity, scope, non-self review, evidence lifecycle/readiness, same-project relationship, value/rubric validation, and value shape before creating an immutable review/audit record. The public decision contract now permits only `approved` or `rejected`; rejection requires a meaningful reason, approval requires acknowledgement, and no review path publishes config, changes AHP, triggers preview/ranking/recompute/sync, or creates jobs. Advisor read-back remains owner-only and renders `Đã gửi`, `Đã phê duyệt`, or `Cần chỉnh sửa` with the persisted rejection reason; terminal proposals have no edit/resubmit flow.
+
+Sequential guarded test-db verification used only `absorption_test`: migration test **1 passed**, CEO review API-contract/PDF-swap test **3 passed**, and final acknowledgement/self-queue/latest-failed-readiness service tests **2 passed**. Focused auth/contract tests reported **20 passed** (`tests/auth/test_governance_authoring_policy.py` plus reviewer contract) before the test-db run. Focused frontend reviewer/navigation/Advisor-status tests reported **23 passed**; `npm run build`, Python compilation, focused Ruff, and `git diff --check` passed (the existing Vite chunk-size warning remains). No dev/production migration, deployment, Keycloak/scope/runtime configuration change, real review, publication, ranking/recompute/sync/job action, or v2 ranking change was performed. Rollback is application-code revert plus retaining the additive nullable column; do not delete immutable review/audit history.
+
+## 2026-08-30 (m) — Resolved a stale `git stash` autostash-pop conflict (6 files); no branch merge/rebase performed
+
+**Root cause.** Not a `develop`/`staging-recovered` branch-merge conflict. `refs/stash@{0}` ("On feature/Vuong_Expert: autostash", created 2026-08-30 22:51, first parent `e52beea`) was auto-created by a `git pull` immediately before this task, then its auto-reapply conflicted against the newly-fetched HEAD (`bf5f555`, "Merge pull request #55 ... addAIAgent"). Conflict markers literally read `Updated upstream`/`Stashed changes` — git's own stash-pop wording, confirmed via `git log --graph --all` and `git log -1 --format="parents: %P" refs/stash@{0}`, not assumed.
+
+**Scope.** Exactly the six paths approved: `frontend/src/App.jsx`, `frontend/src/pages/AgentPage.jsx`, `frontend/src/pages/AgentPage.test.jsx`, `frontend/src/pages/ExpertAnalysisPage.jsx`, `frontend/src/pages/ExpertAnalysisPage.test.jsx`, `src/api/governance.py`. No branch merge, rebase, cherry-pick, migration edit, `.env.example` change, or `CLOUDFLARE_PRODUCTION_BRANCH`/cloud-branch change was performed (all explicitly deferred per this task's own approval).
+
+**Stash-comparison finding (read-only, before any edit).** `git diff refs/stash@{0}^2 refs/stash@{0}^1 -- src/api/governance.py frontend/src/pages/ExpertAnalysisPage.jsx frontend/src/pages/ExpertAnalysisPage.test.jsx frontend/src/pages/AgentPage.test.jsx` was run as directed; the decisive check was then `diff <(git show refs/stash@{0}^2:<path>) <path>` per file, which proved **byte-for-byte identical** content between the stash's stored version and the current working tree for all four delete/modify-conflict files (confirmed via `diff | wc -l` = 0 for each, plus a line-count/grep cross-check on `governance.py`'s Advisor/CEO symbols). Conclusion: zero unique stash intent for these four — resolved by `git add` (accepting the already-correct working-tree content, not a blind `--ours`/`--theirs`).
+
+**Semantic hunk resolution (2 files with real markers).**
+- `frontend/src/App.jsx` (2 hunks): current HEAD had no Advisor/CEO route wiring yet; the stash side added imports/routes for `ExpertAnalysisPage`, `AdvisorAnalysisReviewPage` (capability-gated via `AdvisorAnalysisRoute`, whose `capability` prop values `advisor_analysis_authoring`/`advisor_analysis_review` were cross-checked against the real `DashboardCapabilities.as_dict()` keys in `src/services/dashboard_auth.py` — exact match) **and** two dead imports (`ConsultantAdvisoryPage`, `ConsultantEvidencePage`) whose files no longer exist anywhere in the tree (`ls`/`git ls-tree` both confirmed absent). Resolution: kept HEAD + the real Advisor/CEO routes, dropped the two dead imports/routes. Verified: `diff <(git show HEAD:frontend/src/App.jsx) frontend/src/App.jsx` shows exactly the intended additive delta, nothing else.
+- `frontend/src/pages/AgentPage.jsx` (2 hunks, effectively one full-file fork): "Updated upstream" = the current, simple chat-only page; "Stashed changes" = a materially richer, older page (role-gated recommendation approval/execute, `useAgentRecommendation()` hook, AHP report rendering). Traced via `git log --oneline --all --full-history -- frontend/src/hooks/useAgentRecommendation.js`: that hook (and its test) was deleted by commit `bf5f555` itself — the same "addAIAgent" merge that **is** current HEAD — i.e., the richer stash version was deliberately superseded by HEAD's own most recent commit, not merely older. Resolved in favor of HEAD only. Verified: `diff <(git show HEAD:frontend/src/pages/AgentPage.jsx) frontend/src/pages/AgentPage.jsx` → identical.
+
+**Post-resolution verification (isolated, sequential, no concurrent DB workers):**
+```
+git diff --check                                    → clean
+git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- .       → no matches
+python3 -m compileall -q src                         → exit 0
+ruff check src/api/governance.py                     → All checks passed!
+cd frontend && npm run build                         → 703 modules, built in 3.41s (pre-existing >500kB chunk warning only)
+alembic heads                                        → 0048_review_evidence_ack (head) — unchanged, single head
+alembic branches                                     → same pre-existing 0022 branchpoint, already resolved by 7022f5bfa250 — untouched
+docker compose config --quiet                        → exit 0
+```
+Isolated `_test` DB (via the existing `scripts/test_db.sh`, which hard-guards the target name ends `_test`):
+```
+TEST_TARGET="tests/test_migrations/test_0047_evidence_document_project_scope.py" bash scripts/test_db.sh -q \
+  tests/test_migrations/test_0048_review_evidence_acknowledgement.py tests/test_services/test_governance.py \
+  tests/auth/test_governance_authoring_policy.py tests/auth/test_ceo_authorization.py tests/test_ranking_boundary.py
+→ 100 passed, 20 failed
+```
+
+**All 20 failures are pre-existing, outside this task's resolution scope — not introduced by, and not fixed by, this stash resolution:**
+- 13 in `tests/test_services/test_governance.py`: `GovernanceError: "Evidence lịch sử chưa có project scope; chỉ còn dùng để audit, không thể gắn mới"` plus one `sqlalchemy.exc.InvalidRequestError: ... no FROM clauses due to auto-correlation` inside `submit_proposal()` (`src/services/governance.py:769`) — the already-staged 0047 project-scope enforcement is not yet matched by this already-staged test file's fixtures. Both files are `M` (already modified before this task) and neither is one of the six resolved paths.
+- 3 in `tests/test_ranking_boundary.py`: reference `/api/v1/agent/recommendations/{rec_id}/approve|reject` and `require_approver` from `src.api.agent` — routes/symbols removed by the same `bf5f555` "addAIAgent" restructuring that deleted `useAgentRecommendation.js` (see above); `src/api/agent.py` was not touched by this task.
+- 1 in `tests/test_ranking_boundary.py`: `assert len(revisions) == 48` is a stale hardcoded count — 50 migration files now exist (0047/0048 correctly added by already-staged work); needs updating separately, not part of this task's scope.
+- A separate, real, pre-existing incompatibility was also discovered (not a test failure but a collection-time `ImportError`) when the excluded file `tests/test_api/test_advisor_analysis_review_contract.py` was included in an earlier run: `src/api/governance.py:1053` calls `advisory_tools.answer_expert_question(...)`, but `src/agents/advisory_tools.py` (1279 lines) was deleted by the same `bf5f555` commit with no replacement in the new `src/agents/{guardrails,tools,prompts,memory}.py` structure. This is load-bearing content inside the exact byte-identical governance.py this task was told to accept — a genuine reconciliation need between the Advisor/CEO work and the AI-agent restructuring, explicitly **not** attempted here (out of scope: "not a branch integration task").
+
+**No deployment, config-routing, database, migration, sync, ranking, or production action occurred.** Only local source conflict resolution and isolated `_test`-DB verification were performed, per this task's explicit prohibitions.
+
+**Stash disposition.** `stash@{0}` (today's autostash) is fully superseded/redundant for the six files this task touched — proven, not assumed, via byte-identical diffs. It has **not** been inspected for any *other* paths it may still touch beyond these six (out of scope for this task). `stash@{1}` (2026-08-20 autostash, unrelated `feature/Vuong_UpdatedFE_#36` branch) has **not** been inspected at all this pass. **Neither stash was dropped.** Safe next command, only after separate confirmation and only if a full-path comparison (`git stash show -p stash@{0}`) confirms no other file it touches has unique content: `git stash drop stash@{0}`.
+
+## 2026-08-31 — Qualified Advisor workspace bootstrap compatibility fix
+
+**Root cause.** `src/api/governance.py` still imports and invokes `src.agents.advisory_tools.answer_expert_question`, but that module had been removed during the Agent graph restructuring. Separately, `src/main.py` did not include the governance router, so `POST /api/v1/governance/experts` returned 404 before the Advisor page could bootstrap its workspace; the page also had no pending/error handling.
+
+**Fix.** Restored a minimal read-only `src/agents/advisory_tools.py` compatibility implementation. It embeds and searches only caller-authorized, readiness-filtered document IDs, resolves citations to server-provided chunks, rechecks lifecycle status, and performs no writes or ranking/configuration actions. Registered `governance_router` exactly once under the existing `/api/v1` prefix in `src/main.py`. Updated `frontend/src/pages/ExpertAnalysisPage.jsx` to disable duplicate bootstrap clicks, show loading state, map 403/404/5xx/network failures to Vietnamese errors, and provide retry without false success. Added OpenAPI/bootstrap and UI regression tests.
+
+**Authorization and side-effect invariants.** Existing `require_advisor_analysis_authoring` remains authoritative: verified `CRM.ADVISOR` + `business_viewer` + OIDC subject + non-empty server project scope are required. Governance evidence retrieval remains project- and lifecycle-scoped; no frontend guard is relied on for authorization. No ranking, publish, AHP, recompute, sync, migration, OIDC, Keycloak, runtime-scope, or data mutation was performed.
+
+**Verification.** Sequential focused backend run: `32 passed, 4 deselected` (router/OpenAPI, qualified bootstrap subject derivation, Advisor authorization, CEO boundaries, review contract, read-only advisory boundary). Frontend run: `2 files, 10 passed` (`ExpertAnalysisPage` and `AdvisorAnalysisRoute`). `cd frontend && npm run build` passed (Vite 6.4.3; pre-existing large-chunk warning only). `python3 -m compileall -q src tests/test_api/test_governance_router_registration.py`, Ruff, and `git diff --check` passed. OpenAPI now contains `POST /api/v1/governance/experts` and the existing governance review/evidence routes. DB-backed evidence tests were not executable in this environment: the existing test command skipped 16 tests without an isolated DB, and `scripts/test_db.sh` could not start Docker because the daemon socket denied permission; no container or database write occurred.
+
+**Deployment and rollback.** A backend application restart/redeploy is required to load the router/module; the frontend bundle must be rebuilt for the bootstrap UX. No deployment was performed. Roll back by reverting only the governance-router include, compatibility module, ExpertAnalysisPage handling, and their focused tests; do not alter migrations or runtime authorization configuration.
+
+## 2026-08-31 (c) — AHP Ranking Proposal: distinct proposal subtype, Advisor authoring, CEO approval → config → run
+
+**Business decision implemented.** A new `proposal_type='ahp_ranking_proposal'` is additive alongside the pre-existing `qualitative_analysis` (now the explicit default for every historical/legacy row). Only an `ahp_ranking_proposal` may carry a frozen hierarchy snapshot; only its CEO approval creates a new immutable `ranking_configs` version from that snapshot, publishes it, and queues exactly one project-scoped ranking run. The pre-existing qualitative Advisor Analysis flow (justification/evidence/rubric review) is untouched — never widened, never given ranking-apply semantics.
+
+**Migration.** `alembic/versions/0049_ahp_ranking_proposal.py` (head, additive): `ranking_weight_proposals` gains `proposal_type` (NOT NULL, default `'qualitative_analysis'`, default dropped after add), `proposed_hierarchy_snapshot` (JSONB, nullable), `ahp_application_status` (nullable, `pending|applied|failed`), `applied_ranking_run_id` (nullable UUID, FK → `ranking_runs.id` `ON DELETE RESTRICT`). Three CHECK constraints enforce: valid `proposal_type`, valid `ahp_application_status`, and that the three AHP-only fields are NULL for every non-AHP row (`ck_rwp_ahp_fields_only_for_ahp_type`). `downgrade()` refuses if any row has a non-default `proposal_type`. Applied and verified against the isolated `_test` DB only (`bash scripts/test_db.sh`) — never against the shared dev database.
+
+**Capability model.** New server-derived `advisor_analysis_ahp_authoring` (`src/services/dashboard_auth.py`), deliberately its own `DashboardCapabilities` flag and its own FastAPI dependency (`require_advisor_analysis_ahp_authoring()`), never reused for or by `advisor_analysis_authoring`. Both currently share the same underlying verified-Advisor predicate (no new OIDC role/claim was specified) — a disclosed interpretation, not a guess at a nonexistent signal.
+
+**Backend — Advisor authoring (`src/services/governance.py`).** `create_proposal(..., proposal_type=)` resolves `base_config_id` for an AHP proposal from the currently published `ranking_configs` row server-side — a client-supplied `base_config_id` is rejected (`BASE_CONFIG_NOT_ALLOWED`). New `save_ahp_proposal_draft()` (Advisor-owner-only, draft-only, re-savable/overwriting): supports `mode='direct'` (a pre-composed `hierarchical_weights` block) or `mode='pairwise'` (raw AHP judgments, computed via the existing `src/ranking/hierarchical_ahp.py`, CI/CR checked per level, `HIERARCHICAL_CR_FAILED` if any level fails). New `_reject_unregistered_criteria()` enforces Rule 11 by querying the live `ranking_feature_definitions` registry (`grain` + `status='active'`) — never a hardcoded allow/deny list; this is what structurally excludes `expert_location_score`/`expert_infrastructure_score`/`expert_financing_score` (confirmed unregistered for `project`). `submit_proposal()` now requires a saved, non-empty hierarchy snapshot for AHP proposals (`AHP_HIERARCHY_REQUIRED` otherwise), re-validates it under lock, and stamps `frozen_at` at submit time — immutable afterward. `_revalidate_submitted_proposal_for_review()` re-checks the frozen snapshot again at CEO-review time (defense in depth, same discipline as the pre-existing evidence re-check).
+
+**Backend — CEO approval → config → run (`submit_review()` + new `_apply_ahp_proposal()`).** The pre-existing `PROPOSED_CONFIG_MISSING` gate is now skipped only for `ahp_ranking_proposal` (its config is created AFTER approval, never before) — verified NOT to have weakened the legacy path (regression test below). On approval, the review transaction stamps `ahp_application_status='pending'` in the SAME commit as the approval itself; `_apply_ahp_proposal()` then runs in a separate, subsequent step: copies the currently published config's `weights`/`min_weight_coverage`, creates a new draft via the existing `ranking_config.create_draft()` with the frozen `hierarchical_weights`, publishes it via the existing `ranking_config.publish()` (archives the prior published version, same as every other publish), and queues exactly one project-scoped run via the existing `trigger_ranking(project_id, trigger="config_change")` — reusing the established `RUN_TRIGGERS` value the pre-existing admin publish/rollback path already uses, not inventing a new one (a first attempt using a new literal `"advisor_proposal_approved"` value was rejected by the pre-existing `ck_ranking_runs_trigger` CHECK constraint and corrected). On success: `ahp_application_status='applied'`, `applied_ranking_run_id`/`proposed_config_id` set, proposal `status='published'`. On any failure (config/publish/run creation): `ahp_application_status='failed'`, the already-committed review/approval is never rolled back or hidden, and no config/run row is left half-created. Idempotent: re-invoking `_apply_ahp_proposal()` on an already-`applied` proposal is a no-op (verified: no second config version, no second run, no second RQ enqueue).
+
+**A genuine pre-existing bug found and fixed as a direct blocker to this mission, not scope creep.** Submitting ANY weight-mode proposal with directly-attached evidence (qualitative or the new AHP type) crashed with `sqlalchemy.exc.InvalidRequestError: ... no FROM clauses due to auto-correlation` inside `submit_proposal()`'s evidence-readiness check — already disclosed as a known pre-existing failure in the 2026-08-30 stash-resolution entry above, but never fixed until now because it directly blocks the one mechanism this mission exists to build (an Advisor cannot submit an AHP proposal at all without it). Root cause: `src/services/evidence_extraction.py::document_is_ready()`/`_document_is_active()` build correlated subqueries against `ranking_evidence_document_chunks`/`ranking_evidence_document_lifecycle_events`; when a caller's own outer query (e.g. `submit_proposal()`'s direct-evidence count, which explicitly joins `ranking_evidence_document_chunks`) already has that same table in its FROM list, SQLAlchemy's default auto-correlation reached into the inner subquery too and stripped its only FROM table. Fixed by adding an explicit `.correlate(document_id_column.table)` to each subquery — correlating only against the table the caller's `document_id_column` actually belongs to, never against whatever else the outer query happens to join. Verified: the 5 `test_governance.py` tests that previously crashed with this exact error now pass; the 2 same-table self-referential call sites in `evidence_extraction.py` itself (`get_chunks_for_document`, `search_similar_chunks`) are behaviorally unchanged (same effective correlation set as default auto-correlation gave them before). The remaining 11 `test_governance.py` failures are the OTHER already-documented pre-existing bug (`DOCUMENT_PROJECT_UNSCOPED` — that test file's own evidence-attachment helper never sets `project_id`) — confirmed unrelated (outside every diff hunk this pass touched) and unchanged in count/identity.
+
+**Frontend.** `frontend/src/api/endpoints.js`: `createAhpProposal(projectId)`, `saveAhpProposalDraft(proposalId, body)` (distinct from the generic `createGovernanceProposal`/`setGovernanceProposalConfig`). `frontend/src/pages/ExpertAnalysisPage.jsx`: the "Đề xuất trọng số" tab (previously a static placeholder stating AHP was out of scope for the Advisor workspace) now hosts a real `AhpProposal` component — create-if-none, checkbox criterion selection scoped to each grain's live active registry (market/project/area), a raw-importance-to-normalized-weight input per selected criterion and per grain, "Lưu bản nháp" (draft save, never touches ranking), and "Gửi CEO duyệt đề xuất ranking" (enabled only once a snapshot exists). `Drafts` list now shows proposal-type-aware status labels matching the mission's exact required Vietnamese wording: "Bản nháp — chưa thay đổi ranking", "Đã gửi CEO duyệt", "CEO đã duyệt — đang áp dụng cấu hình ranking", "Đang cập nhật điểm ranking", "Ranking đã cập nhật", "CEO từ chối — <reason>". `frontend/src/pages/AdvisorAnalysisReviewPage.jsx`: queue/detail now label `ahp_ranking_proposal` as "Đề xuất trọng số AHP" (vs "Báo cáo đánh giá định tính" / legacy "Đề xuất trọng số"), and render a new read-only `AhpPackageSummary` (mode, frozen timestamp, current active config version/note, per-level CI/CR, full hierarchical_weights) with no edit/publish/recompute control anywhere on that page.
+
+**Disclosed scope reduction.** The Advisor authoring UI implements `mode='direct'` only (checkbox selection + raw-importance normalization) — `mode='pairwise'` (a full Saaty 1-9 pairwise-comparison matrix per level, 4 levels) is supported end-to-end by the backend and covered by a backend test, but no pairwise-comparison widget was built into `ExpertAnalysisPage.jsx` this pass. `grain_weights` allocation across market/project/area/unit in the direct-mode UI is a plain user-entered-and-normalized input with no approved default ratio behind it — deliberately visible to both Advisor and CEO (not silently hidden), since no approved grain-level allocation source was found or specified for THIS proposal flow (distinct from the earlier, already-audited `enable_hierarchical_ranking.py` script allocation, which remains untouched).
+
+**Tests.** New `tests/test_services/test_ahp_ranking_proposal.py` (12 passed, isolated `_test` DB) — self-contained fixture (does not import the still-deleted `tests.test_agent_e2e`), also patches `src.ranking.service`/`src.services.ranking_trigger`'s `get_session_factory` plus a `FakeQueue` stand-in for `get_queue()` (no real Redis touched). Covers: server-side `base_config_id` resolution + rejection of a client-supplied one, qualitative-type-unaffected default, draft save (direct mode) + re-save, Rule-11 unregistered-criterion rejection, non-owner draft-save rejection, submit-without-draft rejection, submit freezes the snapshot, full approve → new published config version → old version archived → exactly one queued run (asserted via a direct DB read of `ranking_configs`/`ranking_runs`, not just the returned proposal row), idempotent re-apply (config/run counts unchanged, queue not re-enqueued), failure-path honesty (approval stands, `ahp_application_status='failed'`, no config/run created, queue not enqueued), and a regression guard that the legacy qualitative weight-mode flow still hits `PROPOSED_CONFIG_MISSING` exactly as before. **Not** a replay of all 22 scenarios from the mission's Part F — `mode='pairwise'` CR-failure/override scenarios, RBAC-denial-at-the-route-layer scenarios (capability dependency itself, not the service function), and a few UI-state-transition scenarios were not separately written this pass; the underlying mechanisms they'd exercise (CR gate, capability dependency, status derivation) are each covered indirectly by the above or by existing tests.
+
+Full-repo regression: `tests/test_services/test_governance.py` → 52 passed, 11 failed (all 11 are the pre-existing, already-documented `DOCUMENT_PROJECT_UNSCOPED` gap — unchanged in count from before this pass's auto-correlation fix removed 5 *different* pre-existing failures). `tests/test_ranking/` (excluding the 6 files broken by the pre-existing `tests/test_agent_e2e.py` deletion) → 118 passed. `tests/test_ranking/test_hierarchical_ahp.py` → 10 passed (behavior-preserving after the `assemble_hierarchical_weights_block()` refactor shared between `src/api/ahp.py` and the new Advisor draft path). `tests/test_api/test_governance_router_registration.py` + `tests/test_api/test_advisor_analysis_review_contract.py` → 5 passed (after making `_proposal_out()`/`_review_detail_out()`/queue-item construction read `proposal_type` via `.get(..., "qualitative_analysis")` instead of a hard subscript, so minimal test-double proposal dicts without every real column keep working). `tests/auth` + `tests/test_api` (excluding the pre-existing `test_agent_e2e`-dependent and DB-only files) → 154 passed, 10 pre-existing failures (`test_ranking_historical_batch.py` ×4 and `test_routes.py` ×6, both already-documented pre-existing gaps unrelated to anything touched this pass — confirmed via `git diff` hunk boundaries and prior pipeline_status.md entries). Frontend: `ExpertAnalysisPage.test.jsx` + `AdvisorAnalysisReviewPage.test.jsx` → 7 passed (pre-existing, unchanged by the new AHP UI). `npm run build` → succeeds (pre-existing >500kB chunk warning only). `python3 -m compileall`, Ruff (auto-fixed two import-order/unused-import nits, both clean after), `git diff --check`, and `alembic heads` (single head, `0049_ahp_ranking_proposal`) all pass.
+
+**No live side effects.** Migration 0049 was applied only to the isolated `_test` database via `scripts/test_db.sh`; it was never run against the shared dev/live database this pass. No AHP proposal was created, drafted, submitted, approved, published, or run-triggered against any shared environment — every exercise of the new flow ran inside the isolated test fixture with its own truncated tables, its own patched session factories, and a `FakeQueue` in place of Redis/RQ. The existing qualitative Advisor Analysis flow, RBAC/role mapping, Keycloak, MiniCRM, deployment configuration, and every migration before 0049 were not touched.
+
+**Rollback.** Code-only: revert the touched backend/frontend files and drop `tests/test_services/test_ahp_ranking_proposal.py`. Database: `alembic downgrade 0048_review_evidence_ack` is safe as long as no environment has created a real `ahp_ranking_proposal` row (the migration's own `downgrade()` refuses otherwise, by design) — not required for this pass since only the isolated `_test` DB ever ran 0049.
+
+**Remaining business decisions.** (1) No approved grain-level (`grain_weights`) allocation source exists for this new proposal flow — the direct-mode UI exposes a plain user-normalized input rather than inventing a default; a real source (or an explicit decision to always derive `grain_weights` via pairwise AHP instead of direct entry) is still needed. (2) A pairwise/Saaty-matrix authoring widget for `mode='pairwise'` was not built into the frontend this pass, even though the backend fully supports it. (3) The two other already-disclosed pre-existing gaps (`tests/test_agent_e2e.py` deletion blocking 10 files' collection; `DOCUMENT_PROJECT_UNSCOPED` evidence-fixture gap in `test_governance.py`) remain unfixed, unchanged, and explicitly out of this pass's scope.
+
+## 2026-08-31 (f) — Optional per-criterion AHP rationale capture and retrieval (isolated-test verification only)
+
+`0050_proposal_rationale_chunks` is an additive migration after `0049`. It creates `ranking_proposal_rationale_chunks`: one immutable, proposal-scoped row per submitted AHP criterion rationale, linked by `proposal_id` with `ON DELETE CASCADE`, indexed by proposal and pgvector cosine `ivfflat`, and unique on `(proposal_id, grain, criterion_key)`. No existing snapshot is changed and no historical proposal is backfilled. The migration was applied only by the guarded `scripts/test_db.sh` workflow to `absorption_test`.
+
+Advisor draft input now accepts an optional string `rationale` for each selected Market/Project/Area criterion. It is trimmed, capped at 500 characters, and retained in the draft/frozen `proposed_hierarchy_snapshot`; absent rationales remain valid. On AHP submission only, the locked submission transaction builds `"{grain}.{criterion_key} weight={weight}: {rationale}"`, embeds it through the existing `evidence_extraction.embed_texts`/configured model, and persists the chunks atomically with the submitted status. An embedding failure rolls that transaction back, so no submitted proposal can have a partial rationale projection. Draft saves create no chunks. `src/services/rationale_retrieval.py` supports exact criterion lookup, proposal-scoped semantic lookup, and project-scoped cross-proposal semantic lookup over every persisted (therefore historically submitted) rationale chunk; the new Advisor-owner route is `GET /api/v1/governance/advisor-analysis/ahp-proposals/{proposal_id}/rationale` with optional `criterion_key`, `query`, and bounded `top_k`.
+
+The Advisor authoring view renders optional, labelled rationale textareas and a frozen-value confirmation preview. The CEO review view displays the frozen text read-only as `Giải thích từ Expert`, or accurately shows `Không có giải thích`; it adds no edit/publish/ranking control.
+
+Verification (all isolated/local): `tests/test_services/test_ahp_ranking_proposal.py` **20 passed** (includes snapshot, submit chunking, exact and semantic retrieval); `tests/test_services/test_rationale_retrieval.py` **1 passed** (cross-proposal retrieval and embedding invocation); focused frontend `ExpertAnalysisPage` + `AdvisorAnalysisReviewPage` **9 passed**; Vite production build, Python compilation, focused Ruff, `git diff --check`, and `alembic heads` (`0050_proposal_rationale_chunks`, single head) passed. Full-repository Ruff still reports 63 pre-existing violations outside this change; every changed backend/test/migration file passes focused Ruff. No shared-dev/live migration, proposal, submission, review, publish, ranking/recompute, sync, runtime configuration, or deployment occurred. Rollback is code-only plus avoiding the additive migration in environments where it has not been applied; do not delete historical proposal/audit rows.
+
+## 2026-08-31 (g) — One rubric-governed Project criterion for AHP authoring (isolated-test verification only)
+
+`0051_add_project_criterion` adds exactly one active Project-grain feature definition: `project_design_score` (`category='expert'`, numeric, positive direction, neutral missing policy, `formula_id='expert_value_assertion'`, `normalization_method='rubric_band'`). It measures documented project design quality, functional layout, and resident amenities through the existing expert evidence/rubric lifecycle; it is not a legal or compliance classification. The existing canonical normalized five-band scale (0.00/0.25/0.50/0.75/1.00) is deliberately reused rather than introducing an incompatible new 1--10 scale. Each seeded band has an explicit Vietnamese evidence requirement. A selected band is normalized server-side and materialized through the already-existing Project snapshot/value/lineage writer before hierarchical scoring.
+
+`project_design_score` is now rubric-required and therefore visible from the existing Advisor-safe feature-definition endpoint, allowing the AHP authoring UI to select it when Project grain weight is positive. `project_legal_status` remains absent from that endpoint because it is not rubric-required, and `validate_hierarchical_weights()` now rejects it with `LEGAL_GATE_NOT_WEIGHTABLE` even if a caller bypasses the UI. Legal evaluation remains the separate pre-composition gate in the ranking service. Existing Project-weight-zero proposals remain valid.
+
+Example direct hierarchy input: `grain_weights.project.weight=0.10` with `project.project_design_score={weight:1.0,direction:'positive',missing_value_policy:'neutral',rationale:'...'}`; Project values require an evidence-backed value assertion using the seeded rubric before they can contribute to a run. Verification: fresh-schema migration contract **1 passed**; hierarchical configuration validation **38 passed**; AHP proposal lifecycle **21 passed**, including positive Project weight → frozen snapshot → CEO approval → bound completed run; governance feature-catalog route contract **3 passed** (it exposes `project_design_score` and hides `project_legal_status`); focused Expert Analysis UI **7 passed**; Vite build, compilation, focused Ruff, `git diff --check`, and `alembic heads` (`0051_add_project_criterion`, single head) passed. The pre-existing `tests/test_ranking/test_hierarchical_scoring.py` cannot collect because `tests.test_agent_e2e` is absent; no attempt was made to restore that unrelated deleted fixture. No shared-dev/live migration, evidence upload, proposal, review, publish, ranking/recompute, sync, deployment, or runtime configuration change occurred.
+
+## 2026-08-31 — Local AHP submission trace after grain-allocation UX update
+
+**Runtime evidence (read-only).** The local `api` and Vite `frontend` services were healthy and source-mounted; SHA-256 of `/app/src/services/governance.py` and `/app/src/pages/ExpertAnalysisPage.jsx` matched the working tree. `alembic current` and `alembic heads` in the API container were both `0052_proposal_evidence_links (head)`. The historical draft `deda1413-0c60-43fc-bf52-48b03bcf0605` no longer existed. The active Advisor-owned AHP draft was `3758d76d-c35f-4452-8807-d22f6d73904c`, `status='draft'`, with a valid saved hierarchy and no frozen timestamp.
+
+**Evidence/readiness.** The same-project document `27f0b6e4-9f0a-4aee-ba60-1c66b4464538` (`co_van_khung_xep_hang_can_ho.pdf`) retains immutable registration metadata `extraction_status='not_requested'`, while its latest extraction attempt is `succeeded` and it has 10 persisted chunks with 10 embeddings. It has no archive/delete lifecycle event, so the authoritative resolver reports effective `active`/`succeeded` readiness. `ranking_proposal_evidence_links` exists at 0052 with its immutable `(proposal_id, document_id)` unique key and append-only trigger; no association existed before submission, as intended for submit-time auto-linking.
+
+**Root cause and guard.** API logs contained the successful hierarchy `PATCH` for draft `3758…` but no `POST /api/v1/governance/proposals/{id}/submit` and no active AHP manual-link request. This is not an Alembic, evidence-readiness, or auto-link failure: in `ExpertAnalysisPage`, the visible `Gửi CEO duyệt đề xuất ranking` control opens the required confirmation dialog only; the protected POST is emitted exclusively by the dialog's `Xác nhận gửi` control. A focused UI regression assertion now proves the first click opens that dialog and does not emit the POST; the second click emits it. `submit_proposal()` then locks the draft, revalidates the frozen hierarchy, selects only same-project lifecycle-ready evidence, and inserts any missing immutable link within the submit transaction.
+
+**Verification.** Isolated `_test` AHP lifecycle tests were run through `scripts/test_db.sh`; focused auto-link/no-ready-evidence coverage passed (**2 passed**). Focused `ExpertAnalysisPage` tests passed (**14 passed**), Vite production build passed (only the pre-existing chunk-size warning), `python3 -m compileall -q src`, focused container Ruff, and `git diff --check` passed. A real OIDC submission was deliberately not executed by the automated session because it would mutate the shared-dev draft from `draft` to `submitted`; no CEO decision, configuration publication, ranking run, recompute, sync, migration, or database write occurred in this trace. To complete the authorized manual verification: press `Gửi CEO duyệt đề xuất ranking`, then press `Xác nhận gửi` in the dialog; expected request is `POST /api/v1/governance/proposals/3758d76d-c35f-4452-8807-d22f6d73904c/submit` with `200` and `status='submitted'`. Stop before CEO review.
+
+## 2026-08-31 — Corrected root cause: the AHP confirm dialog was unreachable, not merely gated behind a first click
+
+**The prior trace above was wrong about the mechanism.** It asserted "the visible control opens the required confirmation dialog only" and cited a UI regression test as proof — but that test (and every other test then covering this path) mocked `listGovernanceProposals` to return `proposed_hierarchy_snapshot` directly on the list response. The real backend never does that: `GET /governance/proposals` (`ProposalOut`) has never carried `proposed_hierarchy_snapshot` — only the `PATCH .../hierarchy` draft-save response (`AdvisorAhpDraftOut`) does. The mock was unrealistic and hid the actual defect; this is exactly why the user still saw no dialog after the previous "fix."
+
+**Live reproduction (real browser, real dev backend, real Advisor identity).** Installed Playwright/Chromium locally (no project browser-driving skill existed for this repo; recommend `/run-skill-generator` to capture it). Logged in through the real Keycloak SSO redirect as the seeded `e2e.advisor` user (interactive authorization-code flow through the actual hosted login form — not the disabled direct-grant API, not a bypass) against the already-running `docker compose` stack (`localhost:5173` frontend, `localhost:8000` API, `localhost:9090` Keycloak). Opened the Advisor workspace at `/expert-analysis` and landed on draft `3758d76d-c35f-4452-8807-d22f6d73904c` — the same draft the user's report named.
+
+**Root cause, proven by network capture, not inference.** With this draft's real state (no saved hierarchy yet — the same starting point the user was in): the "Gửi CEO duyệt đề xuất ranking" button was `disabled`. Selecting one criterion per grain and clicking "Lưu bản nháp" sent a real `PATCH /api/v1/governance/advisor-analysis/ahp-proposals/3758d76d.../hierarchy`, which returned `200` with `proposed_hierarchy_snapshot` populated. The subsequent `onChanged()` reload's `GET /governance/proposals?project_id=...` response for this exact row was captured and inspected directly: its JSON keys were `['ahp_application_status', 'applied_ranking_run_id', 'approved_at', 'area_id', 'assertion_kind', 'base_config_id', 'created_at', 'created_by_expert_id', 'id', 'project_id', 'proposal_type', 'proposed_config_id', 'published_at', 'scope_type', 'status', 'submitted_at', 'updated_at']` — **`proposed_hierarchy_snapshot` is absent**, confirmed against the PATCH response's keys (identical list plus `proposed_hierarchy_snapshot`, present and non-null) from the same session. `ExpertAnalysisPage.jsx`'s `AhpProposal` component derived `hasSnapshot` and the submit button's `disabled` state solely from `proposal.proposed_hierarchy_snapshot` — the prop sourced from that list call. Because that field can never arrive there, `hasSnapshot` was permanently `false` after every real save+reload cycle, in every session, for every user — the button never left `disabled`, so no click was ever dispatched, so `confirmingSubmit` was never set `true`, so the dialog code (which was otherwise correct — `role="dialog"`/`aria-modal="true"` were already present) never mounted. This was never a CSS, z-index, clipping, or portal problem; it was an unreachable control.
+
+**Fix (frontend-only, per this task's explicit constraint — no backend/API/database/RBAC/evidence/publication/ranking change).** `frontend/src/pages/ExpertAnalysisPage.jsx`: `AhpProposal` now captures the `PATCH .../hierarchy` response directly (`const saved = await saveAhpProposalDraft(...)`) into a new `localSnapshot` state, and derives `hasSnapshot`/the grain-allocation source display from `localSnapshot ?? proposal.proposed_hierarchy_snapshot` instead of the prop alone — this makes the submit path correct without depending on the list endpoint ever carrying the field. The primary CTA is no longer a silently-disabled button: it is always clickable, renamed to **"Xem lại và gửi CEO duyệt"**, and on click either opens the confirmation dialog or renders an inline, focused, scrolled-into-view `role="alert"` block listing every unmet condition (grain-total ≠ 100%, no saved hierarchy, no ready evidence) — "never fail silently," as required. The confirmation dialog itself was rebuilt as a real modal (previously a bare `<section>` inline in document flow with no backdrop, no focus management, and no escape handling — invisible-by-neglect even on the rare path where it could mount): a `position:fixed`, full-viewport, `z-index:1000` backdrop plus a focus-trapped `role="dialog" aria-modal="true"` panel, mirroring the one other modal pattern already established and working in this codebase (`OverviewPage.jsx`'s `AttentionReportModal` — no shared Modal component exists yet, so this pass replicated that exact working pattern rather than introducing a portal or a new abstraction). Focus moves into the dialog on open; Escape and its close button both close it and restore focus to the CTA that opened it; the final button is renamed **"Xác nhận gửi CEO duyệt"** and is disabled with `aria-busy` while its request is in flight, so a second click cannot fire a second submit.
+
+**Tests.** `frontend/src/pages/ExpertAnalysisPage.test.jsx`: replaced the three tests that depended on the unrealistic mock with nine new ones, all mocking `listGovernanceProposals` WITHOUT `proposed_hierarchy_snapshot` (matching the real contract) and `saveAhpProposalDraft` WITH it (matching the real contract) — covering: dialog opens only after a real save using solely the draft-save response; focus moves into the dialog on open and the backdrop is `position:fixed` (never clippable by a page container); exactly one submit call fires and a second click while loading is a no-op; Escape returns focus to the CTA; the close button returns focus to the CTA; an unsaved draft shows an inline blocker and opens no dialog; a project with no ready evidence shows an inline blocker on a CTA that is never `disabled`; a failed submission shows the backend's error code/message. **19/19 passed** (10 pre-existing + 9 new). `AdvisorAnalysisReviewPage.test.jsx` (unaffected) — 3/3 passed. `npm run build` — succeeds (same pre-existing >500kB chunk warning). `git diff --check` — passed. No backend, API, schema, migration, RBAC, evidence-rule, or ranking file was touched this pass (`git status` confirms only the two frontend files above).
+
+**Disclosed side effect from live reproduction — read carefully before the Advisor next opens this draft.** While reproducing the bug against the real running dev stack (not a sandbox), the diagnostic browser session selected three criteria and clicked "Lưu bản nháp" on the user's actual draft `3758d76d-c35f-4452-8807-d22f6d73904c` in order to reach the disabled-button state and prove the root cause with a real network capture — this was a genuine `PATCH` against the real dev database, not a simulation. As a direct result, that draft's `proposed_hierarchy_snapshot` now holds a diagnostic selection (`market_interest_rate`, `project_design_score`, `area_accessibility`, each weight `1.0`, grain allocation left at the default 25/25/25/25 split) that the real Advisor did not choose. **No submit, approval, publish, or ranking run occurred** — confirmed by re-reading the row after the session: `status='draft'`, `submitted_at=null`, `approved_at=null`. But the saved hierarchy content itself is not what the Advisor intended and should be reviewed/re-edited (or re-saved with the Advisor's real selections) before this draft is ever submitted for real. This was an avoidable scope overrun — a disposable test-created draft should have been used instead of the exact draft named in the bug report — and is disclosed here rather than silently left for the Advisor to discover.
+
+**Rollback.** Code-only: revert `frontend/src/pages/ExpertAnalysisPage.jsx` and `ExpertAnalysisPage.test.jsx`. No migration, config, or data change to revert. The disclosed draft-content side effect above is not code and is not reverted by a code rollback — it requires the Advisor to re-edit that specific draft's criteria selection before submitting.
+
+## 2026-08-31 — Restored the CEO submission confirmation dialog on top of the 0053 deferred-run status changes (code-only, isolated frontend tests only)
+
+**Context.** A separate session (Codex) independently fixed the ranking-pipeline incident traced in the entry above — the circular import between `src/services/governance.py` and `src/ranking/service.py`, RQ scheduler ownership, and a new `deferred`-run/`awaiting_prior_run` design (migration `0053_ranking_run_recovery.py`) so an approved AHP config no longer gets discarded when an unrelated run is already queued. While rewriting `ExpertAnalysisPage.jsx`'s `AhpProposal` component to surface the new `awaiting_prior_run`/`queued`/`running` status labels, that session started from a working-tree state that predated this conversation's earlier confirmation-dialog fix and silently reintroduced the original bug's exact symptom: the primary CTA went back to calling `submitGovernanceProposal` directly on a single click, with no review step, no `role="dialog"`, no focus trap, no Escape handling. This entry restores that dialog on top of the new status model — it does not touch any backend, migration, dev database, worker, queue, proposal, config, or ranking run; verified via `docker compose exec api alembic current` → still `0052_proposal_evidence_links` (0053 was not applied) and `git status` showing only the two frontend files below changed this pass.
+
+**Fix.** `frontend/src/pages/ExpertAnalysisPage.jsx`: the primary CTA is renamed **"Xem lại và gửi CEO duyệt"**. Clicking it re-evaluates the same `submitBlockers()` (grain total ≠ 100%, no saved hierarchy, no ready evidence) already added by the prior fix — if any fail, it shows the existing focused/scrolled-into-view inline `role="alert"` blocker list and opens no dialog; only when all pass does it open a new `ConfirmSubmitModal`. The modal is a `position:fixed`, full-viewport, `z-index:1000` backdrop around a focus-trapped `role="dialog" aria-modal="true"` panel (same established pattern as `OverviewPage.jsx`'s `AttentionReportModal` — still no shared Modal component in this codebase, so the pattern is replicated locally rather than introducing a portal). It shows: the frozen grain-weight allocation (all four grains, matching what will actually be sent), every selected criterion grouped by grain with its raw importance value and authored rationale (or an explicit "Không có giải thích"), the count of evidence documents that will be auto-linked, and — new, per this pass's requirement — the proposal's **current `ahp_application_status`** label (via the existing `AHP_STATUS_LABEL` map, now including `awaiting_prior_run`/`queued`/`running`) when one is already set. Focus moves into the dialog on open; Escape and the explicit "×" close button and "Quay lại" all close it and restore focus to the CTA that opened it (verified via `document.activeElement`, not merely absence of the dialog). The final button, **"Xác nhận gửi CEO duyệt"**, is `disabled`+`aria-busy` while its request is in flight, so a second click cannot fire a second `submitGovernanceProposal` call. On failure, the dialog deliberately stays open and renders the backend's `error_code: message` inside itself (previously this error rendered behind the backdrop, effectively invisible) with the confirm button re-enabled for retry.
+
+**Tests.** `frontend/src/pages/ExpertAnalysisPage.test.jsx`: replaced the five direct-submit tests with nine dialog-aware ones, all continuing the realistic-contract mocking already established in this file (`listGovernanceProposals` never returns `proposed_hierarchy_snapshot`; only the `saveAhpProposalDraft` mock does, matching the real `ProposalOut` vs `AdvisorAhpDraftOut` backend contract) — covering: the dialog opens only after a real save and renders the frozen grain weights/criteria/rationale/evidence count; it additionally shows the current `ahp_application_status` label when the proposal already has one; focus moves in on open and the backdrop is `position:fixed` (unclippable); exactly one submit call fires and a second click mid-flight is a no-op; Escape, the close button, and "Quay lại" each return focus to the CTA; an unsaved draft shows an inline blocker and opens no dialog; a project with no ready evidence shows an inline blocker on a CTA that is never `disabled`; a failed submission shows the backend's error code/message **inside the still-open dialog** with the confirm button re-enabled. **21/21 passed** (12 pre-existing + 9 new/rewritten). `AdvisorAnalysisReviewPage.test.jsx` (unaffected) — 3/3 passed. `npm run build` — succeeds (same pre-existing >500kB chunk warning). `git diff --check` — passed.
+
+**No side effects.** No backend file, migration, dev database row, worker process, queue, proposal, ranking config, or ranking run was touched or executed this pass — confirmed via `alembic current` (still `0052`) and `git status` (only the two frontend files above). Migration `0053` remains unapplied and the original incident (proposal `1e9bf89c-5f03-4627-828b-9ff0bac0b8ac`, stuck run `bf29245b-acda-404c-bebf-90328831f762`) remains exactly as documented in the prior investigation entry — a separate rollout/recovery plan follows for explicit approval before any of that is touched.
+
+**Rollback.** Code-only: revert `frontend/src/pages/ExpertAnalysisPage.jsx` and `ExpertAnalysisPage.test.jsx` to this pass's starting point (i.e., back to the Codex session's direct-submit version) — no data, config, or migration change exists to roll back.
+
+## 2026-08-31 — Ranking v3: approved AHP composite (`hierarchical_score`) now drives `rank_in_project`/`rank_in_area`, behind a new default-off flag (isolated-test verification only, flag not flipped live)
+
+**Problem.** `hierarchical_score` (the AHP-weighted grain composite, already correctly computed per-unit by `compute_hierarchical_scores_for_run()`) was a parallel, mostly-decorative column: `rank_in_project`/`rank_in_area` — the fields every real consumer (main ranking dashboard, Hot Units, `GET /market/units`, the cross-project Global Unit Ranking) actually sorts/bands by — were computed once from the legacy flat-weight score *before* the hierarchical step ran and were never touched again. A CEO-approved AHP configuration therefore had no visible effect on the list a salesperson sees. No new scoring formula was needed — `hierarchical_score` was already correct; the gap was purely that nothing let it drive rank.
+
+**Design.** `effective_score(unit) = hierarchical_score(unit) if not null else score(unit)` (per-unit fallback). A run is v3-eligible only if all three hold: `ranking_v3_composite_enabled` is on, the bound published config has `hierarchical_weights`, and at least one unit in the run actually has a non-null `hierarchical_score` (checked by querying persisted rows directly — `HierarchicalRunResult.written` alone is unsafe, since a project-wide legal gate still increments it while nulling every unit's score). When any condition fails, behavior is byte-identical to pre-v3 legacy.
+
+**Code changes.** `src/config.py`: new `ranking_v3_composite_enabled: bool = False`. `src/ranking/engine.py`: new pure helper `effective_rank_scores(scores, hierarchical_by_unit)` — substitutes each unit's score with its effective score, delegates to the existing unmodified `rank_scores()`, returns only `{unit_id: (rank_in_project, rank_in_area)}` so a caller can't accidentally persist the substituted score as real. `src/ranking/service.py`: `run_ranking()` now captures the hierarchical step's return value and, in a new best-effort (non-raising) block right after it, calls new `_apply_v3_composite_ranks()` — fetches this run's non-null `hierarchical_score` rows, calls `effective_rank_scores()`, and `UPDATE`s only `rank_in_project`/`rank_in_area` on the existing `ranking_scores` rows (the real `score` column is never touched); this is the only writer of `ranking_scores`, satisfying `tests/test_ranking_boundary.py`'s single-writer rule by construction. `src/ranking/preview.py` (required companion fix): `preview_flat_weights()` previously trusted the persisted `rank_in_project` as its pure-legacy "before" baseline — now silently wrong once that column can be v3-derived, so it now recomputes the legacy baseline locally via `rank_scores()` over `ranking_scores.score` instead of reading the persisted rank. `src/models/schemas.py` (additive only, no existing field changed): `RankedUnitOut.effective_score`/`.effective_score_percent`; `RankingOut.ranking_formula` (`"v2_legacy"|"v3_hierarchical"`, default `"v2_legacy"`) and `.ahp_pending_status`; `ProjectRankingReportOut.ranking_formula`. `src/api/ranking.py`: new `_effective_score()`, `_ranking_formula()` (derives the formula from **data**, not the current flag value — recomputes what pure-legacy `rank_in_project` would be and compares against the persisted value, so a run stays correctly labeled even if the flag's value changes later), and `_ahp_pending_status()` (looks up the project's latest non-terminal `ranking_weight_proposals.ahp_application_status`); wired into `get_ranking()`'s per-unit and run-level response fields. `src/models/tables.py`: two comment-only updates documenting the new flag-gated exception to the "hierarchical step never touches legacy rank" rule — no schema change.
+
+**Frontend (additive, legacy-only projects unaffected).** `frontend/src/pages/RankingPage.jsx` (`HotUnitsTab`, also used via `components/HotUnitsTab.jsx`'s re-export): header gains a green **"Đã áp dụng AHP (v3)"** badge when `ranking_formula === "v3_hierarchical"` and an amber **"Đang chờ áp dụng AHP"** hint when `ahp_pending_status` is set; the score bar/percent in each row now prefers `effective_score_percent` over `score_percent` when the run is v3. `frontend/src/utils/globalUnitRanking.js` (feeds the cross-project `GlobalUnitRanking` dashboard widget): `normalizeUnit()`/`buildGlobalRanking()` now read the per-project `ranking.ranking_formula`, prefer `effective_score`/`effective_score_percent` when it's `"v3_hierarchical"` (falling back to legacy `score`/`score_percent` when the backend doesn't send an effective value for a given unit — never treated as 0), and stamp each row with `rankingFormula`. `frontend/src/components/dashboard/GlobalUnitRanking.jsx`: renders a small "AHP (v3)" badge under the score for rows with `rankingFormula === "v3_hierarchical"`. All new fields/props are optional; a row/response with none of them renders exactly as before.
+
+**Data/migration.** None needed or made — `rank_in_project`, `rank_in_area`, `hierarchical_score` already existed; the only new state is the `Settings` flag. Historical `ranking_scores` rows are untouched; only future runs with the flag on are affected.
+
+**Tests.** `tests/test_ranking/test_engine.py`: 6 new pure unit tests for `effective_rank_scores` (reorders by hierarchical value; falls back to legacy score when a unit has no hierarchical value; treats a genuine `0` hierarchical score as real, not missing — an `or`-based fallback bug caught before it shipped; preserves the deterministic tie-break; excludes skipped units same as `rank_scores()`; never mutates the caller's original `UnitScore`). **17/17 passed** (11 pre-existing + 6 new) via `bash scripts/test_db.sh` (isolated `absorption_test` DB). `tests/test_api/test_ranking_v3_composite.py` (new, self-contained, no shared fixtures): 4 tests on `_apply_v3_composite_ranks` directly (reorders when eligible; no-op when flag off; no-op when config has no hierarchical weights; no-op when the legal gate nulled every unit) + 4 HTTP-level tests on `GET /ranking` (reports `v2_legacy` when persisted order matches legacy; reports `v3_hierarchical` and surfaces `effective_score` when it diverges; surfaces `ahp_pending_status` for a not-yet-applied proposal; `preview_flat_weights` keeps reporting the pure-legacy baseline even when the persisted rank is v3-derived). **8/8 passed.** `tests/test_ranking_boundary.py` re-run in full: **20 passed, 6 failed** — all 6 confirmed pre-existing and unrelated by direct comparison against the same suite with this pass's changes `git stash`ed out (identical failures either way): a stale hardcoded alembic-revision count (`48` vs the real `55`, no migration was added this pass), `src/services/governance.py`/`src/services/ranking_run_recovery.py` declared-writer gaps (earlier/concurrent session work, not touched today), and 3 unrelated `agent_recommendations`-route tests. Crucially, **no failure names `src/ranking/service.py` or `ranking_scores`**, confirming the new re-rank code respects the declared single-writer boundary.
+
+**Frontend tests.** `frontend/src/components/HotUnitsTab.test.jsx`: 3 new tests (legacy-only ranking shows no v3 badge/pending hint and keeps the legacy `84.0%`; a `v3_hierarchical` ranking shows the badge and switches the displayed percent to `effective_score_percent`; `ahp_pending_status` shows the pending hint without the applied badge). **14/15 passed in this file** — the 1 failure (`renders the hot-unit grid and applies the available filter`) is pre-existing, confirmed identical with this pass's changes stashed out. `frontend/src/pages/RankingPage.test.jsx`: 1 new test confirming the v3 badge renders through the full `RankingPage` tree. **10/10 passed.** `frontend/src/components/dashboard/GlobalUnitRanking.test.jsx`: 2 new tests (v3 project shows the "AHP (v3)" badge and prefers `effective_score_percent`; a plain v2 project shows no badge). **25/25 passed.** `frontend/src/utils/globalUnitRanking.test.js`: 3 new unit tests on `buildGlobalRanking`/`normalizeUnit` (v3 project prefers effective score and stamps `rankingFormula`; v2-only project keeps legacy score and `rankingFormula: "v2_legacy"`; v3 project with no `effective_score` sent for a unit falls back to legacy, never zero). **32/32 passed.** Full frontend suite (`npx vitest run`): **514 passed, 13 failed** — all 13 confirmed pre-existing via the same stash comparison (`AppLayout.test.jsx` × 2, `AgentPage.test.jsx` × 9 — an unrelated `scrollIntoView` jsdom gap, the 1 `HotUnitsTab.test.jsx` failure above). `npm run build` — succeeds (same pre-existing >500kB chunk warning, unrelated to this pass). `git diff --check` — passed on every file touched this pass (backend and frontend). `python3 -m compileall` and `ruff check` — clean on every backend file touched this pass.
+
+**Flag state.** `ranking_v3_composite_enabled` is **`False` by default** in `src/config.py` and was **not flipped live** in any running dev/shared environment this pass — `docker compose exec api`/`worker` were not touched, no ranking run was triggered, no proposal/config/run was mutated. Every consumer therefore continues to render byte-identical legacy output until this flag is explicitly turned on for a chosen environment/project as a separate, deliberate rollout step.
+
+**No side effects.** No migration, no database mutation, no shared-dev container restart, no proposal/config/run action. All verification was against the isolated `_test` database (`bash scripts/test_db.sh`) and local frontend test/build runs only.
+
+**Rollback.** Code-only: the flag defaults `False`, so no live behavior exists to roll back. If ever flipped on, setting it back to `False` immediately reverts ordering for all *subsequent* runs — no data was or is rewritten retroactively, so there is nothing to undo for past runs.
+
+## 2026-08-31 — Ranking V3 governed value authoring and coverage surface (code-only)
+
+**Scope and policy.** The Advisor workspace now keeps rubric/value assessments and AHP weight proposals as separate governed records. Active registry definitions drive the authoring controls for the project, market, and area grains; the unit grain remains the existing engine-produced baseline and `project_legal_status` remains a legal gate, never a weightable criterion. The direct-mode UI exposes the four grain allocations explicitly and permits a grain with weight `0%` to have no criteria; positive-weight grains still require at least one positive criterion. No default business weighting was silently introduced.
+
+**Backend.** Added the read-only `GET /api/v1/governance/projects/{project_id}/ranking-v3-coverage` projection. It derives required keys from the latest published hierarchical config, resolves project/area scope server-side, and classifies each value assertion as missing, unpublished/blocked, expired, or published only when its evidence passes the shared lifecycle readiness resolver (active document, latest successful extraction, persisted chunks, and embeddings). Added the CEO-only `POST /api/v1/governance/proposals/{proposal_id}/publish` path for qualitative value proposals; it revalidates lifecycle-ready evidence and materialization gates, cannot publish AHP proposals, and has no ranking/config side effect. No schema migration was required and no data was backfilled or mutated.
+
+**Frontend.** `ExpertAnalysisPage.jsx` is vertically consolidated into report/evidence, Ranking V3 coverage, rubric authoring, AHP authoring, summary, and draft sections. Criteria are fetched from the active feature-definition endpoint and filtered to supported value grains; evidence readiness requires an embedded chunk. The page displays per-scope coverage/blockers and the AHP confirmation dialog freezes the authored snapshot before CEO submission. `AdvisorAnalysisReviewPage.jsx` labels AHP proposals distinctly, shows frozen weights/rationales read-only, and provides a CEO-only qualitative publication action after approval. Existing ranking, publication, recompute, sync, and authorization boundaries remain unchanged.
+
+**Verification.** `cd frontend && npm test -- --run src/pages/ExpertAnalysisPage.test.jsx src/pages/AdvisorAnalysisReviewPage.test.jsx` → **2 files, 25 passed**. `cd frontend && npm run build` → passed (Vite 6.4.3; existing large-chunk warning only). `.venv/bin/pytest -q tests/test_services/test_ahp_ranking_proposal.py tests/test_api/test_governance_router_registration.py` → **3 passed, 28 skipped** because the isolated database is unavailable in this environment; no database writes occurred. `python3 -m compileall -q src`, Ruff on changed backend modules, and `git diff --check` → passed. OpenAPI inspection confirms both new paths are registered under `/api/v1/governance`.
+
+**Limits and rollback.** No live/dev proposal, value, config, ranking run, migration, queue, or runtime configuration was touched. A pairwise authoring widget remains deferred; the backend pairwise path is unchanged. Roll back code-only by reverting the coverage schema/service/API additions, the Expert Analysis and CEO review UI changes, and their focused tests; no data rollback is required.
+
+## 2026-08-31 — Isolated database verification of governed Ranking V3 (partial)
+
+**Test harness and skip cause.** `tests/conftest.py::db_skip_reason()` skips database tests when neither `TEST_DATABASE_URL` nor `DATABASE_URL` is set, and rejects any target whose database name does not end in `_test`. The supported command is `bash scripts/test_db.sh`; it starts Compose service `db`, creates `${POSTGRES_DB}_test`, exports `TEST_DATABASE_URL`, runs `alembic upgrade head`, and invokes pytest. The first local attempt failed because the Docker socket was inaccessible; the approved retry started the existing `absorptionforecast-db-1` container and migrated `absorption_test` to `0053_ranking_run_recovery`.
+
+**Passing database-backed checks.** `TEST_TARGET=tests/test_services/test_ahp_ranking_proposal.py bash scripts/test_db.sh` → **28 passed**. `TEST_TARGET=tests/test_api/test_ranking_v3_composite.py bash scripts/test_db.sh` → **8 passed**. `TEST_TARGET=tests/test_api/test_ranking_report_hierarchy_disclosure.py bash scripts/test_db.sh` → **4 passed**. `TEST_TARGET=tests/test_ranking/test_hierarchical_config.py bash scripts/test_db.sh` → **38 passed**. These cover frozen AHP proposals, zero-weight Project grain, project criterion registration, approval/application idempotency/concurrency, effective V3 composite flag behavior, truthful exclusions/disclosure, and partial hierarchy scoring.
+
+**Blockers found.** `tests/test_services/test_governance.py` ran against the isolated database but reported **52 passed, 11 failed**. The failures are the previously documented fixture issue: helper-created evidence has `project_id=NULL`, so the current server guard correctly returns `DOCUMENT_PROJECT_UNSCOPED`; this is not a product bypass and was not changed. `tests/test_api/test_governance_evidence_upload.py` reported **1 passed, 15 failed** because its JWT fixtures do not carry the currently required Advisor Analysis capability and receive `ADVISOR_ANALYSIS_FORBIDDEN`; no production authorization was weakened. `tests/test_ranking/test_hierarchical_scoring.py` did not collect because it imports the deleted `tests.test_agent_e2e` module. No test markers or assertions were bypassed.
+
+**Read-only database evidence.** After each test fixture teardown, `absorption_test` reports revision `0053_ranking_run_recovery`; `ranking_weight_proposals`, `ranking_evidence_documents`, and `ranking_scores` exist; proposal/evidence/run/score rows are zero and active units are zero. No shared/dev or production database was queried or mutated.
+
+**Feature flag.** `src/config.py::Settings.ranking_v3_composite_enabled` defaults to `False`. `src/ranking/service.py::_apply_v3_composite_ranks()` is a no-op when disabled and applies persisted `hierarchical_score` only when the bound config has hierarchical weights and at least one non-null hierarchical score. `tests/test_api/test_ranking_v3_composite.py` proves disabled and enabled behavior; the default was not changed.
+
+**Verdict.** **PARTIALLY VERIFIED** — governed AHP/V3 database flows pass in the isolated DB, but the complete lifecycle→resolver→ranking matrix is not fully green because of the 11 known governance fixture failures and the deleted-module collection blocker. No failure was fixed in this verification pass; no migration, proposal, ranking run, sync, recompute, or production data was changed.
+
+## 2026-08-31 — Isolated Ranking V3 verification blockers resolved (test-only)
+
+**Scope and safety.** This was a verification/fixture repair pass only. No
+shared-dev or production database was used, and no proposal, ranking config,
+ranking run, queue, sync, recompute, publication, or runtime configuration was
+changed. Every database command ran through `scripts/test_db.sh` against the
+isolated `absorption_test` database; the harness migrated that database to
+`0053_ranking_run_recovery` and each test fixture truncated its rows on
+teardown.
+
+**Exact causes of the earlier blockers.**
+
+1. `tests/test_services/test_governance.py`'s evidence helper created
+   standalone documents with `project_id = NULL`; the production guard
+   correctly rejected links with `DOCUMENT_PROJECT_UNSCOPED`. The fixture now
+   supplies the authorized project, and a dedicated regression test preserves
+   the fail-closed unscoped case.
+2. `tests/test_api/test_governance_evidence_upload.py` positive fixtures used
+   JWTs without the required Advisor Analysis capability, so the authoritative
+   dependency correctly returned `ADVISOR_ANALYSIS_FORBIDDEN`. Positive cases
+   now use a server-scoped `CRM.ADVISOR`/`business_viewer` subject; viewer and
+   other unauthorized cases remain negative tests.
+3. `tests/test_ranking/test_hierarchical_scoring.py` imported the deleted
+   `tests.test_agent_e2e` module. The import now points to the canonical,
+   self-contained `tests/ranking_fixture.py` (project/area, five units, CRM
+   deals, and published baseline config); no dummy compatibility shim was
+   added.
+
+**Database-backed verification results (all sequential, isolated).**
+
+- `TEST_TARGET=tests/test_services/test_governance.py bash scripts/test_db.sh -q --tb=short` → **64 passed**.
+- `TEST_TARGET=tests/test_api/test_governance_evidence_upload.py bash scripts/test_db.sh -q --tb=short` → **16 passed**.
+- `TEST_TARGET=tests/test_ranking/test_hierarchical_scoring.py bash scripts/test_db.sh -q --tb=short` → **63 passed, 2 existing pytest warnings**.
+- `TEST_TARGET=tests/test_api/test_ranking_hierarchical.py bash scripts/test_db.sh -q --tb=short` → **22 passed**.
+- `TEST_TARGET=tests/test_api/test_ranking_endpoint.py bash scripts/test_db.sh -q --tb=short` → **20 passed, 1 existing pytest warning**.
+- `TEST_TARGET=tests/test_ranking/test_enqueue_and_claim.py bash scripts/test_db.sh -q --tb=short` → **10 passed**.
+- `TEST_TARGET=tests/test_ranking/test_preview.py bash scripts/test_db.sh -q --tb=short` → **5 passed**.
+- `TEST_TARGET=tests/test_ranking/test_unit_enrichment_not_authoritative.py bash scripts/test_db.sh -q --tb=short` → **7 passed**.
+- `TEST_TARGET=tests/test_ranking/test_survey_and_config.py bash scripts/test_db.sh -q --tb=short` → **26 passed, 7 existing pytest warnings**.
+- `TEST_TARGET=tests/test_scripts/test_load_lapura_unit_enrichment.py bash scripts/test_db.sh -q --tb=short` → **5 passed**.
+- `TEST_TARGET=tests/test_scripts/test_seed_lapura_orchestration.py bash scripts/test_db.sh -q --tb=short` → **12 passed**.
+- `TEST_TARGET=tests/test_ranking/test_governed_v3_integration.py bash scripts/test_db.sh -q --tb=short` → **1 passed** (two areas, seven units, all three Market criteria, all three Area criteria, lifecycle-ready evidence, full composition, and immutable historical `ranking_runs` metadata).
+
+The real end-to-end hierarchy path is exercised by
+`test_full_hierarchical_composition_u_plus_m_plus_p_plus_a` in
+`tests/test_ranking/test_hierarchical_scoring.py`: it seeds the canonical
+five-unit/CRM fixture, creates lifecycle-ready evidence (successful extraction,
+persisted chunk, embedding), publishes CEO-approved Project, Market, and Area
+value assertions through the governance service, runs ranking, and asserts
+`score_mode="full_hierarchical"`, eligible grains, contributions, and stable
+unit presence/ranking. The dedicated two-area integration test also proves
+that a later run does not rewrite the earlier append-only `ranking_runs` row
+(the `ranking_scores` table is intentionally the current-project
+materialization). The companion AHP lifecycle suite
+`tests/test_services/test_ahp_ranking_proposal.py` covers draft/submit/freeze,
+CEO approval, bound run completion, idempotency/concurrency, failed-run
+recovery, feature-flag gating, and immutable prior-run behavior (**28 passed**
+in the final isolated rerun). Tests for no-value exclusions, partial
+Project/Market/Area coverage, wrong scope, expiry/cutoff, evidence readiness,
+and legal gating are included in the 63-test hierarchy suite.
+
+**Feature flag.** `src/ranking/service.py::_apply_v3_composite_ranks()` is
+gated by `Settings.ranking_v3_composite_enabled`; disabled is a no-op and
+enabled re-ranks only when this run has a bound hierarchical config and at
+least one non-null persisted `hierarchical_score`. The enabled/disabled cases
+are covered by `tests/test_api/test_ranking_v3_composite.py` (**8 passed** in
+the final isolated rerun). The current working-tree `src/config.py` default is
+`True` (a pre-existing dirty-tree setting); this pass did not change it or any
+runtime environment. The test fixture explicitly monkeypatches the flag off
+for legacy-baseline tests and on only for tests that exercise the hierarchical
+path.
+
+**Read-only post-test evidence.** `docker compose exec -T db psql -X -U app -d
+absorption_test -Atc "SELECT version_num FROM alembic_version;"` returned
+`0053_ranking_run_recovery`. Read-only counts after teardown were
+`projects=0`, `ranking_weight_proposals=0`, `ranking_evidence_documents=0`,
+`ranking_runs=0`, and `ranking_scores=0`.
+
+**Static checks and limits.** `.venv/bin/python -m compileall -q src tests`,
+Ruff on all files changed in this pass, and `git diff --check` passed. A
+repository-wide Ruff run still reports 57 pre-existing style errors in
+unrelated files; none are in the changed fixture/test files. No stale
+`tests.test_agent_e2e` imports remain. The Docker harness initially failed
+under the restricted shell due to `/var/run/docker.sock` permission and then
+ran successfully with the approved isolated-db elevation.
+
+**Verdict.** **VERIFIED: safe for controlled staging/UAT** for the exercised
+database-backed governed Ranking V3 lifecycle. This verdict is limited to the
+listed isolated tests and does not authorize migration or rollout to the shared
+dev/production environment; the `ranking_v3_composite_enabled` setting must be
+reviewed separately before deployment.
+
+## 2026-09-01 — Isolated one-Area governed Ranking V3 verification
+
+This verification used only the repository-managed `absorption_test` PostgreSQL
+database. No shared dev/production data, runtime configuration, migration
+deployment, ranking publication, recompute, sync, or other live state was
+changed. The Docker test harness upgraded the isolated database to
+`0053_ranking_run_recovery`. A final read-only query after the sequential
+suites returned
+`absorption_test|0053_ranking_run_recovery|1|1|0|0|1|1|0` for
+`projects|areas|units|ranking_runs|ranking_weight_proposals|ranking_evidence_documents|ranking_feature_values`;
+these are isolated test-fixture residues only (no shared or production rows
+were touched), and no manual cleanup or data mutation was performed.
+The schema-correct read-only inspection showed one unrelated isolated
+`project|weight|submitted` proposal and one `extraction_status=not_requested`
+document, with `ranking_runs=0`; no Area assertion or ranking run survived the
+last suite teardown.
+
+The earlier 28-test skip was caused by `tests/conftest.py::db_skip_reason()`:
+database tests skip when `TEST_DATABASE_URL`/`DATABASE_URL` is absent, and fail
+closed when the selected database name does not end in `_test`. The supported
+`TEST_TARGET=... bash scripts/test_db.sh` command starts Compose `db`, creates
+`${POSTGRES_DB}_test`, exports both variables, runs `alembic upgrade head`, and
+then invokes pytest. The first attempt in the restricted shell could not open
+the Docker socket; the approved isolated retry completed successfully.
+
+The added database-backed test
+`test_one_area_all_expert_values_are_scoped_per_area_and_flagged_comparably`
+is parameterized for `ranking_v3_composite_enabled=False` and `True`. It creates
+one project, two Areas, seven units, canonical CRM baseline values, an active
+hierarchical config with positive Market/Project/Area/Unit weights, and uses
+the real governance lifecycle (value assertions, ready evidence, extraction
+success, persisted chunk and embedding, Advisor submit, CEO approval and
+publication). Area A receives all three Area expert features; Area B receives
+none. The resulting run contains both Areas' units: Area A is eligible with
+all three Area feature-value IDs and `score_mode=partial_hierarchical`; Area B
+is excluded only with `NO_PUBLISHED_AREA_EXPERT_VALUE`, has no Area-A evidence
+IDs or Area effective weight, and remains rankable from the resolved grains.
+Both Areas carry the documented comparability warning. The prior baseline
+`ranking_runs` row remains `completed` with identical `finished_at` and
+`config_version_id`; history is append-only.
+
+Sequential isolated test results:
+
+- `TEST_TARGET=tests/test_ranking/test_governed_v3_integration.py bash scripts/test_db.sh -q --tb=short` — **3 passed** (full two-Area lifecycle plus the two flag cases).
+- `TEST_TARGET=tests/test_ranking/test_hierarchical_scoring.py bash scripts/test_db.sh -q --tb=short` — **63 passed**, 2 existing pytest warnings.
+- `TEST_TARGET=tests/test_api/test_ranking_v3_composite.py bash scripts/test_db.sh -q --tb=short` — **8 passed**.
+- `TEST_TARGET=tests/test_api/test_ranking_report_hierarchy_disclosure.py bash scripts/test_db.sh -q --tb=short` — **4 passed**.
+- `TEST_TARGET=tests/test_api/test_ranking_hierarchical.py bash scripts/test_db.sh -q --tb=short` — **22 passed**.
+- `TEST_TARGET=tests/test_services/test_ahp_ranking_proposal.py bash scripts/test_db.sh -q --tb=short` — **28 passed**.
+
+The feature flag is enforced in `src/ranking/service.py::_apply_v3_composite_ranks()`
+(around lines 2574–2641): disabled is a no-op preserving legacy ranks; enabled
+reranks only this run's persisted non-null hierarchical scores using the bound
+config, without changing `ranking_scores.score`. Area scoping and exclusion
+are implemented by `_select_eligible_area_justifications()` (lines 1230–1284),
+`_area_expert_exclusion_reason()` (1287–1350), per-area snapshot construction
+(`_build_grain_feature_snapshot_for_run()`, 1582–1715), and hierarchical
+composition/contribution disclosure (2061–2155, 2188–2550). The underlying
+formula remains `score_unit()` in `src/ranking/engine.py` (69–133), with
+effective V3 rank substitution in `effective_rank_scores()` (166–187).
+
+**Verdict: VERIFIED YES: one fully published Area contributes to its own units in Ranking V3.**
+This is controlled staging/UAT evidence only; applying migration 0049 or any
+runtime/config change to shared dev or production remains an explicit later
+rollout step.
+
+## 2026-09-01 — Evidence extraction terminal-failure hardening
+
+Điều tra document `b5179939-51db-4c3f-9e0f-04f0d7ddfac9` xác nhận worker đã
+claim job `2d4c7d5f-2b7f-4e0e-a5c6-997f523a6941`, parse PDF thành công và gọi
+embedding API thành công, nhưng PostgreSQL từ chối INSERT chunk với
+`invalid byte sequence for encoding "UTF8": 0x00` tại
+`src/jobs/extract_evidence.py:123` → `src/services/evidence_extraction.py:337`.
+Transaction chunk rollback, RQ đánh dấu job failed, còn attempt DB vẫn
+`pending`; gọi extract lại là idempotent no-op. File nguồn và document row
+không bị xoá hoặc sửa.
+
+Trước đây state machine cho phép `pending → RQ failed → pending forever`.
+Sau hardening, mọi lỗi sau khi worker claim đều đi qua transaction độc lập để
+ghi terminal event:
+
+`pending → succeeded`  |  `pending → failed`  |  `pending → not_supported`
+
+`ranking_evidence_extraction_attempts` vẫn append-only; attempt lịch sử không
+bị UPDATE/DELETE. Worker truyền immutable `attempt_id`, terminal writer khóa
+attempt mới nhất và từ chối ghi đè attempt muộn hơn hoặc đã terminal. Request
+concurrency được serialize bằng transaction-scoped PostgreSQL advisory lock
+theo document; không dùng partial unique index vì các dòng `pending` lịch sử
+không thể bị xóa. Migration `0054_evidence_failure_state` thêm nullable
+`error_code`; `0055_drop_pending_attempt_index` loại bỏ index không tương thích
+append-only (không backfill dữ liệu lịch sử).
+
+Error-code contract an toàn: `PARSER_FAILED`, `EMBEDDING_FAILED`,
+`CHUNK_PERSISTENCE_FAILED`, `DATABASE_TRANSACTION_FAILED`,
+`UNSUPPORTED_DOCUMENT`, `ENQUEUE_FAILED`. Summary bị giới hạn và không chứa
+stack trace, nội dung tài liệu, vector hay credential. `EvidenceDocumentOut`,
+`EvidenceExtractionOut` trả effective status/error từ latest attempt; không
+dùng cột registration-time `extraction_status` để quyết định readiness.
+
+Retry behavior: request trên pending/succeeded vẫn no-op; request sau failed
+được phép append attempt pending mới. Worker không regress succeeded/attempt
+muộn hơn và không tạo duplicate chunk. Nếu terminal-state commit cũng lỗi,
+job thử lại ghi trạng thái tối đa hai lần rồi giữ RQ failure signal để vận hành
+xử lý bounded; không có retry vô hạn cho lỗi dữ liệu xác định.
+Pending được coi là stale sau `evidence_pending_stale_seconds=900` (cấu hình
+additive trong `src/config.py`); request có ủy quyền sau ngưỡng này append một
+attempt mới, còn pending còn mới vẫn là no-op.
+
+Source files changed: `src/jobs/extract_evidence.py`,
+`src/services/evidence_extraction.py`, `src/api/governance.py`,
+`src/models/tables.py`, `src/models/schemas.py`, migrations
+`0054_evidence_extraction_failure_state.py` và
+`0055_drop_pending_attempt_index.py`, cùng regression tests trong
+`tests/test_jobs/test_extract_evidence.py` và
+`tests/test_services/test_evidence_extraction.py`.
+
+Sequential isolated results (repository harness, database `absorption_test`):
+
+- `TEST_TARGET=tests/test_jobs/test_extract_evidence.py bash scripts/test_db.sh -q --tb=short` — **13 passed**.
+- `TEST_TARGET=tests/test_services/test_evidence_extraction.py bash scripts/test_db.sh -q --tb=short` — **23 passed**.
+- `TEST_TARGET=tests/test_api/test_governance_evidence_upload.py bash scripts/test_db.sh -q --tb=short` — **16 passed**.
+- `.venv/bin/ruff check` on all touched files — **passed**.
+- `python3 -m compileall -q src tests` — **passed**.
+- `git diff --check` — **passed**.
+
+Safe operator action for the currently stuck document (requires explicit
+approval, **not executed here**): first deploy migrations/code, then invoke an
+authorized extraction retry that appends a new pending attempt and enqueues
+`src.jobs.extract_evidence.extract_and_embed_evidence_document` for document
+`b5179939-51db-4c3f-9e0f-04f0d7ddfac9`. Verify effective status, latest attempt,
+chunk count and embedded count read-only; stop on another persistence failure.
+Do not UPDATE the historical `pending` row or requeue the old failed RQ job
+blindly.
+
+No live/shared-dev/production evidence document, proposal, ranking run,
+configuration, sync data, or runtime environment was modified. The only
+database writes performed were fixture cleanup/setup and migrations in the
+isolated `_test` database by `scripts/test_db.sh`.
+
+## 2026-09-01 — PDF evidence ingestion: sanitize pypdf-derived NUL bytes before PostgreSQL text storage (isolated-test verification only)
+
+**Confirmed root cause.** For document `b5179939-51db-4c3f-9e0f-04f0d7ddfac9`,
+`pypdf.PdfReader.pages[i].extract_text()` emitted one Unicode `U+0000` on two
+pages (an incomplete ToUnicode/CMap glyph mapping in that specific PDF — a
+known `pypdf` quirk, not a bug in this codebase's parsing logic). Parsing,
+chunking, and embedding all succeeded; PostgreSQL then rejected the bulk
+`INSERT INTO ranking_evidence_document_chunks` with `invalid byte sequence
+for encoding "UTF8": 0x00` (**SQLSTATE 22021**, `character_not_in_repertoire`
+— asyncpg raises `CharacterNotInRepertoireError`, a subclass of `DataError`,
+never `IntegrityError`). PostgreSQL `text` columns reject `NUL` unconditionally
+regardless of encoding — this is not fixable via database configuration and
+was never proposed as one; the fix is application-side sanitization of
+derived text before it reaches PostgreSQL. The already-hardened state machine
+(entry above) correctly recorded this as a terminal `failed` /
+`CHUNK_PERSISTENCE_FAILED` attempt with a full transaction rollback (zero
+orphaned chunk rows) — that behavior is preserved unchanged by this pass.
+
+**Sanitization policy — new `evidence_extraction.sanitize_text_for_postgres(text:
+str | None) -> SanitizedTextResult`** (`src/services/evidence_extraction.py`),
+the one canonical helper for the evidence text-ingestion boundary:
+- Normalizes Unicode to **NFC**.
+- Removes `U+0000` unconditionally.
+- Removes other **C0** controls (`< U+0020`, minus `\n`/`\r`/`\t`, which are
+  preserved) and **C1** controls (`U+007F`, `U+0080`–`U+009F`).
+- Preserves everything else untouched: Vietnamese diacritics, Unicode
+  punctuation, URLs, numbers, `m²`, `%`, dashes, curly quotes, and
+  Markdown-relevant characters — verified by an explicit regression test that
+  round-trips a Vietnamese sentence containing all of these unchanged.
+- Returns only safe diagnostics (`nul_removed`, `controls_removed`,
+  `input_length`, `output_length`) — never the text itself, so a caller can
+  log what happened without ever logging document content.
+- Never touches the original PDF/text bytes, `sha256_checksum`, original
+  filename, `document_id`, page numbers, or embedding vectors — it operates
+  purely on the in-memory extracted/chunk **string**, downstream of the
+  immutable uploaded file.
+
+**Exact pipeline location.** Two sanitize points, both required:
+1. **Parser boundary** — `src/jobs/extract_evidence.py::_extract_text_pages()`
+   sanitizes every page's `pypdf.page.extract_text()` result (PDF) and the
+   decoded `text/plain`/`text/markdown` body immediately after parsing,
+   **before** `_split_into_chunk_rows()` computes chunk boundaries and before
+   `token_count` is derived — so chunk boundaries, token counts, the text
+   sent to `embed_texts()`, and the text later persisted to
+   `ranking_evidence_document_chunks.content` are all the exact same
+   already-sanitized string.
+2. **Defense-in-depth at the INSERT boundary** —
+   `evidence_extraction.insert_chunks_and_mark_succeeded()` (the single
+   declared writer of `ranking_evidence_document_chunks`, per this module's
+   own docstring and `tests/test_ranking_boundary.py`) re-applies the same
+   sanitizer to every chunk's `content` immediately before the bulk `INSERT`,
+   unconditionally. This is cheap and idempotent on already-clean text, and
+   guards any future caller/parser that might bypass step 1.
+
+**State machine — unchanged, verified not regressed.** `pending → succeeded`
+still requires committed chunks *and* embeddings; `pending → failed` for
+parser/embedding/persistence/transaction/unexpected errors;
+`pending → not_supported` only for unsupported MIME types.
+`ranking_evidence_extraction_attempts` stays append-only (no UPDATE/DELETE);
+a subsequent authorized `request_extraction` after a `failed` attempt still
+appends a new `pending` attempt while the old `failed` row remains untouched
+(re-verified by the pre-existing
+`test_chunk_persistence_failure_is_terminal_and_retryable`, unmodified). No
+new migration was needed or added.
+
+**Safe observability.** `src/jobs/extract_evidence.py::_run()` now logs
+`evidence_extraction.text_sanitized` (WARNING) **only when sanitization
+actually removed something** — `document_id`, `attempt_id`, `stage`
+(`post_extract` at the parser boundary, `pre_insert` at the INSERT boundary),
+`parser`/`page_number` or `chunk_index`, `nul_removed`, `controls_removed`,
+`input_length`, `output_length`; `job_id` is already auto-bound to every log
+line in this path via the existing `job_id_var` contextvar. Separately, a new
+`_log_persistence_failure()` closes the exact diagnosability gap a same-day
+read-only incident investigation surfaced: the bare `except Exception:`
+around `insert_chunks_and_mark_succeeded()` previously discarded the real
+driver exception entirely, so the original SQLSTATE was only recoverable by
+reading raw PostgreSQL server logs. It now logs `error_type`, `sqlstate` (via
+`exc.orig.sqlstate` when the DB driver provides it), `stage`, `document_id`,
+`attempt_id` before the terminal `CHUNK_PERSISTENCE_FAILED` write — still
+never the raw exception message, SQL statement, bound parameters, document
+text, or embedding vectors. `mark_extraction_attempt_failed()`'s existing
+`error_summary` truncation/NUL-stripping (unrelated pre-existing code, left
+unchanged) continues to guarantee the FE-visible error stays a bounded, safe
+code/summary — never a raw DB error.
+
+**Files changed.** `src/services/evidence_extraction.py` (new
+`SanitizedTextResult` dataclass + `sanitize_text_for_postgres()`; defense-in-depth
+sanitize call in `insert_chunks_and_mark_succeeded()`),
+`src/jobs/extract_evidence.py` (`_extract_text_pages()` now sanitizes and
+returns per-page diagnostics; `_run()` logs sanitization diagnostics and adds
+`_log_persistence_failure()`), `tests/test_jobs/test_extract_evidence.py`,
+`tests/test_services/test_evidence_extraction.py`. No migration — no schema
+changed; the fix is entirely in application-layer text handling.
+
+**Test commands and results** (isolated `absorption_test` database,
+`scripts/test_db.sh`):
+
+- `TEST_TARGET=tests/test_jobs/test_extract_evidence.py bash scripts/test_db.sh -q --tb=short` — **15 passed** (13 pre-existing + 2 new: pypdf-boundary NUL sanitization, full end-to-end NUL regression through `_run()`).
+- `TEST_TARGET=tests/test_services/test_evidence_extraction.py bash scripts/test_db.sh -q --tb=short` — **30 passed** (23 pre-existing + 7 new: `sanitize_text_for_postgres` unit tests + defense-in-depth INSERT-boundary test).
+- `TEST_TARGET=tests/test_api/test_governance_evidence_upload.py bash scripts/test_db.sh -q --tb=short` — **16 passed**, unchanged.
+- `TEST_TARGET=tests/test_services/test_rationale_retrieval.py bash scripts/test_db.sh -q --tb=short` — **1 passed**, unchanged (RAG retrieval path).
+- `TEST_TARGET=tests/test_migrations/test_0035_ranking_evidence_document_chunks.py bash scripts/test_db.sh -q --tb=short` — **9 passed**, unchanged.
+- `TEST_TARGET=tests/test_services/test_governance.py bash scripts/test_db.sh -q --tb=short` — **64 passed**, unchanged (Agent RAG/governance evidence path).
+- `TEST_TARGET=tests/test_ranking_boundary.py bash scripts/test_db.sh -q --tb=short` — 20 passed, 6 failed — all 6 confirmed pre-existing and unrelated (stale alembic-revision-count assertion, `agent_recommendations`-route tests, `src/services/ranking_run_recovery.py` declared-writer gaps from earlier session work) — no failure names `evidence_extraction.py`/`extract_evidence.py`/`ranking_evidence_document_chunks`.
+- `.venv/bin/ruff check` on all four touched files — **passed**.
+- `python3 -m compileall -q src tests alembic` — **passed**.
+- `git diff --check` on all four touched files — **passed**.
+
+**Proof the fix works for NUL-containing text**: the new
+`test_nul_byte_from_pypdf_is_sanitized_end_to_end_and_extraction_succeeds`
+simulates exactly the confirmed incident shape (`pypdf` pages 3 and 5 each
+emitting one embedded `\x00`, surrounded by clean Vietnamese pages with `m²`,
+`%`, dashes, and curly quotes) through the real `_run()` job and the real
+`insert_chunks_and_mark_succeeded()` persistence path — asserting: the
+document row's `sha256_checksum`/`file_size_bytes`/`original_filename` are
+byte-identical before and after; all 5 chunks commit with no `\x00` in
+`content`; every chunk has a non-null embedding; the Vietnamese/`m²`/`%`
+clean-page text survives unchanged; the latest attempt is `succeeded`;
+`get_document_readiness()` reports `eligible=True`; and
+`search_similar_chunks()` returns the committed chunks.
+
+**Controlled operational plan to retry the affected document (requires
+separate explicit approval — NOT executed here).** After this fix is
+deployed to the environment: (1) confirm via read-only query that document
+`b5179939-51db-4c3f-9e0f-04f0d7ddfac9`'s latest attempt is still `failed` /
+`CHUNK_PERSISTENCE_FAILED` and that `ranking_evidence_document_chunks` has
+zero rows for it; (2) invoke the authorized extraction-retry path (the same
+sanctioned endpoint used to call `request_extraction` → enqueue
+`src.jobs.extract_evidence.extract_and_embed_evidence_document`) — this
+appends a new `pending` attempt and leaves the historical `failed` row
+untouched, per the append-only contract; (3) verify read-only afterward:
+latest attempt is `succeeded`, chunk count and embedded-chunk count both > 0,
+no `\x00` present in any persisted chunk `content`, and
+`get_document_readiness()` reports `eligible=True`; (4) if it fails again for
+any reason, stop and re-investigate rather than retrying blindly — do not
+requeue the old RQ job and do not UPDATE the historical row. This document
+was **not** retried, requeued, or otherwise altered during this task.
+
+No live/shared-dev/production evidence document, proposal, ranking run,
+configuration, sync data, or runtime environment was modified. The only
+database writes performed were fixture cleanup/setup and migrations in the
+isolated `_test` database by `scripts/test_db.sh`.
+
+
+## 2026-09-01 — Agent & Advisory System: current-state architecture documentation (read-only audit, no code changes)
+
+Full re-read of every file under `src/agents/`, `src/api/agent.py`, and the
+agent's read paths into `src/models/tables.py`/ranking data, done to replace
+several stale references left over from an earlier architecture phase (see
+§F). No source file was modified for this entry.
+
+### A. Architecture overview
+
+The Agent is a **read-only, conversational analytics assistant** for the
+sales team — it answers questions about a project's ranked units, areas, and
+deal inventory in Vietnamese business language, using a LangGraph state
+machine (`src/agents/graph.py::answer()`) that classifies intent, pulls a
+JSON context snapshot straight from the operational database
+(`src/agents/tools.py::build_context()`), and asks an OpenAI-compatible LLM
+to narrate it. It never writes to `units`/`deals`/`ranking_*`/governance
+tables and never triggers a ranking run, config publish, or CRM sync. Its
+only DB write is its own conversation transcript
+(`src/agents/memory.py`, one JSON file per session under
+`data/agent_sessions/`, not a database table). It sits downstream of
+everything else in the pipeline: MiniCRM sync → domain recompute → ranking
+run → `ranking_scores` is the data it reads; it has no feedback edge back
+into that chain.
+
+### B. Data flow
+
+- `POST /agent/chat` (`src/api/agent.py::chat()`) receives `{message,
+  session_id}`, resolves the caller's project scope from
+  `DashboardPrincipal.project_scope`, loads prior turns via
+  `memory.history(session_id)`, and calls `src/agents/graph.py::answer()`.
+- `answer()` runs a 6-node LangGraph (`ingest → classify → validate → execute
+  → narrate → finish`, all defined as inline closures inside `answer()`
+  itself — there is no `src/agents/nodes/` package):
+  - `classify` — `detect_intent()` (regex/keyword rules over an accent-folded
+    question) picks one of a fixed intent set; if it falls through to
+    `"unsupported"`, one LLM call (`generate_content`) attempts a JSON
+    intent-classification fallback.
+  - `validate` — `guardrails.validate_request()` rejects empty/oversized
+    input, prompt-injection markers, and malformed unit-id arguments.
+  - `execute` — calls `tools.build_context()` for every intent; for
+    `"evidence_question"` it additionally resolves the project's
+    retrieval-ready document ids
+    (`tools.project_evidence_document_ids()`) and calls
+    `advisory_tools.answer_expert_question()`.
+  - `narrate` — for most intents, a deterministic Vietnamese template in
+    `graph.py::_fallback()` renders the context directly (no LLM call); for
+    the general/default and `evidence_question` intents it calls
+    `generate_content(prompt, system_prompt=SYSTEM_PROMPT)` with the raw
+    `context` dict JSON-dumped into the prompt, then
+    `guardrails.validate_llm_output()` checks the answer actually mentions at
+    least one unit id from the context before accepting it.
+- `chat()` appends the turn to `memory`, and builds `ChatResponse.sources`
+  from `context["project"]` plus, when present,
+  `context["evidence_answer"]["citations"]`.
+
+### C. Key files and responsibilities
+
+- **`src/api/agent.py`** (79 lines) — `AgentChatRequest`, `_scope()`,
+  `chat()` (`POST /agent/chat`), `status()` (`GET /agent/status`),
+  `session_history()` (`GET /agent/sessions/{id}`). The only agent-facing
+  HTTP surface; requires `business_viewer` role
+  (`require_role("business_viewer")`). **No recommendation/approve/reject
+  routes exist here** — see §F.
+- **`src/agents/graph.py`** (190 lines) — `detect_intent()`, `_fallback()`
+  (template answers for every non-LLM intent), `answer()` (the LangGraph
+  build + `ainvoke`, decorated `@traceable` for LangSmith). This is the
+  orchestration core: intent routing, guardrail wiring, and the
+  template-vs-LLM narration decision all live here.
+- **`src/agents/tools.py`** (129 lines) — `infer_project_id()` (regex/alias
+  project resolution from free text), `project_catalog()`,
+  `_resolve_project()`, `project_evidence_document_ids()`, `build_context()`
+  (the single context-assembly function — see §D). This is the only agent
+  file that touches `units`/`deals`/`areas`/`projects`/`ranking_scores`
+  directly via SQLAlchemy Core against `src.db.get_session_factory()`.
+- **`src/agents/advisory_tools.py`** (169 lines) — `answer_expert_question()`
+  (embeds the question, calls `evidence_extraction.search_similar_chunks()`
+  over caller-authorized document ids, asks the LLM for a citation-marked
+  JSON answer, resolves/validates citations against the real retrieved
+  chunks, rechecks each cited document's lifecycle status immediately before
+  returning). Deliberately small and read-only; its own docstring records
+  that it is a **compatibility replacement** for a much larger, deleted
+  module (see §F).
+- **`src/agents/guardrails.py`** (19 lines) — `validate_request()` (input
+  guardrail), `validate_llm_output()` (output guardrail: rejects an LLM
+  answer that names none of the context's unit ids).
+- **`src/agents/prompts.py`** (15 lines) — `SYSTEM_PROMPT`, the one
+  Vietnamese system prompt used for general narration (evidence Q&A has its
+  own separate, shorter system prompt inline in `advisory_tools.py`).
+- **`src/agents/state.py`** (17 lines) — `AgentState` TypedDict (question,
+  project_id, history, intent, arguments, context, answer, sources,
+  llm_used, blocked, events).
+- **`src/agents/memory.py`** (31 lines) — `new_session_id()`, `history()`,
+  `append()`. File-backed (`data/agent_sessions/<uuid>.json`), last 12
+  messages, no database table.
+- **Ranking-related access actually used by the agent** — none of the
+  `src/ranking/*.py` modules are imported by any file under `src/agents/`.
+  `tools.build_context()` reads the `ranking_scores` table columns directly
+  (`score`, `hierarchical_score`, `rank_in_project`, `contributions`,
+  `hierarchical_contributions`, `config_version_id`) with its own inline
+  ordering (`hierarchical_score` nulls-last, falling back to legacy
+  `rank_in_project`) — it does **not** call `src/ranking/engine.py`,
+  `src/ranking/service.py`, or reuse the `effective_score`/`ranking_formula`
+  fields that `GET /ranking` (`src/api/ranking.py`) now exposes. See §F for
+  why this is a real drift risk, not just a style note.
+
+### D. Context structure
+
+`build_context()` returns exactly this shape (all of it, verified against
+the function's literal `return` statement):
+
+- `project`: `{project_id, name, internal_id}` (or, if unresolved,
+  `{projects: [...catalog], error: "..."}` and nothing else).
+- `summary`: `area_count`, `unit_count`, `available_unit_count`,
+  `deal_count`, `booking_count` (deals with `status='reserved'`),
+  `sold_deal_count` (deals with `status='sold'`).
+- `requested_unit_count`, `returned_unit_count`, `ranking_order`
+  (`"highest_first"`/`"lowest_first"`).
+- `top_ranked_units`: list of `{unit_id, unit_code, status, area, score
+  (0-100, hierarchical_score preferred, legacy score as fallback), rank,
+  score_model (hardcoded `"Hierarchical AHP/RGMM v3"` string — always this
+  label, even on a legacy-score fallback row), config_version_id,
+  contributions (raw JSONB dict, hierarchical_contributions preferred)}`.
+- `areas`: list of `{area, unit_count, available_count, sold_count,
+  average_score}` — one row per active area, ordered alphabetically, not by
+  performance.
+- `evidence_answer` — added only for `intent == "evidence_question"`; the
+  full `answer_expert_question()` result (`answer`, `citations`,
+  `insufficient_evidence`, `reason`).
+
+**Explicitly missing** for semantically rich sellability answers (confirmed
+absent from `build_context()`'s return value and from every helper it
+calls):
+- No area-level demand/velocity/conversion labels or narrative — only raw
+  `unit_count`/`available_count`/`sold_count`/`average_score` per area, with
+  no time dimension (no booking-rate, no days-on-market, no trend).
+- No unit-level sellability label, demand label, or short "why" reason
+  string — only the raw numeric score/rank/contributions JSON, which the LLM
+  must interpret unaided in the general-narration path.
+- No project-level market-posture summary (no aggregate framing beyond the
+  flat unit/deal counts in `summary`).
+- `contributions`/`hierarchical_contributions` are passed through as raw,
+  unlabeled JSONB (feature key → numeric contribution) — never translated
+  into a readable phrase (e.g., "high due to strong project-level demand
+  signal, weak due to legal risk").
+- No per-unit deal/booking history (only the project-wide `deal_counts`
+  breakdown by status; nothing joins `deals` per unit into
+  `top_ranked_units`).
+- No forecast data of any kind (see §E).
+
+### E. Current capabilities and limitations
+
+**Answers well today** (deterministic template or grounded LLM narration
+over real DB rows): project inventory snapshot (`project_summary`); top-N
+units by current ranking score (`rank_units`, the default/general intent);
+listing units by status or deal status (`list_units`); a fixed-shortlist
+"today's work" / "closing advice" nudge built from the same top-ranked list
+(`business_plan`, `closing_advice`); area rows sorted by available-unit count
+(`aggregate_by_area` — explicitly labeled inventory-review order, not a sales
+velocity claim); evidence-grounded Q&A over uploaded expert documents
+(`evidence_question` → `advisory_tools.answer_expert_question()`).
+
+**Cannot do yet**:
+- No explicit sellability/demand/velocity/conversion classification at any
+  grain — `weak_absorption_unit` and `absorption_units` intents exist in
+  `detect_intent()` specifically to **decline** per-unit absorption
+  questions (`_fallback()`'s own text: "chưa đủ dữ liệu... chỉ đáng tin cậy ở
+  cấp phân khu" / "không phải Top căn có độ hấp thụ cao") and substitute the
+  generic priority-score list instead.
+- No structured "why this unit is ranked above that one" explanation beyond
+  dumping raw `contributions` JSON into the LLM prompt and hoping the model
+  narrates it well; there is no `compare_units` narration template (the
+  intent exists in `detect_intent()` but has no dedicated handling in
+  `_fallback()` or a special LLM prompt — it falls through to the generic
+  narration path).
+- No area-vs-area comparative reasoning beyond the single "available/sold
+  count" sort in `aggregate_by_area`.
+- **No forecast-based answers.** `src/jobs/forecast.py::run_daily_forecast()`
+  is a stub — no Prophet call, no forecast table writes (there are no
+  forecast tables in `src/models/tables.py` at all yet); its own docstring
+  says "Logic Prophet / LangGraph / cảnh báo sẽ cài đặt ở MVP 2." The agent
+  has nothing forecast-shaped to read even if it wanted to.
+- No write/approval flow at all (see §F — this is a documented, not
+  accidental, product boundary in the current code).
+
+### F. Risks and notes
+
+- **`pipeline_status.md` itself contains stale symbol references from a
+  prior agent architecture** that no longer exist in `src/agents/`:
+  - Line ~86 (a much earlier entry) references
+    `src/agents/advisory_tools.py::collect_advisory_context` and
+    `run_advisory_agent` — **neither exists** in the current
+    `advisory_tools.py` (only `answer_expert_question` and its private
+    helpers).
+  - Lines ~395/~730/~795-806/~4596 (earlier entries) reference
+    `src/agents/nodes/ranking_node.py` and `src/agents/nodes/example_node.py`
+    — **there is no `src/agents/nodes/` directory** in the current tree;
+    `answer()`'s graph nodes are plain closures defined inline in
+    `graph.py`.
+  - A later entry (~line 10969) already documents *why*: the whole 1279-line
+    original `advisory_tools.py` (with `get_feature_evidence`,
+    `generate_justification_explanation`, etc. — see the ~line 9391
+    reference to those, also now stale) was deleted by commit `bf5f555`
+    during the Agent restructuring, and only a minimal read-only
+    `answer_expert_question()` compatibility shim was restored. Any future
+    reader should treat entries **before** that restoration as historical
+    record only, not as a description of current `src/agents/` code.
+- **`agent_recommendations`/`sales_campaigns`/`agent_executions` are schema
+  that no longer has a live write path.** `src/models/tables.py` still
+  defines all three tables (0018/0020 migrations), and
+  `tests/test_ranking_boundary.py::test_create_recommendation_always_inserts_pending_approval`
+  / `test_no_route_can_set_a_recommendation_to_approved_or_rejected_except_the_decision_endpoints`
+  / `test_approving_requires_a_higher_role_than_read_only_viewing` still
+  assert that `src/api/agent.py` contains an `insert()` into
+  `agent_recommendations` and `/agent/recommendations/{id}/approve|reject`
+  routes — **none of that exists in the current `src/api/agent.py`** (only
+  `/chat`, `/status`, `/sessions/{id}`), so those three boundary tests
+  currently fail (confirmed by direct test run; pre-existing, not introduced
+  by this entry). Separately, `src/services/market.py::MarketService`
+  (`GET /market/proposals`, `POST /market/proposals/generate`, `POST
+  /market/proposals/{id}/decision`) still **reads** `agent_recommendations`
+  for display and its `generate_proposal()`/`decide()` both explicitly defer
+  to `POST /agent/recommendations` and `/agent/recommendations/{id}/approve`
+  in their response text/error — endpoints that do not exist. `decide()`
+  always raises `ValueError("use_agent_recommendation_approval")`; it never
+  writes. Net effect: **the human-in-the-loop recommendation-approval
+  workflow that `AGENTS.md` requires as a hard rule has no implementation to
+  gate right now**, because the current Agent produces conversational text
+  only and creates no `agent_recommendations` row for anyone to approve.
+  Anyone reviving a write-capable recommendation flow must re-satisfy these
+  three boundary tests, not just make the feature work.
+- **Async lag between sync → domain recompute → ranking → agent read.**
+  `src/services/ranking_trigger.py` (queues a ranking run) and the MiniCRM
+  sync path both explicitly accept eventual consistency by design ("lô đồng
+  bộ đã COMMIT trước khi cò chạy... bảng xếp hạng lạc hậu tới lần kích hoạt
+  sau — chấp nhận được"). The agent has no awareness of this lag at all: it
+  reads whatever `ranking_scores`/`units`/`deals` rows are committed at
+  query time, with no "as of" timestamp, no staleness check, and no
+  indication in `ChatResponse` when the underlying ranking run is older than
+  the latest sync. A question asked seconds after a CRM update can get an
+  answer computed from the pre-update ranking snapshot with no signal to the
+  user that this happened.
+- **The agent bypasses the `ranking_v3_composite`/`ranking_formula`
+  API-layer work entirely.** `tools.build_context()` queries
+  `ranking_scores` directly and always labels every row
+  `score_model: "Hierarchical AHP/RGMM v3"`, even on rows where
+  `hierarchical_score IS NULL` and the value shown is actually the legacy
+  `score`. `GET /ranking` (`src/api/ranking.py`) now derives a real,
+  data-verified `ranking_formula` (`"v2_legacy"`/`"v3_hierarchical"`) for
+  exactly this situation — the agent does not use it, and reimplements a
+  simpler, less honest version of the same fallback logic independently. Any
+  future context-enrichment work should make the agent consume the same
+  ranking API contract instead of a third, divergent copy of the fallback
+  rule.
+- **No evidence retrieval outside `evidence_question` intent.** Uploaded
+  expert documents / evidence chunks are never consulted for `rank_units`,
+  `explain_unit`, or `aggregate_by_area` answers — a "why is this unit
+  ranked highly" answer today can only come from the raw `contributions`
+  JSON, never from the qualitative evidence a project may actually have on
+  file for it.
+- **`compare_units` and `explain_unit` intents have no dedicated narration**
+  — both are detected by `detect_intent()` but `_fallback()` has no branch
+  for them, so they silently fall through to the generic top-5-list template
+  regardless of which specific unit(s) the user asked about.

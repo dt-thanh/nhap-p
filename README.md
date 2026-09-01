@@ -400,9 +400,11 @@ qua reset) theo các bước sau:
 
 | Biến | Mặc định | Ghi chú |
 |---|---|---|
-| `LLM_MODEL` | `gpt-4o-mini` | Model dùng cho cả planner lẫn synthesis |
-| `LLM_PROVIDER` | `openai` | |
+| `LLM_MODEL` | `deepseek/deepseek-v4-flash` | Model dùng cho Agent và các tác vụ LLM |
+| `LLM_PROVIDER` | `deepseek` | OpenAI-compatible transport qua `LLM_BASE_URL` |
 | `LLM_TEMPERATURE` | `0.7` | |
+| `EMBEDDING_API_KEY` | — | OpenAI key riêng cho `text-embedding-3-small` |
+| `EMBEDDING_BASE_URL` | `https://api.openai.com/v1` | Endpoint embeddings |
 | `APP_ENV` | `development` | Đặt `production` sẽ **chặn** auto-migration và dev bypass |
 | `DEV_AUTH_BYPASS` | `false` trong `.env`, **`true`** cho service `api` trong compose | Bỏ qua auth khi chạy local |
 | `DASHBOARD_BUSINESS_VIEWER_TOKEN` | — | Token vai trò *xem* |

@@ -23,6 +23,18 @@ x-backend-base: &backend-base
   environment:
     DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-absorption}
     REDIS_URL: redis://redis:6379/0
+    # Local/test stage of the documented controlled rollout (pipeline_status.md
+    # "2026-08-27 — Hierarchical Ranking PR-1 through PR-7" §7/§10). Deliberately
+    # set HERE (Compose `environment:`, container-scope only) and NOT in `.env`:
+    # `.env` is also read directly by `Settings(env_file=".env")` in the HOST
+    # venv pytest run (`scripts/test_db.sh`), and several tests assert the real
+    # coded default (False) — putting it in `.env` would silently flip that
+    # default for the test suite too. `environment:` always wins over `env_file:`
+    # for the same key (Compose precedence, see the `minicrm` service below for
+    # the same rule applied to secrets) and only applies to containers actually
+    # started via this compose file.
+    HIERARCHICAL_RANKING_ENABLED: "${HIERARCHICAL_RANKING_ENABLED:-true}"
+    HIERARCHICAL_READ_ENABLED: "${HIERARCHICAL_READ_ENABLED:-true}"
   depends_on:
     db:
       condition: service_healthy
@@ -93,7 +105,9 @@ services:
       # Volume RIÊNG — KHÔNG dùng chung với Postgres của Product/Mini CRM.
       - keycloak_data:/opt/keycloak/data
       # Realm import (read-only). Bind mount ghi đè thư mục import trong volume.
-      - ./docker/keycloak:/opt/keycloak/data/import:ro
+      # Local development must import only the local realm. The production
+      # realm file is kept for deployment but must not be auto-imported here.
+      - ./docker/keycloak/p100-realm.json:/opt/keycloak/data/import/p100-realm.json:ro
       # Custom login theme (branded AbsorptionForecast). Đọc lúc container start.
       - ./docker/keycloak/themes:/opt/keycloak/themes:ro
     healthcheck:
@@ -113,6 +127,11 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-absorption}
       REDIS_URL: redis://redis:6379/0
+      # See the matching comment on `x-backend-base` above — same reasoning,
+      # repeated here because `api`'s own `environment:` fully replaces (not
+      # merges with) the anchor's.
+      HIERARCHICAL_RANKING_ENABLED: "${HIERARCHICAL_RANKING_ENABLED:-true}"
+      HIERARCHICAL_READ_ENABLED: "${HIERARCHICAL_READ_ENABLED:-true}"
       # SSO qua Keycloak — nhà cung cấp danh tính DUY NHẤT ở runtime (Entra đã
       # bị gỡ khỏi mã nguồn). Giá trị lấy từ `.env` GỐC (xem `.env.example`);
       # rỗng ⇒ `oidc_configured()` sai và route auth trả 503 rõ ràng, KHÔNG có
@@ -125,9 +144,21 @@ services:
       OIDC_CLIENT_SECRET: "${OIDC_CLIENT_SECRET:-local-dev-absorbiq-secret}"
       OIDC_REDIRECT_URI: "${OIDC_REDIRECT_URI:-http://localhost:8000/api/v1/auth/callback}"
       OIDC_POST_LOGOUT_REDIRECT_URI: "${OIDC_POST_LOGOUT_REDIRECT_URI:-http://localhost:5173}"
+      # The one browser origin used after the API callback completes.  This is
+      # intentionally distinct from CORS_ORIGINS, which is an allow-list.
+      FRONTEND_BASE_URL: "${FRONTEND_BASE_URL:-http://localhost:5173}"
       OIDC_SCOPES: "${OIDC_SCOPES:-openid profile email offline_access}"
       OIDC_ROLE_MAP: "${OIDC_ROLE_MAP:-}"
       OIDC_PROJECT_SCOPE: "${OIDC_PROJECT_SCOPE:-}"
+      LLM_API_KEY: "${LLM_API_KEY:-}"
+      LLM_MODEL: "${LLM_MODEL:-deepseek/deepseek-v4-flash}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-https://api.xkiro.com/v1}"
+      EMBEDDING_API_KEY: "${EMBEDDING_API_KEY:-}"
+      EMBEDDING_BASE_URL: "${EMBEDDING_BASE_URL:-https://api.openai.com/v1}"
+      LANGSMITH_TRACING: "${LANGSMITH_TRACING:-false}"
+      LANGSMITH_API_KEY: "${LANGSMITH_API_KEY:-}"
+      LANGSMITH_PROJECT: "${LANGSMITH_PROJECT:-AbsorpIQ}"
+      LANGSMITH_ENDPOINT: "${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}"
       SESSION_SECRET: "${SESSION_SECRET:-}"
       SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-false}"
       # Local API only; dashboard_auth also requires APP_ENV=development.
